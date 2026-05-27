@@ -28,6 +28,7 @@
 		- [PHP](#php)
 		- [Python](#python-1)
 		- [Ruby](#ruby-1)
+	- [AI Agent Auth](#ai-agent-auth)
 	- [Articles](#articles)
 	- [Contribute](#contribute)
 	- [License](#license)
@@ -173,6 +174,13 @@
 - [Pundit](https://github.com/varvet/pundit) - Minimal authorization through OO design and pure Ruby classes.
 - [Casbin](https://github.com/CasbinRuby/casbin-ruby) - Authorization library that supports access control models like ACL, RBAC, ABAC in Ruby.
 - [CanCanCan](https://github.com/CanCanCommunity/cancancan) - Authorization for Ruby on Rails.
+
+## AI Agent Auth
+
+- [Arcade](https://github.com/ArcadeAI/arcade-ai) - Tool-calling platform with user approvals and authenticated actions for AI agents.
+- [authsome](https://github.com/agentrhq/authsome) - Local-first credential broker for AI agents with an encrypted local vault and HTTPS proxy injection; no hosted service required.
+- [Composio](https://github.com/ComposioHQ/composio) - Hosted integration platform with managed OAuth and tool calling for 1000+ apps.
+- [Nango](https://github.com/NangoHQ/nango) - Open-source OAuth and API key handling for 700+ APIs with token refresh and a unified API for agent workloads.
 
 ## Articles
 
