@@ -44,7 +44,7 @@
 - [Cloud-IAM](https://cloud-iam.com) - Managed Keycloak SaaS platform supporting OpenID Connect, OAuth 2.0 and SAML, with ISO 27001, SOC 2 Type 2, NIS 2, GDPR, HDS and SecNumCloud 3.2 certifications.
 - [SSOJet](https://ssojet.com) – Add enterprise SSO (SAML, OIDC) and SCIM user provisioning to your app without changing your existing authentication system.
 - [Logto](https://github.com/logto-io/logto) - An IAM infrastructure with AuthN, AuthZ, MFA, SSO, user management, and multi-tenancy features, supporting OAuth 2.0, OIDC, and SAML.
-- [Neon Auth](https://neon.com/docs/neon-auth/overview) - Managed authentication built on Stack Auth that syncs users directly into your Neon Postgres database.
+- [Neon Auth](https://neon.com/docs/neon-auth/overview) - Managed authentication built on Better Auth that syncs users directly into your Neon Postgres database.
 
 
 ## Authentication
