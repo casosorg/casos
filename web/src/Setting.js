@@ -1,6 +1,13 @@
 import {message} from "antd";
 
-export const ServerUrl = "";
+export let ServerUrl = "";
+
+export function initServerUrl() {
+  const fullServerUrl = window.location.origin;
+  if (fullServerUrl === "http://localhost:8001") {
+    ServerUrl = "http://localhost:9000";
+  }
+}
 
 export function showMessage(type, msg) {
   if (type === "success") {

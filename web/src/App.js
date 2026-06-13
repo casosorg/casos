@@ -1,10 +1,16 @@
 import React, {Component} from "react";
 import {ConfigProvider, Layout} from "antd";
+import * as Setting from "./Setting";
 import ManagementPage from "./ManagementPage";
 
 const {Footer} = Layout;
 
 class App extends Component {
+  constructor(props) {
+    super(props);
+    Setting.initServerUrl();
+  }
+
   renderFooter() {
     return (
       <Footer style={{textAlign: "center"}}>
