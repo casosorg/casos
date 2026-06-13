@@ -5,10 +5,10 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/beego/beego/v2/core/config"
+	"github.com/beego/beego"
 	_ "github.com/go-sql-driver/mysql"
 	"github.com/sirupsen/logrus"
-	"github.com/xorm-io/xorm"
+	"xorm.io/xorm"
 )
 
 var (
@@ -21,21 +21,22 @@ var (
 func InitDB() error {
 	var initErr error
 	once.Do(func() {
-		driver, err := config.String("driverName")
-		if err != nil || driver == "" {
+		driver := beego.AppConfig.String("driverName")
+		if driver == "" {
 			driver = "mysql"
 		}
-		dsn, err := config.String("dataSourceName")
-		if err != nil || dsn == "" {
+		dsn := beego.AppConfig.String("dataSourceName")
+		if dsn == "" {
 			initErr = fmt.Errorf("dataSourceName not set in app.conf")
 			return
 		}
-		dbName, _ := config.String("dbName")
+		dbName := beego.AppConfig.String("dbName")
 		if dbName == "" {
 			dbName = "casos"
 		}
 		dsn = injectDBName(dsn, dbName)
 
+		var err error
 		engine, err = xorm.NewEngine(driver, dsn)
 		if err != nil {
 			initErr = fmt.Errorf("xorm.NewEngine: %w", err)

@@ -19,7 +19,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/beego/beego/v2/core/config"
+	"github.com/beego/beego"
 	"github.com/casosorg/casos/util"
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/pflag"
@@ -50,23 +50,23 @@ type Config struct {
 
 // ConfigFromAppConf reads server config from the beego app.conf.
 func ConfigFromAppConf() (Config, error) {
-	dataDir, _ := config.String("dataDir")
+	dataDir := beego.AppConfig.String("dataDir")
 	if dataDir == "" {
 		dataDir = "/var/lib/casos"
 	}
-	bind, _ := config.String("apiserverBind")
+	bind := beego.AppConfig.String("apiserverBind")
 	if bind == "" {
 		bind = outboundIP()
 	}
-	port, _ := config.Int("apiserverPort")
+	port, _ := beego.AppConfig.Int("apiserverPort")
 	if port == 0 {
 		port = 6443
 	}
-	dsn, err := config.String("dataSourceName")
-	if err != nil || dsn == "" {
+	dsn := beego.AppConfig.String("dataSourceName")
+	if dsn == "" {
 		return Config{}, fmt.Errorf("dataSourceName not set in app.conf")
 	}
-	dbName, _ := config.String("dbName")
+	dbName := beego.AppConfig.String("dbName")
 	if dbName == "" {
 		dbName = "casos"
 	}

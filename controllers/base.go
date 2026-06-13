@@ -1,6 +1,6 @@
 package controllers
 
-import "github.com/beego/beego/v2/server/web"
+import "github.com/beego/beego"
 
 type Response struct {
 	Status string      `json:"status"`
@@ -9,7 +9,7 @@ type Response struct {
 }
 
 type ApiController struct {
-	web.Controller
+	beego.Controller
 }
 
 func (c *ApiController) ResponseOk(data ...interface{}) {

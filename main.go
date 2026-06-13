@@ -7,8 +7,7 @@ import (
 	"os/signal"
 	"syscall"
 
-	"github.com/beego/beego/v2/core/config"
-	"github.com/beego/beego/v2/server/web"
+	"github.com/beego/beego"
 	"github.com/sirupsen/logrus"
 
 	"github.com/casosorg/casos/controllers"
@@ -23,7 +22,7 @@ func main() {
 	defer cancel()
 
 	// Load beego config from conf/app.conf.
-	if err := web.LoadAppConfig("ini", "conf/app.conf"); err != nil {
+	if err := beego.LoadAppConfig("ini", "conf/app.conf"); err != nil {
 		logrus.Fatalf("load app.conf: %v", err)
 	}
 
@@ -44,17 +43,18 @@ func main() {
 
 	// Register beego routes.
 	routers.InitAPI()
-	web.BConfig.Listen.HTTPPort = mustInt("httpport", 9090)
+	beego.BConfig.CopyRequestBody = true
+	beego.BConfig.Listen.HTTPPort = mustInt("httpport", 9090)
 
 	// Start beego on its internal port (not the public-facing gateway).
 	go func() {
-		logrus.Infof("beego listening on :%d", web.BConfig.Listen.HTTPPort)
-		web.Run()
+		logrus.Infof("beego listening on :%d", beego.BConfig.Listen.HTTPPort)
+		beego.Run()
 	}()
 
 	// Start the unified gateway on gatewayPort (default 9000).
 	gatewayPort := mustInt("gatewayPort", 9000)
-	beegoOrigin     := fmt.Sprintf("http://127.0.0.1:%d", web.BConfig.Listen.HTTPPort)
+	beegoOrigin := fmt.Sprintf("http://127.0.0.1:%d", beego.BConfig.Listen.HTTPPort)
 	apiserverOrigin := fmt.Sprintf("https://127.0.0.1:%d", srvCfg.ApiserverPort)
 	go func() {
 		addr := fmt.Sprintf(":%d", gatewayPort)
@@ -79,7 +79,7 @@ func main() {
 }
 
 func mustInt(key string, def int) int {
-	v, err := config.Int(key)
+	v, err := beego.AppConfig.Int(key)
 	if err != nil || v == 0 {
 		return def
 	}
