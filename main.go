@@ -73,6 +73,9 @@ func main() {
 			if err := server.StartScheduler(ctx, srvCfg); err != nil {
 				logrus.Errorf("start scheduler: %v", err)
 			}
+			if err := server.StartControllerManager(ctx, srvCfg); err != nil {
+				logrus.Errorf("start controller-manager: %v", err)
+			}
 		case <-ctx.Done():
 		}
 	}()

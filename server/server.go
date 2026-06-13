@@ -35,7 +35,8 @@ import (
 	apiserverapp "k8s.io/kubernetes/cmd/kube-apiserver/app"
 	"k8s.io/kubernetes/cmd/kube-apiserver/app/options"
 
-	// scheduler in-process entry point
+	// scheduler and controller-manager in-process entry points
+	cmapp    "k8s.io/kubernetes/cmd/kube-controller-manager/app"
 	schedapp "k8s.io/kubernetes/cmd/kube-scheduler/app"
 
 	globalflag "k8s.io/component-base/cli/globalflag"
@@ -428,9 +429,10 @@ func outboundIP() string {
 // apiserver is ready (i.e. after the readyCh from Start is closed).
 func StartScheduler(ctx context.Context, cfg Config) error {
 	certDir := filepath.Join(cfg.DataDir, "tls")
-	kubeconfigPath, err := ensureSchedulerKubeconfig(
+	kubeconfigPath, err := ensureComponentKubeconfig(
 		certDir,
 		fmt.Sprintf("https://127.0.0.1:%d", cfg.ApiserverPort),
+		"scheduler",
 	)
 	if err != nil {
 		return fmt.Errorf("scheduler kubeconfig: %w", err)
@@ -453,10 +455,54 @@ func StartScheduler(ctx context.Context, cfg Config) error {
 	return nil
 }
 
-// ensureSchedulerKubeconfig writes a kubeconfig for the scheduler (reusing admin
-// certs) with cert data embedded as base64 to avoid Windows path issues.
-func ensureSchedulerKubeconfig(certDir, apiserverURL string) (string, error) {
-	path := filepath.Join(certDir, "scheduler.kubeconfig")
+// StartControllerManager launches kube-controller-manager in-process. Must be
+// called after the apiserver is ready.
+func StartControllerManager(ctx context.Context, cfg Config) error {
+	certDir := filepath.Join(cfg.DataDir, "tls")
+	kubeconfigPath, err := ensureComponentKubeconfig(
+		certDir,
+		fmt.Sprintf("https://127.0.0.1:%d", cfg.ApiserverPort),
+		"controller-manager",
+	)
+	if err != nil {
+		return fmt.Errorf("controller-manager kubeconfig: %w", err)
+	}
+
+	caKey := filepath.Join(certDir, "ca.key")
+	caCrt := filepath.Join(certDir, "ca.crt")
+	saKey := filepath.Join(certDir, "sa.key")
+
+	go func() {
+		cmd := cmapp.NewControllerManagerCommand()
+		cmd.SetArgs([]string{
+			"--kubeconfig=" + kubeconfigPath,
+			"--leader-elect=false",
+			"--bind-address=127.0.0.1",
+			"--secure-port=10257",
+			// Sign kubelet CSRs using our CA.
+			"--cluster-signing-cert-file=" + caCrt,
+			"--cluster-signing-key-file=" + caKey,
+			// Inject CA bundle into service-account token secrets.
+			"--root-ca-file=" + caCrt,
+			// Sign service-account tokens with the SA private key.
+			"--service-account-private-key-file=" + saKey,
+			// Use node CIDR allocation (needed once worker nodes join).
+			"--allocate-node-cidrs=true",
+			"--cluster-cidr=10.244.0.0/16",
+		})
+		if err := cmd.ExecuteContext(ctx); err != nil && ctx.Err() == nil {
+			logrus.Errorf("controller-manager exited: %v", err)
+		}
+	}()
+
+	logrus.Info("controller-manager started in-process")
+	return nil
+}
+
+// ensureComponentKubeconfig writes <name>.kubeconfig inside certDir, embedding
+// admin client certs as base64 to avoid Windows path escaping issues.
+func ensureComponentKubeconfig(certDir, apiserverURL, name string) (string, error) {
+	path := filepath.Join(certDir, name+".kubeconfig")
 	if fileExists(path) {
 		return path, nil
 	}
@@ -485,17 +531,18 @@ clusters:
 contexts:
 - context:
     cluster: casos
-    user: kube-scheduler
-  name: kube-scheduler@casos
-current-context: kube-scheduler@casos
+    user: %s
+  name: %s@casos
+current-context: %s@casos
 users:
-- name: kube-scheduler
+- name: %s
   user:
     client-certificate-data: %s
     client-key-data: %s
 `,
 		base64.StdEncoding.EncodeToString(caData),
 		apiserverURL,
+		name, name, name, name,
 		base64.StdEncoding.EncodeToString(certData),
 		base64.StdEncoding.EncodeToString(keyData),
 	)
