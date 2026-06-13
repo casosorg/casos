@@ -23,6 +23,14 @@ func Handler(apiserverOrigin, beegoOrigin, staticDir string) http.Handler {
 	fileServer     := http.FileServer(http.Dir(staticDir))
 
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Access-Control-Allow-Origin", "*")
+		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
+		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
+		if r.Method == http.MethodOptions {
+			w.WriteHeader(http.StatusOK)
+			return
+		}
+
 		switch {
 		case strings.HasPrefix(r.URL.Path, "/k8s/") || r.URL.Path == "/k8s":
 			// Strip /k8s so apiserver receives /api/v1/... paths unchanged.
