@@ -8,6 +8,7 @@ import (
 	"syscall"
 
 	"github.com/beego/beego"
+	logsapi "k8s.io/component-base/logs/api/v1"
 	"github.com/sirupsen/logrus"
 
 	"github.com/casosorg/casos/controllers"
@@ -97,4 +98,10 @@ func init() {
 	if _, err := os.Stat("conf/app.conf"); os.IsNotExist(err) {
 		logrus.Warn("conf/app.conf not found; defaults will be used")
 	}
+
+	// Allow multiple in-process Kubernetes components to initialise the global
+	// logging singleton. The default (ReapplyHandlingError) kills the process
+	// when a second component (e.g. controller-manager) tries to apply the same
+	// default config that the scheduler already applied.
+	logsapi.ReapplyHandling = logsapi.ReapplyHandlingIgnoreUnchanged
 }

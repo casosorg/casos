@@ -28,7 +28,6 @@ func StartControllerManager(ctx context.Context, cfg Config) error {
 
 	go func() {
 		cmd := cmapp.NewControllerManagerCommand()
-		skipLoggingApplied(cmd)
 		cmd.SetArgs([]string{
 			"--kubeconfig=" + kubeconfigPath,
 			"--leader-elect=false",

@@ -4,10 +4,8 @@ import (
 	"context"
 	"fmt"
 	"path/filepath"
-	"strings"
 
 	"github.com/sirupsen/logrus"
-	"github.com/spf13/cobra"
 	schedapp "k8s.io/kubernetes/cmd/kube-scheduler/app"
 )
 
@@ -26,7 +24,6 @@ func StartScheduler(ctx context.Context, cfg Config) error {
 
 	go func() {
 		cmd := schedapp.NewSchedulerCommand(ctx.Done())
-		skipLoggingApplied(cmd)
 		cmd.SetArgs([]string{
 			"--kubeconfig=" + kubeconfigPath,
 			"--leader-elect=false",
@@ -40,19 +37,4 @@ func StartScheduler(ctx context.Context, cfg Config) error {
 
 	logrus.Info("scheduler started in-process")
 	return nil
-}
-
-// skipLoggingApplied wraps PersistentPreRunE so that a second in-process
-// component starting up doesn't abort the whole program when the global
-// logging singleton was already initialised by an earlier component.
-func skipLoggingApplied(cmd *cobra.Command) {
-	if orig := cmd.PersistentPreRunE; orig != nil {
-		cmd.PersistentPreRunE = func(c *cobra.Command, args []string) error {
-			err := orig(c, args)
-			if err != nil && strings.Contains(err.Error(), "logging configuration was already applied") {
-				return nil
-			}
-			return err
-		}
-	}
 }
