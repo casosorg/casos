@@ -211,6 +211,12 @@ func (c *ApiController) GetPodEvents() {
 		c.ResponseError(err.Error())
 		return
 	}
+	formatTime := func(t metav1.Time) string {
+		if t.IsZero() {
+			return ""
+		}
+		return t.UTC().Format("2006-01-02 15:04:05")
+	}
 	result := make([]eventSummary, 0, len(events))
 	for _, e := range events {
 		result = append(result, eventSummary{
@@ -218,8 +224,8 @@ func (c *ApiController) GetPodEvents() {
 			Reason:         e.Reason,
 			Message:        e.Message,
 			Count:          e.Count,
-			LastTimestamp:  e.LastTimestamp.UTC().Format("2006-01-02 15:04:05"),
-			FirstTimestamp: e.FirstTimestamp.UTC().Format("2006-01-02 15:04:05"),
+			LastTimestamp:  formatTime(e.LastTimestamp),
+			FirstTimestamp: formatTime(e.FirstTimestamp),
 		})
 	}
 	c.ResponseOk(result)
