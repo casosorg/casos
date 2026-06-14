@@ -22,12 +22,12 @@ import (
 // ensureCerts generates a self-signed CA, apiserver cert/key, and admin client
 // cert/key if absent.
 func ensureCerts(dir, ip, advertiseIP string) error {
-	caKeyFile  := filepath.Join(dir, "ca.key")
+	caKeyFile := filepath.Join(dir, "ca.key")
 	caCertFile := filepath.Join(dir, "ca.crt")
 	srvKeyFile := filepath.Join(dir, "apiserver.key")
 	srvCrtFile := filepath.Join(dir, "apiserver.crt")
-	admKeyFile    := filepath.Join(dir, "admin.key")
-	admCrtFile    := filepath.Join(dir, "admin.crt")
+	admKeyFile := filepath.Join(dir, "admin.key")
+	admCrtFile := filepath.Join(dir, "admin.crt")
 	kubeletKeyFile := filepath.Join(dir, "apiserver-kubelet-client.key")
 	kubeletCrtFile := filepath.Join(dir, "apiserver-kubelet-client.crt")
 
@@ -235,7 +235,7 @@ users:
 		base64.StdEncoding.EncodeToString(keyData),
 	)
 
-	if err := os.WriteFile(path, []byte(kubeconfig), 0600); err != nil {
+	if err := os.WriteFile(path, []byte(kubeconfig), 0o600); err != nil {
 		return "", err
 	}
 	return path, nil
@@ -256,7 +256,7 @@ func AdminRestConfig(cfg Config) *rest.Config {
 }
 
 func writePEM(path, typ string, der []byte) error {
-	f, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0600)
+	f, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o600)
 	if err != nil {
 		return err
 	}

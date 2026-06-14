@@ -10,23 +10,23 @@ import (
 	"path/filepath"
 	"time"
 
+	"github.com/casosorg/casos/util"
 	_ "github.com/go-sql-driver/mysql"
 	"github.com/k3s-io/kine/pkg/endpoint"
-	"github.com/casosorg/casos/util"
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/pflag"
 
-	apiserverapp "k8s.io/kubernetes/cmd/kube-apiserver/app"
-	"k8s.io/kubernetes/cmd/kube-apiserver/app/options"
 	globalflag "k8s.io/component-base/cli/globalflag"
 	"k8s.io/component-base/logs"
+	apiserverapp "k8s.io/kubernetes/cmd/kube-apiserver/app"
+	"k8s.io/kubernetes/cmd/kube-apiserver/app/options"
 )
 
 // Start launches kine and the apiserver in-process.
 // The returned channel is closed once the apiserver /readyz endpoint responds 200.
 func Start(ctx context.Context, cfg Config) (<-chan struct{}, error) {
 	certDir := filepath.Join(cfg.DataDir, "tls")
-	if err := os.MkdirAll(certDir, 0700); err != nil {
+	if err := os.MkdirAll(certDir, 0o700); err != nil {
 		return nil, fmt.Errorf("mkdir tls: %w", err)
 	}
 	if err := ensureCerts(certDir, cfg.ApiserverBind, cfg.AdvertiseAddress); err != nil {

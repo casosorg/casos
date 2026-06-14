@@ -184,8 +184,8 @@ func (c *ApiController) GetWorkerKubeconfig() {
 		return
 	}
 	c.ResponseOk(map[string]string{
-		"nodeName":        wk.NodeName,
-		"kubeconfig":      wk.Kubeconfig,
+		"nodeName":         wk.NodeName,
+		"kubeconfig":       wk.Kubeconfig,
 		"containerdConfig": server.GenerateContainerdConfig(cfg.SandboxImage, cfg.Socks5Proxy),
 	})
 }

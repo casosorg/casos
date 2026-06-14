@@ -10,12 +10,12 @@ import (
 )
 
 type configMapSummary struct {
-	Namespace   string            `json:"namespace"`
-	Name        string            `json:"name"`
-	DataKeys    int               `json:"dataKeys"`
-	Data        map[string]string `json:"data"`
-	CreatedAt   string            `json:"createdAt"`
-	ResourceVersion string        `json:"resourceVersion"`
+	Namespace       string            `json:"namespace"`
+	Name            string            `json:"name"`
+	DataKeys        int               `json:"dataKeys"`
+	Data            map[string]string `json:"data"`
+	CreatedAt       string            `json:"createdAt"`
+	ResourceVersion string            `json:"resourceVersion"`
 }
 
 func toSummary(cm corev1.ConfigMap) configMapSummary {

@@ -10,12 +10,12 @@ import (
 )
 
 type serviceAccountSummary struct {
-	Namespace       string   `json:"namespace"`
-	Name            string   `json:"name"`
-	Secrets         int      `json:"secrets"`
+	Namespace        string   `json:"namespace"`
+	Name             string   `json:"name"`
+	Secrets          int      `json:"secrets"`
 	ImagePullSecrets []string `json:"imagePullSecrets"`
-	CreatedAt       string   `json:"createdAt"`
-	ResourceVersion string   `json:"resourceVersion"`
+	CreatedAt        string   `json:"createdAt"`
+	ResourceVersion  string   `json:"resourceVersion"`
 }
 
 func toSaSummary(sa corev1.ServiceAccount) serviceAccountSummary {
