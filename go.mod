@@ -6,6 +6,10 @@ replace (
 	// kine -> our own fork
 	github.com/k3s-io/kine => github.com/casosorg/kine v0.16.2-a
 
+	// beego pins v2.0.3+incompatible (pre-modules tag) but kine needs SetFileControlInt
+	// from v1.14.x; force the newer v1 release via replace
+	github.com/mattn/go-sqlite3 => github.com/mattn/go-sqlite3 v1.14.24
+
 	// etcd client -> k3s fork (required by kine)
 	go.etcd.io/etcd/api/v3 => github.com/k3s-io/etcd/api/v3 v3.6.12-k3s1
 	go.etcd.io/etcd/client/pkg/v3 => github.com/k3s-io/etcd/client/pkg/v3 v3.6.12-k3s1
