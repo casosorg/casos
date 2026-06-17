@@ -1,8 +1,8 @@
 import React from "react";
 import {
-  Alert, Button, Drawer, Form, Input, InputNumber, Modal, Popconfirm, Select, Space, Table, Tag, Tooltip
+  Alert, Button, Drawer, Form, Input, Modal, Popconfirm, Select, Space, Switch, Table, Tag, Tooltip
 } from "antd";
-import {AppstoreOutlined, DeleteOutlined, EditOutlined, FileTextOutlined, GlobalOutlined, MinusCircleOutlined, PlusOutlined, ReloadOutlined, UnorderedListOutlined} from "@ant-design/icons";
+import {AppstoreOutlined, CodeOutlined, DeleteOutlined, DesktopOutlined, EditOutlined, FileTextOutlined, GlobalOutlined, MinusCircleOutlined, PlusOutlined, ReloadOutlined, UnorderedListOutlined} from "@ant-design/icons";
 import * as PodBackend from "./backend/PodBackend";
 import * as NamespaceBackend from "./backend/NamespaceBackend";
 import * as Setting from "./Setting";
@@ -14,6 +14,13 @@ const phaseColor = {
   Succeeded: "blue",
   Failed: "red",
   Unknown: "default",
+};
+
+const uiModeButton = {
+  web: {icon: <GlobalOutlined />, label: "Open"},
+  vnc: {icon: <DesktopOutlined />, label: "Open noVNC"},
+  terminal: {icon: <CodeOutlined />, label: "Open Terminal"},
+  unknown: {icon: <GlobalOutlined />, label: "Open"},
 };
 
 class PodListPage extends React.Component {
@@ -40,13 +47,7 @@ class PodListPage extends React.Component {
       logsError: null,
       marketplaceVisible: false,
       modalInitialValues: {},
-      portPickerVisible: false,
-      portPickerPod: null,
-      portPickerOpening: false,
-      portInputVisible: false,
-      portInputPod: null,
-      portInputValue: undefined,
-      portInputOpening: false,
+      openingPodKey: null,
     };
     this.formRef = React.createRef();
   }
@@ -175,6 +176,8 @@ class PodListPage extends React.Component {
       image: "",
       containerName: "",
       labelEntries: [],
+      portEntries: [],
+      injectTtydSidecar: true,
     }});
   }
 
@@ -210,6 +213,10 @@ class PodListPage extends React.Component {
         }
       });
 
+      const ports = (values.portEntries ?? [])
+        .map(p => Number(p?.port))
+        .filter(p => Number.isInteger(p) && p > 0 && p <= 65535);
+
       this.setState({submitting: true});
 
       if (this.state.modalMode === "add") {
@@ -219,6 +226,8 @@ class PodListPage extends React.Component {
           image: values.image,
           containerName: values.containerName || "app",
           labels,
+          ports,
+          injectTtydSidecar: !!values.injectTtydSidecar,
         }).then(res => {
           if (res.status === "ok") {
             Setting.showMessage("success", "Pod created");
@@ -262,34 +271,18 @@ class PodListPage extends React.Component {
   }
 
   handleOpenUI(pod) {
-    const declared = pod.containerPorts ?? [];
-    const exposed = pod.exposedPorts ?? [];
-    const pick = (declared.length > 0 ? declared : exposed);
-    if (pick.length === 1) {
-      this.doOpenUI(pod, pick[0]);
-      return;
-    }
-    if (pick.length > 1) {
-      this.setState({portPickerVisible: true, portPickerPod: pod, portPickerOpening: false});
-      return;
-    }
-    this.setState({portInputVisible: true, portInputPod: pod, portInputOpening: false, portInputValue: undefined});
-  }
-
-  doOpenUI(pod, containerPort) {
-    this.setState({portPickerOpening: true, portInputOpening: true});
-    PodBackend.openPodUI(pod.namespace, pod.name, containerPort).then(res => {
+    const key = `${pod.namespace}/${pod.name}`;
+    this.setState({openingPodKey: key});
+    PodBackend.openPodUI(pod.namespace, pod.name).then(res => {
       if (res.status === "ok") {
-        window.open(res.data.url, "_blank", "noopener,noreferrer");
-        this.setState({
-          portPickerVisible: false, portPickerPod: null,
-          portInputVisible: false, portInputPod: null, portInputValue: undefined,
-        });
+        const path = res.data?.url ?? `/p/${pod.namespace}/${pod.name}/`;
+        const full = path.startsWith("http") ? path : (window.location.origin + path);
+        window.open(full, "_blank", "noopener,noreferrer");
       } else {
         Setting.showMessage("error", res.msg);
       }
     }).catch(e => Setting.showMessage("error", e.message))
-      .finally(() => this.setState({portPickerOpening: false, portInputOpening: false}));
+      .finally(() => this.setState({openingPodKey: null}));
   }
 
   render() {
@@ -297,8 +290,7 @@ class PodListPage extends React.Component {
       eventsDrawerVisible, eventsPod, events, eventsLoading, eventsError,
       logsDrawerVisible, logsPod, logs, logsLoading, logsError,
       marketplaceVisible, modalInitialValues,
-      portPickerVisible, portPickerPod, portPickerOpening,
-      portInputVisible, portInputPod, portInputValue, portInputOpening} = this.state;
+      openingPodKey} = this.state;
 
     const nsOptions = namespaces.map(ns => ({label: ns.name, value: ns.name}));
 
@@ -343,15 +335,27 @@ class PodListPage extends React.Component {
             >
               Events
             </Button>
-            {record.phase === "Running" && (
-              <Tooltip title="Open pod web UI">
-                <Button
-                  size="small"
-                  icon={<GlobalOutlined />}
-                  onClick={() => this.handleOpenUI(record)}
-                />
-              </Tooltip>
-            )}
+            {record.phase === "Running" && (() => {
+              const cfg = uiModeButton[record.uiMode] ?? uiModeButton.web;
+              const podKey = `${record.namespace}/${record.name}`;
+              const disabled = record.uiMode === "unknown";
+              const tip = disabled
+                ? "Pod has no usable port and no sidecar — delete and recreate with ports or ttyd sidecar"
+                : `Open ${record.uiMode} session`;
+              return (
+                <Tooltip title={tip}>
+                  <Button
+                    size="small"
+                    icon={cfg.icon}
+                    loading={openingPodKey === podKey}
+                    disabled={disabled}
+                    onClick={() => this.handleOpenUI(record)}
+                  >
+                    {cfg.label}
+                  </Button>
+                </Tooltip>
+              );
+            })()}
             <Button
               size="small"
               icon={<EditOutlined />}
@@ -515,6 +519,62 @@ class PodListPage extends React.Component {
                 </>
               )}
             </Form.List>
+
+            {modalMode === "add" && (
+              <>
+                <div style={{marginTop: 16, marginBottom: 8, fontWeight: 500}}>
+                  Container Ports
+                  <span style={{color: "#999", fontWeight: 400, marginLeft: 8, fontSize: 12}}>
+                    leave empty for CLI containers (ttyd sidecar handles the entry)
+                  </span>
+                </div>
+                <Form.List name="portEntries">
+                  {(fields, {add, remove}) => (
+                    <>
+                      {fields.map(({key, name, ...rest}) => (
+                        <Space key={key} align="baseline" style={{display: "flex", marginBottom: 4}}>
+                          <Form.Item
+                            {...rest}
+                            name={[name, "port"]}
+                            rules={[{
+                              validator: (_, v) => {
+                                const n = Number(v);
+                                if (!Number.isInteger(n) || n < 1 || n > 65535) {
+                                  return Promise.reject(new Error("port 1-65535"));
+                                }
+                                return Promise.resolve();
+                              },
+                            }]}
+                            style={{marginBottom: 0}}
+                          >
+                            <Input placeholder="80" style={{width: 120}} />
+                          </Form.Item>
+                          <MinusCircleOutlined onClick={() => remove(name)} style={{color: "#ff4d4f", cursor: "pointer"}} />
+                        </Space>
+                      ))}
+                      <Button
+                        type="dashed"
+                        onClick={() => add()}
+                        icon={<PlusOutlined />}
+                        style={{marginTop: 4}}
+                        size="small"
+                      >
+                        Add Port
+                      </Button>
+                    </>
+                  )}
+                </Form.List>
+
+                <Form.Item
+                  name="injectTtydSidecar"
+                  valuePropName="checked"
+                  style={{marginTop: 16, marginBottom: 0}}
+                  tooltip="Inject a ttyd sidecar container (casos/ttyd:latest) so the Open button can launch a browser-based terminal. Disable for Web/VNC pods that already expose a usable port."
+                >
+                  <Switch checkedChildren="Inject ttyd sidecar" unCheckedChildren="No ttyd sidecar" />
+                </Form.Item>
+              </>
+            )}
           </Form>
         </Modal>
 
@@ -611,72 +671,6 @@ class PodListPage extends React.Component {
             })}
           </div>
         </Drawer>
-
-        <Modal
-          title={portPickerPod ? `Open ${portPickerPod.namespace}/${portPickerPod.name} — pick a port` : "Open"}
-          open={portPickerVisible}
-          onCancel={() => this.setState({portPickerVisible: false, portPickerPod: null})}
-          footer={null}
-          destroyOnHidden
-        >
-          {(() => {
-            if (!portPickerPod) {return null;}
-            const declared = portPickerPod.containerPorts ?? [];
-            const exposed = portPickerPod.exposedPorts ?? [];
-            const merged = Array.from(new Set([...declared, ...exposed])).sort((a, b) => a - b);
-            return merged.map(p => (
-              <Button
-                key={p}
-                block
-                style={{marginBottom: 8}}
-                icon={<GlobalOutlined />}
-                loading={portPickerOpening}
-                onClick={() => this.doOpenUI(portPickerPod, p)}
-              >
-                Open on :{p}
-              </Button>
-            ));
-          })()}
-        </Modal>
-
-        <Modal
-          title={portInputPod ? `Open ${portInputPod.namespace}/${portInputPod.name} — which port?` : "Open"}
-          open={portInputVisible}
-          onCancel={() => this.setState({portInputVisible: false, portInputPod: null, portInputValue: undefined})}
-          onOk={() => {
-            const p = Number(portInputValue);
-            if (!Number.isInteger(p) || p <= 0 || p > 65535) {
-              Setting.showMessage("error", "Enter a port between 1 and 65535");
-              return;
-            }
-            this.setState({portInputOpening: true});
-            this.doOpenUI(portInputPod, p);
-          }}
-          okText="Open"
-          confirmLoading={portInputOpening}
-          destroyOnHidden
-        >
-          <p style={{color: "#666"}}>
-            No port information is known for this pod (the image has no
-            EXPOSE directive). Enter the port the container is listening on.
-          </p>
-          <InputNumber
-            autoFocus
-            min={1}
-            max={65535}
-            placeholder="8000"
-            value={portInputValue}
-            onChange={v => this.setState({portInputValue: v})}
-            onPressEnter={() => {
-              const p = Number(portInputValue);
-              if (Number.isInteger(p) && p > 0 && p <= 65535) {
-                this.setState({portInputOpening: true});
-                this.doOpenUI(portInputPod, p);
-              }
-            }}
-            style={{width: "100%"}}
-          />
-        </Modal>
       </div>
     );
   }

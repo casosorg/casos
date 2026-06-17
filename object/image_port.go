@@ -8,6 +8,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/casosorg/casos/proxy"
 )
 
 type imageConfig struct {
@@ -266,7 +268,12 @@ func fetchBlob(registry, repo, digest, token string) ([]byte, error) {
 }
 
 func doJSON(req *http.Request) ([]byte, string, error) {
-	client := &http.Client{Timeout: httpTimeout}
+	client := proxy.GetHttpClient(req.URL.String())
+	if client == nil {
+		client = &http.Client{Timeout: httpTimeout}
+	} else if client.Timeout == 0 {
+		client.Timeout = httpTimeout
+	}
 	resp, err := client.Do(req)
 	if err != nil {
 		return nil, "", err

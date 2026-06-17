@@ -1,11 +1,1 @@
-{
-  "auth": {
-    "Invalid username or password": "Invalid username or password",
-    "Please sign in first": "Please sign in first",
-    "Unauthorized operation": "Unauthorized operation"
-  },
-  "general": {
-    "Failed to update": "Failed to update",
-    "Target user not found": "Target user not found"
-  }
-}
+{}

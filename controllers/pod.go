@@ -44,8 +44,30 @@ type podSummary struct {
 	Labels          map[string]string `json:"labels"`
 	CreatedAt       string            `json:"createdAt"`
 	ResourceVersion string            `json:"resourceVersion"`
-	ContainerPorts []int32 `json:"containerPorts"`
-	ExposedPorts []int32 `json:"exposedPorts"`
+	ContainerPorts  []int32           `json:"containerPorts"`
+	ExposedPorts    []int32           `json:"exposedPorts"`
+	UIMode          string            `json:"uiMode"`
+	TTYDInjected    bool              `json:"ttydInjected"`
+}
+
+// podUIMode inspects a pod and returns how the browser entry should work:
+//   - "terminal" — ttyd sidecar injected (no user-declared ports)
+//   - "vnc"      — declared port looks like a VNC/noVNC server (5800/5900)
+//   - "web"      — declared port for a plain HTTP service
+//   - "unknown"  — no declared ports and no sidecar (Open should be disabled)
+func podUIMode(p *corev1.Pod, ports []int32) string {
+	if p.Annotations["casos.io/ttyd-injected"] == "true" {
+		return "terminal"
+	}
+	if len(ports) == 0 {
+		return "unknown"
+	}
+	for _, port := range ports {
+		if port == 5800 || port == 5900 {
+			return "vnc"
+		}
+	}
+	return "web"
 }
 
 func toPodSummary(p corev1.Pod) podSummary {
@@ -53,7 +75,8 @@ func toPodSummary(p corev1.Pod) podSummary {
 	if len(p.Spec.Containers) > 0 {
 		image = p.Spec.Containers[0].Image
 	}
-	return podSummary{
+	ports := object.ContainerPortsFromPod(&p)
+	summary := podSummary{
 		Namespace:       p.Namespace,
 		Name:            p.Name,
 		Phase:           string(p.Status.Phase),
@@ -62,9 +85,12 @@ func toPodSummary(p corev1.Pod) podSummary {
 		Labels:          p.Labels,
 		CreatedAt:       p.CreationTimestamp.UTC().Format("2006-01-02 15:04:05"),
 		ResourceVersion: p.ResourceVersion,
-		ContainerPorts:  object.ContainerPortsFromPod(&p),
+		ContainerPorts:  ports,
 		ExposedPorts:    readExposedPortsAnnotation(p.Annotations),
+		UIMode:          podUIMode(&p, ports),
+		TTYDInjected:    p.Annotations["casos.io/ttyd-injected"] == "true",
 	}
+	return summary
 }
 
 func (c *ApiController) GetPods() {
@@ -109,7 +135,10 @@ type podRequest struct {
 	ContainerName   string            `json:"containerName"`
 	Labels          map[string]string `json:"labels"`
 	ResourceVersion string            `json:"resourceVersion"`
-	Ports []int32 `json:"ports"`
+	Ports           []int32           `json:"ports"`
+	// InjectTTYDSidecar forces ttyd sidecar injection regardless of declared ports.
+	// If nil, defaults to: true when no usable port is supplied, false otherwise.
+	InjectTTYDSidecar *bool `json:"injectTtydSidecar"`
 }
 
 func (c *ApiController) AddPod() {
@@ -144,6 +173,31 @@ func (c *ApiController) AddPod() {
 			writeExposedPortsAnnotation(annotations, exposed)
 		}
 	}
+
+	hasUsablePort := false
+	for _, p := range container.Ports {
+		if p.ContainerPort > 0 {
+			hasUsablePort = true
+			break
+		}
+	}
+	injectSidecar := false
+	if req.InjectTTYDSidecar != nil {
+		injectSidecar = *req.InjectTTYDSidecar
+	} else {
+		// Default: inject ttyd for CLI containers (no declared ports) so the
+		// browser can always reach a shell. Users with a Web/VNC pod can
+		// disable this explicitly or by declaring ports.
+		injectSidecar = !hasUsablePort
+	}
+	if injectSidecar {
+		container.Ports = append(container.Ports, corev1.ContainerPort{
+			ContainerPort: 7681,
+			Protocol:      corev1.ProtocolTCP,
+		})
+	}
+
+	containers := []corev1.Container{container}
 	pod := &corev1.Pod{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:        req.Name,
@@ -152,8 +206,13 @@ func (c *ApiController) AddPod() {
 			Annotations: annotations,
 		},
 		Spec: corev1.PodSpec{
-			Containers: []corev1.Container{container},
+			Containers: containers,
 		},
+	}
+	if injectSidecar {
+		pod.Spec.ShareProcessNamespace = boolPtr(true)
+		pod.Spec.Containers = append(pod.Spec.Containers, ttydSidecarContainer())
+		pod.Annotations[ttydInjectedAnnotation] = "true"
 	}
 	created, err := object.AddPod(cfg, pod)
 	if err != nil {
@@ -284,7 +343,23 @@ func (c *ApiController) DeletePod() {
 	c.ResponseOk()
 }
 
-const exposedPortsAnnotationKey = "casos.io/exposed-ports"
+const (
+	exposedPortsAnnotationKey = "casos.io/exposed-ports"
+	ttydInjectedAnnotation    = "casos.io/ttyd-injected"
+	ttydSidecarImage          = "casos/ttyd:latest"
+	ttydSidecarPort     int32 = 7681
+)
+
+func ttydSidecarContainer() corev1.Container {
+	return corev1.Container{
+		Name:  "casos-ttyd",
+		Image: ttydSidecarImage,
+		Args:  []string{"ttyd", "-p", "7681", "-W", "-c", "casos:casos", "bash"},
+		Ports: []corev1.ContainerPort{{ContainerPort: ttydSidecarPort, Protocol: corev1.ProtocolTCP}},
+	}
+}
+
+func boolPtr(b bool) *bool { return &b }
 
 func writeExposedPortsAnnotation(annotations map[string]string, ports []int32) {
 	if len(ports) == 0 {

@@ -66,6 +66,7 @@ func InitAPI() {
 	beego.Router("/api/add-configmap", &controllers.ApiController{}, "POST:AddConfigMap")
 	beego.Router("/api/update-configmap", &controllers.ApiController{}, "POST:UpdateConfigMap")
 	beego.Router("/api/delete-configmap", &controllers.ApiController{}, "POST:DeleteConfigMap")
-	beego.Router("/api/open-pod-ui", &controllers.ApiController{}, "POST:OpenPodUI")
-	beego.Router("/api/close-pod-ui", &controllers.ApiController{}, "POST:ClosePodUI")
+	beego.Router("/api/open-pod-ui", &controllers.ApiController{}, "POST:OpenPod")
+	beego.Router("/api/close-pod-ui", &controllers.ApiController{}, "POST:ClosePod")
+	beego.Router("/p/*", &controllers.ApiController{}, "GET:PodProxy")
 }

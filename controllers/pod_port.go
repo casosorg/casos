@@ -9,46 +9,63 @@ import (
 	"github.com/casosorg/casos/object"
 )
 
-const forwardTTL = time.Hour
+const (
+	protocolHTTP     = "http"
+	protocolVNC      = "vnc"
+	protocolTerminal = "terminal"
+	forwardTTL       = time.Hour
+)
 
-type openPodUIRequest struct {
-	Namespace     string `json:"namespace"`
-	Name          string `json:"name"`
-	ContainerPort int32  `json:"containerPort"`
+type openPodRequest struct {
+	Namespace string `json:"namespace"`
+	Name      string `json:"name"`
 }
 
-type openPodUIResponse struct {
+type openPodResponse struct {
 	LocalPort int    `json:"localPort"`
 	URL       string `json:"url"`
+	UIMode    string `json:"uiMode"`
 }
 
-type forwardEntry struct {
-	stop  func()
-	timer *time.Timer
+type portEntry struct {
+	LocalPort int
+	Protocol  string
+	Stop      func()
+	Timer     *time.Timer
 }
 
 var (
-	activeForwards   = map[string]*forwardEntry{}
+	activeForwards   = map[string]*portEntry{}
 	activeForwardsMu sync.Mutex
 )
 
-func trackForward(key string, stop func()) {
+// portEntryFor returns the active port-forward entry for a pod, if any.
+// Exposed to pod_proxy.go for reverse-proxy dispatch.
+func portEntryFor(ns, name string) (portEntry, bool) {
+	activeForwardsMu.Lock()
+	defer activeForwardsMu.Unlock()
+	entry, ok := activeForwards[ns+"/"+name]
+	if !ok {
+		return portEntry{}, false
+	}
+	return *entry, true
+}
+
+func trackForward(key string, entry *portEntry) {
 	activeForwardsMu.Lock()
 	defer activeForwardsMu.Unlock()
 
 	if prev, ok := activeForwards[key]; ok {
-		prev.stop()
-		if prev.timer != nil {
-			prev.timer.Stop()
+		prev.Stop()
+		if prev.Timer != nil {
+			prev.Timer.Stop()
 		}
 	}
-
-	entry := &forwardEntry{stop: stop}
-	entry.timer = time.AfterFunc(forwardTTL, func() {
+	entry.Timer = time.AfterFunc(forwardTTL, func() {
 		activeForwardsMu.Lock()
 		defer activeForwardsMu.Unlock()
 		if cur, ok := activeForwards[key]; ok && cur == entry {
-			cur.stop()
+			cur.Stop()
 			delete(activeForwards, key)
 		}
 	})
@@ -59,21 +76,46 @@ func untrackForward(key string) {
 	activeForwardsMu.Lock()
 	defer activeForwardsMu.Unlock()
 	if cur, ok := activeForwards[key]; ok {
-		cur.stop()
-		if cur.timer != nil {
-			cur.timer.Stop()
+		cur.Stop()
+		if cur.Timer != nil {
+			cur.Timer.Stop()
 		}
 		delete(activeForwards, key)
 	}
 }
 
-func (c *ApiController) OpenPodUI() {
+// pickPortAndProtocol decides which container port to forward to and what
+// protocol the reverse proxy should treat it as, given the pod's UIMode
+// and declared ports.
+func pickPortAndProtocol(uiMode string, ports []int32) (int32, string, error) {
+	switch uiMode {
+	case "terminal":
+		return ttydSidecarPort, protocolTerminal, nil
+	case "vnc":
+		for _, p := range ports {
+			if p == 5800 || p == 5900 {
+				return p, protocolVNC, nil
+			}
+		}
+		// Fall back to the first port; treat as VNC.
+		if len(ports) > 0 {
+			return ports[0], protocolVNC, nil
+		}
+	case "web":
+		if len(ports) > 0 {
+			return ports[0], protocolHTTP, nil
+		}
+	}
+	return 0, "", fmt.Errorf("no port available for uiMode %q", uiMode)
+}
+
+func (c *ApiController) OpenPod() {
 	cfg := getAdminRestConfig()
 	if cfg == nil {
 		c.ResponseError("apiserver not ready")
 		return
 	}
-	var req openPodUIRequest
+	var req openPodRequest
 	if err := json.Unmarshal(c.Ctx.Input.RequestBody, &req); err != nil {
 		c.ResponseError("invalid request body: " + err.Error())
 		return
@@ -83,23 +125,17 @@ func (c *ApiController) OpenPodUI() {
 		return
 	}
 
-	port := req.ContainerPort
-	if port <= 0 {
-		pod, err := object.GetPod(cfg, req.Namespace, req.Name)
-		if err != nil {
-			c.ResponseError(err.Error())
-			return
-		}
+	pod, err := object.GetPod(cfg, req.Namespace, req.Name)
+	if err != nil {
+		c.ResponseError(err.Error())
+		return
+	}
 
-		exposed := readExposedPortsAnnotation(pod.Annotations)
-		if len(exposed) == 0 && len(pod.Spec.Containers) > 0 {
-			exposed, _ = object.LookupExposedPorts(pod.Spec.Containers[0].Image)
-		}
-		if len(exposed) == 0 {
-			c.ResponseError("no exposed ports known for this pod; specify containerPort")
-			return
-		}
-		port = exposed[0]
+	summary := toPodSummary(*pod)
+	port, protocol, err := pickPortAndProtocol(summary.UIMode, summary.ContainerPorts)
+	if err != nil {
+		c.ResponseError(err.Error())
+		return
 	}
 
 	localPort, stop, err := object.OpenPodUI(cfg, req.Namespace, req.Name, port)
@@ -108,26 +144,27 @@ func (c *ApiController) OpenPodUI() {
 		return
 	}
 
-	key := fmt.Sprintf("%s/%s:%d", req.Namespace, req.Name, port)
-	trackForward(key, stop)
+	key := req.Namespace + "/" + req.Name
+	trackForward(key, &portEntry{LocalPort: localPort, Protocol: protocol, Stop: stop})
 
-	c.ResponseOk(openPodUIResponse{
+	c.ResponseOk(openPodResponse{
 		LocalPort: localPort,
-		URL:       fmt.Sprintf("http://127.0.0.1:%d", localPort),
+		URL:       fmt.Sprintf("/p/%s/%s/", req.Namespace, req.Name),
+		UIMode:    summary.UIMode,
 	})
 }
 
-func (c *ApiController) ClosePodUI() {
-	var req openPodUIRequest
+func (c *ApiController) ClosePod() {
+	var req openPodRequest
 	if err := json.Unmarshal(c.Ctx.Input.RequestBody, &req); err != nil {
 		c.ResponseError("invalid request body: " + err.Error())
 		return
 	}
-	if req.Namespace == "" || req.Name == "" || req.ContainerPort <= 0 {
-		c.ResponseError("namespace, name and containerPort are required")
+	if req.Namespace == "" || req.Name == "" {
+		c.ResponseError("namespace and name are required")
 		return
 	}
-	key := fmt.Sprintf("%s/%s:%d", req.Namespace, req.Name, req.ContainerPort)
+	key := req.Namespace + "/" + req.Name
 	untrackForward(key)
 	c.ResponseOk(map[string]string{"status": "closed"})
 }

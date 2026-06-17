@@ -4,6 +4,7 @@ import (
 	"crypto/tls"
 	"net"
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
 
@@ -76,10 +77,20 @@ func GetActiveSocks5ProxyAddress() string {
 	return socks5Proxy
 }
 
-func GetHttpClient(url string) *http.Client {
-	if strings.Contains(url, "hub.docker.com") {
-		return ProxyHttpClient
-	} else {
-		return DefaultHttpClient
+func shouldUseProxy(host string) bool {
+	if host == "hub.docker.com" || host == "docker.io" {
+		return true
 	}
+	if strings.HasSuffix(host, ".docker.io") {
+		return true
+	}
+	return false
+}
+
+func GetHttpClient(rawURL string) *http.Client {
+	u, err := url.Parse(rawURL)
+	if err == nil && shouldUseProxy(u.Host) {
+		return ProxyHttpClient
+	}
+	return DefaultHttpClient
 }
