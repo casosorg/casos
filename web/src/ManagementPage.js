@@ -32,6 +32,7 @@ import DashboardPage from "./DashboardPage";
 import SiteListPage from "./SiteListPage";
 import SiteEditPage from "./SiteEditPage";
 import i18next from "i18next";
+import ContainerTemplateListPage from "./ContainerTemplateListPage";
 
 const {Header, Footer, Content, Sider} = Layout;
 
@@ -44,6 +45,7 @@ function getMenuParentKey(uri) {
   if (uri.includes("/services")) {return "/networking";}
   if (uri.includes("/clusterrolebindings")) {return "/accesscontrol";}
   if (uri.includes("/sites")) {return "/admin";}
+  if (uri.includes("/apps")) {return "/admin";}
   return null;
 }
 
@@ -211,6 +213,7 @@ function ManagementPage(props) {
       ]),
       Setting.getItem(<Link to="/sites/site-built-in">{i18next.t("general:Admin")}</Link>, "/admin", <LayoutOutlined />, [
         Setting.getItem(<Link to="/sites/site-built-in">{i18next.t("general:Sites")}</Link>, "/sites"),
+        Setting.getItem(<Link to="/apps">{i18next.t("general:App Store")}</Link>, "/apps"),
       ]),
     ];
     return filterMenuItems(allItems, site?.navItems);
@@ -229,6 +232,7 @@ function ManagementPage(props) {
         <Route exact path="/services" render={(props) => <ServiceListPage {...props} />} />
         <Route exact path="/clusterrolebindings" render={(props) => <ClusterRoleBindingListPage {...props} />} />
         <Route exact path="/sites" render={(props) => <SiteListPage account={account} {...props} />} />
+        <Route exact path="/apps" render={(props) => <ContainerTemplateListPage {...props} />} />
         <Route exact path="/sites/:siteName" render={(props) => <SiteEditPage account={account} onUpdateSite={onUpdateSite} {...props} />} />
         <Route path="" render={() => <Result status="404" title="404 NOT FOUND" subTitle="Sorry, the page you visited does not exist." extra={<a href="/"><Button type="primary">Back Home</Button></a>} />} />
       </Switch>
