@@ -1,8 +1,8 @@
 import React from "react";
 import {
-  Alert, Button, Drawer, Form, Input, Modal, Popconfirm, Select, Space, Table, Tag, Tooltip
+  Alert, Button, Drawer, Form, Input, InputNumber, Modal, Popconfirm, Select, Space, Table, Tag, Tooltip
 } from "antd";
-import {AppstoreOutlined, DeleteOutlined, EditOutlined, FileTextOutlined, MinusCircleOutlined, PlusOutlined, ReloadOutlined, UnorderedListOutlined} from "@ant-design/icons";
+import {AppstoreOutlined, DeleteOutlined, EditOutlined, FileTextOutlined, GlobalOutlined, MinusCircleOutlined, PlusOutlined, ReloadOutlined, UnorderedListOutlined} from "@ant-design/icons";
 import * as PodBackend from "./backend/PodBackend";
 import * as NamespaceBackend from "./backend/NamespaceBackend";
 import * as Setting from "./Setting";
@@ -40,6 +40,13 @@ class PodListPage extends React.Component {
       logsError: null,
       marketplaceVisible: false,
       modalInitialValues: {},
+      portPickerVisible: false,
+      portPickerPod: null,
+      portPickerOpening: false,
+      portInputVisible: false,
+      portInputPod: null,
+      portInputValue: undefined,
+      portInputOpening: false,
     };
     this.formRef = React.createRef();
   }
@@ -254,11 +261,44 @@ class PodListPage extends React.Component {
     }).catch(e => Setting.showMessage("error", e.message));
   }
 
+  handleOpenUI(pod) {
+    const declared = pod.containerPorts ?? [];
+    const exposed = pod.exposedPorts ?? [];
+    const pick = (declared.length > 0 ? declared : exposed);
+    if (pick.length === 1) {
+      this.doOpenUI(pod, pick[0]);
+      return;
+    }
+    if (pick.length > 1) {
+      this.setState({portPickerVisible: true, portPickerPod: pod, portPickerOpening: false});
+      return;
+    }
+    this.setState({portInputVisible: true, portInputPod: pod, portInputOpening: false, portInputValue: undefined});
+  }
+
+  doOpenUI(pod, containerPort) {
+    this.setState({portPickerOpening: true, portInputOpening: true});
+    PodBackend.openPodUI(pod.namespace, pod.name, containerPort).then(res => {
+      if (res.status === "ok") {
+        window.open(res.data.url, "_blank", "noopener,noreferrer");
+        this.setState({
+          portPickerVisible: false, portPickerPod: null,
+          portInputVisible: false, portInputPod: null, portInputValue: undefined,
+        });
+      } else {
+        Setting.showMessage("error", res.msg);
+      }
+    }).catch(e => Setting.showMessage("error", e.message))
+      .finally(() => this.setState({portPickerOpening: false, portInputOpening: false}));
+  }
+
   render() {
     const {pods, namespaces, loading, error, modalVisible, modalMode, submitting,
       eventsDrawerVisible, eventsPod, events, eventsLoading, eventsError,
       logsDrawerVisible, logsPod, logs, logsLoading, logsError,
-      marketplaceVisible, modalInitialValues} = this.state;
+      marketplaceVisible, modalInitialValues,
+      portPickerVisible, portPickerPod, portPickerOpening,
+      portInputVisible, portInputPod, portInputValue, portInputOpening} = this.state;
 
     const nsOptions = namespaces.map(ns => ({label: ns.name, value: ns.name}));
 
@@ -303,6 +343,15 @@ class PodListPage extends React.Component {
             >
               Events
             </Button>
+            {record.phase === "Running" && (
+              <Tooltip title="Open pod web UI">
+                <Button
+                  size="small"
+                  icon={<GlobalOutlined />}
+                  onClick={() => this.handleOpenUI(record)}
+                />
+              </Tooltip>
+            )}
             <Button
               size="small"
               icon={<EditOutlined />}
@@ -562,6 +611,72 @@ class PodListPage extends React.Component {
             })}
           </div>
         </Drawer>
+
+        <Modal
+          title={portPickerPod ? `Open ${portPickerPod.namespace}/${portPickerPod.name} — pick a port` : "Open"}
+          open={portPickerVisible}
+          onCancel={() => this.setState({portPickerVisible: false, portPickerPod: null})}
+          footer={null}
+          destroyOnHidden
+        >
+          {(() => {
+            if (!portPickerPod) {return null;}
+            const declared = portPickerPod.containerPorts ?? [];
+            const exposed = portPickerPod.exposedPorts ?? [];
+            const merged = Array.from(new Set([...declared, ...exposed])).sort((a, b) => a - b);
+            return merged.map(p => (
+              <Button
+                key={p}
+                block
+                style={{marginBottom: 8}}
+                icon={<GlobalOutlined />}
+                loading={portPickerOpening}
+                onClick={() => this.doOpenUI(portPickerPod, p)}
+              >
+                Open on :{p}
+              </Button>
+            ));
+          })()}
+        </Modal>
+
+        <Modal
+          title={portInputPod ? `Open ${portInputPod.namespace}/${portInputPod.name} — which port?` : "Open"}
+          open={portInputVisible}
+          onCancel={() => this.setState({portInputVisible: false, portInputPod: null, portInputValue: undefined})}
+          onOk={() => {
+            const p = Number(portInputValue);
+            if (!Number.isInteger(p) || p <= 0 || p > 65535) {
+              Setting.showMessage("error", "Enter a port between 1 and 65535");
+              return;
+            }
+            this.setState({portInputOpening: true});
+            this.doOpenUI(portInputPod, p);
+          }}
+          okText="Open"
+          confirmLoading={portInputOpening}
+          destroyOnHidden
+        >
+          <p style={{color: "#666"}}>
+            No port information is known for this pod (the image has no
+            EXPOSE directive). Enter the port the container is listening on.
+          </p>
+          <InputNumber
+            autoFocus
+            min={1}
+            max={65535}
+            placeholder="8000"
+            value={portInputValue}
+            onChange={v => this.setState({portInputValue: v})}
+            onPressEnter={() => {
+              const p = Number(portInputValue);
+              if (Number.isInteger(p) && p > 0 && p <= 65535) {
+                this.setState({portInputOpening: true});
+                this.doOpenUI(portInputPod, p);
+              }
+            }}
+            style={{width: "100%"}}
+          />
+        </Modal>
       </div>
     );
   }

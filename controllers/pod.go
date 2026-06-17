@@ -3,6 +3,7 @@ package controllers
 import (
 	"encoding/json"
 	"strconv"
+	"strings"
 	"sync/atomic"
 	"unsafe"
 
@@ -14,10 +15,8 @@ import (
 	"github.com/casosorg/casos/server"
 )
 
-// adminCfg is atomically set once the apiserver is ready.
 var adminCfg unsafe.Pointer // *rest.Config
 
-// SetAdminRestConfig injects the admin rest config after apiserver bootstrap.
 func SetAdminRestConfig(cfg *rest.Config) {
 	atomic.StorePointer(&adminCfg, unsafe.Pointer(cfg))
 }
@@ -26,10 +25,8 @@ func getAdminRestConfig() *rest.Config {
 	return (*rest.Config)(atomic.LoadPointer(&adminCfg))
 }
 
-// srvCfg is atomically set at startup so controllers can access cert paths.
 var srvCfg unsafe.Pointer // *server.Config
 
-// SetServerConfig stores the server.Config for use by node cert generation.
 func SetServerConfig(cfg *server.Config) {
 	atomic.StorePointer(&srvCfg, unsafe.Pointer(cfg))
 }
@@ -47,6 +44,8 @@ type podSummary struct {
 	Labels          map[string]string `json:"labels"`
 	CreatedAt       string            `json:"createdAt"`
 	ResourceVersion string            `json:"resourceVersion"`
+	ContainerPorts []int32 `json:"containerPorts"`
+	ExposedPorts []int32 `json:"exposedPorts"`
 }
 
 func toPodSummary(p corev1.Pod) podSummary {
@@ -63,11 +62,11 @@ func toPodSummary(p corev1.Pod) podSummary {
 		Labels:          p.Labels,
 		CreatedAt:       p.CreationTimestamp.UTC().Format("2006-01-02 15:04:05"),
 		ResourceVersion: p.ResourceVersion,
+		ContainerPorts:  object.ContainerPortsFromPod(&p),
+		ExposedPorts:    readExposedPortsAnnotation(p.Annotations),
 	}
 }
 
-// GetPods
-// @router /api/get-pods [get]
 func (c *ApiController) GetPods() {
 	cfg := getAdminRestConfig()
 	if cfg == nil {
@@ -87,8 +86,6 @@ func (c *ApiController) GetPods() {
 	c.ResponseOk(result)
 }
 
-// GetPod
-// @router /api/get-pod [get]
 func (c *ApiController) GetPod() {
 	cfg := getAdminRestConfig()
 	if cfg == nil {
@@ -112,10 +109,9 @@ type podRequest struct {
 	ContainerName   string            `json:"containerName"`
 	Labels          map[string]string `json:"labels"`
 	ResourceVersion string            `json:"resourceVersion"`
+	Ports []int32 `json:"ports"`
 }
 
-// AddPod
-// @router /api/add-pod [post]
 func (c *ApiController) AddPod() {
 	cfg := getAdminRestConfig()
 	if cfg == nil {
@@ -133,16 +129,30 @@ func (c *ApiController) AddPod() {
 	if req.ContainerName == "" {
 		req.ContainerName = "app"
 	}
+	container := corev1.Container{Name: req.ContainerName, Image: req.Image}
+	for _, p := range req.Ports {
+		if p > 0 {
+			container.Ports = append(container.Ports, corev1.ContainerPort{
+				ContainerPort: p,
+				Protocol:      corev1.ProtocolTCP,
+			})
+		}
+	}
+	annotations := map[string]string{}
+	if req.Image != "" {
+		if exposed, lookupErr := object.LookupExposedPorts(req.Image); lookupErr == nil {
+			writeExposedPortsAnnotation(annotations, exposed)
+		}
+	}
 	pod := &corev1.Pod{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      req.Name,
-			Namespace: req.Namespace,
-			Labels:    req.Labels,
+			Name:        req.Name,
+			Namespace:   req.Namespace,
+			Labels:      req.Labels,
+			Annotations: annotations,
 		},
 		Spec: corev1.PodSpec{
-			Containers: []corev1.Container{
-				{Name: req.ContainerName, Image: req.Image},
-			},
+			Containers: []corev1.Container{container},
 		},
 	}
 	created, err := object.AddPod(cfg, pod)
@@ -153,8 +163,6 @@ func (c *ApiController) AddPod() {
 	c.ResponseOk(toPodSummary(*created))
 }
 
-// UpdatePod updates pod labels only (pod spec is immutable after creation).
-// @router /api/update-pod [post]
 func (c *ApiController) UpdatePod() {
 	cfg := getAdminRestConfig()
 	if cfg == nil {
@@ -169,7 +177,6 @@ func (c *ApiController) UpdatePod() {
 	if req.Namespace == "" {
 		req.Namespace = "default"
 	}
-	// Fetch current pod to preserve immutable spec.
 	existing, err := object.GetPod(cfg, req.Namespace, req.Name)
 	if err != nil {
 		c.ResponseError(err.Error())
@@ -194,8 +201,6 @@ type eventSummary struct {
 	FirstTimestamp string `json:"firstTimestamp"`
 }
 
-// GetPodEvents returns Kubernetes events for a specific pod.
-// @router /api/get-pod-events [get]
 func (c *ApiController) GetPodEvents() {
 	cfg := getAdminRestConfig()
 	if cfg == nil {
@@ -232,8 +237,6 @@ func (c *ApiController) GetPodEvents() {
 	c.ResponseOk(result)
 }
 
-// GetPodLogs returns stdout/stderr logs for a pod container.
-// @router /api/get-pod-logs [get]
 func (c *ApiController) GetPodLogs() {
 	cfg := getAdminRestConfig()
 	if cfg == nil {
@@ -260,8 +263,6 @@ func (c *ApiController) GetPodLogs() {
 	c.ResponseOk(logs)
 }
 
-// DeletePod
-// @router /api/delete-pod [post]
 func (c *ApiController) DeletePod() {
 	cfg := getAdminRestConfig()
 	if cfg == nil {
@@ -281,4 +282,40 @@ func (c *ApiController) DeletePod() {
 		return
 	}
 	c.ResponseOk()
+}
+
+const exposedPortsAnnotationKey = "casos.io/exposed-ports"
+
+func writeExposedPortsAnnotation(annotations map[string]string, ports []int32) {
+	if len(ports) == 0 {
+		return
+	}
+	parts := make([]string, 0, len(ports))
+	for _, p := range ports {
+		parts = append(parts, strconv.FormatInt(int64(p), 10))
+	}
+	annotations[exposedPortsAnnotationKey] = strings.Join(parts, ",")
+}
+
+func readExposedPortsAnnotation(annotations map[string]string) []int32 {
+	raw, ok := annotations[exposedPortsAnnotationKey]
+	if !ok || raw == "" {
+		return nil
+	}
+	out := make([]int32, 0)
+	for _, tok := range strings.Split(raw, ",") {
+		tok = strings.TrimSpace(tok)
+		if tok == "" {
+			continue
+		}
+		p, err := strconv.ParseInt(tok, 10, 32)
+		if err != nil || p <= 0 || p > 65535 {
+			continue
+		}
+		out = append(out, int32(p))
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
 }
