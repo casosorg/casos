@@ -73,6 +73,10 @@ func InitAPI() {
 	beego.Router("/api/update-secret", &controllers.ApiController{}, "POST:UpdateSecret")
 	beego.Router("/api/delete-secret", &controllers.ApiController{}, "POST:DeleteSecret")
 
+	beego.Router("/api/get-pvcs", &controllers.ApiController{}, "GET:GetPersistentVolumeClaims")
+	beego.Router("/api/add-pvc", &controllers.ApiController{}, "POST:AddPersistentVolumeClaim")
+	beego.Router("/api/delete-pvc", &controllers.ApiController{}, "POST:DeletePersistentVolumeClaim")
+
 	beego.Router("/api/get-deployments", &controllers.ApiController{}, "GET:GetDeployments")
 	beego.Router("/api/get-deployment", &controllers.ApiController{}, "GET:GetDeployment")
 	beego.Router("/api/add-deployment", &controllers.ApiController{}, "POST:AddDeployment")

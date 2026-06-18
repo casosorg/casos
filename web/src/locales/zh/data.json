@@ -56,6 +56,7 @@
     "Successfully deleted": "删除成功",
     "Successfully saved": "保存成功",
     "Sure to delete": "确认删除",
+    "Persistent Volume Claims": "存储卷",
     "Workloads": "工作负载"
   },
   "provider": {
