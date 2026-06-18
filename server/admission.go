@@ -28,7 +28,7 @@ func admissionValidateHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	req := review.Request
-	allowed, err := object.EnforceAdmission(
+	allowed, err := object.EnforceAdmissionPolicy(
 		req.UserInfo.Username,
 		req.Namespace,
 		req.Resource.Resource,

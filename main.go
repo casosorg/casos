@@ -30,7 +30,7 @@ func main() {
 	if err := object.SeedDefaultPolicies(); err != nil {
 		logs.Warning("casbin seed: %v", err)
 	}
-	if err := object.ReloadEnforcer(); err != nil {
+	if err := object.ReloadAllEnforcers(); err != nil {
 		logs.Warning("casbin enforcer init: %v", err)
 	}
 	casdoor.InitCasdoorConfig()

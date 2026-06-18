@@ -10,7 +10,12 @@ import (
 // GetCasbinRules godoc
 // @router /api/get-casbin-rules [get]
 func (c *ApiController) GetCasbinRules() {
-	rules, err := object.GetCasbinRules()
+	scope := c.GetString("scope")
+	if scope == "" {
+		c.ResponseError("scope is required (admission or authorization)")
+		return
+	}
+	rules, err := object.GetCasbinRules(scope)
 	if err != nil {
 		c.ResponseError(err.Error())
 		return
@@ -26,6 +31,10 @@ func (c *ApiController) AddCasbinRule() {
 		c.ResponseError("invalid request body: " + err.Error())
 		return
 	}
+	if rule.Scope != object.ScopeAdmission && rule.Scope != object.ScopeAuthorization {
+		c.ResponseError("scope must be admission or authorization")
+		return
+	}
 	if rule.PType == "" || rule.V0 == "" {
 		c.ResponseError("pType and v0 are required")
 		return
@@ -34,7 +43,7 @@ func (c *ApiController) AddCasbinRule() {
 		c.ResponseError(err.Error())
 		return
 	}
-	if err := object.ReloadEnforcer(); err != nil {
+	if err := object.ReloadEnforcer(rule.Scope); err != nil {
 		c.ResponseError("rule saved but enforcer reload failed: " + err.Error())
 		return
 	}
@@ -45,7 +54,8 @@ func (c *ApiController) AddCasbinRule() {
 // @router /api/delete-casbin-rule [post]
 func (c *ApiController) DeleteCasbinRule() {
 	var body struct {
-		Id string `json:"id"`
+		Id    string `json:"id"`
+		Scope string `json:"scope"`
 	}
 	if err := json.Unmarshal(c.Ctx.Input.RequestBody, &body); err != nil {
 		c.ResponseError("invalid request body: " + err.Error())
@@ -60,9 +70,11 @@ func (c *ApiController) DeleteCasbinRule() {
 		c.ResponseError(err.Error())
 		return
 	}
-	if err := object.ReloadEnforcer(); err != nil {
-		c.ResponseError("rule deleted but enforcer reload failed: " + err.Error())
-		return
+	if body.Scope != "" {
+		if err := object.ReloadEnforcer(body.Scope); err != nil {
+			c.ResponseError("rule deleted but enforcer reload failed: " + err.Error())
+			return
+		}
 	}
 	c.ResponseOk()
 }
@@ -70,7 +82,17 @@ func (c *ApiController) DeleteCasbinRule() {
 // ReloadCasbinEnforcer godoc
 // @router /api/reload-casbin-enforcer [post]
 func (c *ApiController) ReloadCasbinEnforcer() {
-	if err := object.ReloadEnforcer(); err != nil {
+	var body struct {
+		Scope string `json:"scope"`
+	}
+	_ = json.Unmarshal(c.Ctx.Input.RequestBody, &body)
+	var err error
+	if body.Scope == "" {
+		err = object.ReloadAllEnforcers()
+	} else {
+		err = object.ReloadEnforcer(body.Scope)
+	}
+	if err != nil {
 		c.ResponseError(err.Error())
 		return
 	}

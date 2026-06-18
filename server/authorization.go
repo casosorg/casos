@@ -45,7 +45,7 @@ func authorizationHandler(w http.ResponseWriter, r *http.Request) {
 		namespace = "*"
 	}
 
-	allowed, err := object.EnforceAdmission(spec.User, namespace, ra.Resource, ra.Verb)
+	allowed, err := object.EnforceAuthorizationPolicy(spec.User, namespace, ra.Resource, ra.Verb)
 	if err != nil {
 		logs.Error("authz enforce: %v", err)
 		// Return no-opinion on error so the default deny takes effect.

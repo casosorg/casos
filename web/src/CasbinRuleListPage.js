@@ -10,7 +10,10 @@ const {Option} = Select;
 const RESOURCES = ["*", "pods", "deployments", "statefulsets", "services", "ingresses",
   "configmaps", "secrets", "persistentvolumeclaims", "nodes", "namespaces",
   "serviceaccounts", "clusterrolebindings"];
-const ACTIONS = ["*", "CREATE", "UPDATE", "DELETE", "CONNECT"];
+
+const ADMISSION_ACTIONS = ["*", "CREATE", "UPDATE", "DELETE", "CONNECT"];
+const AUTHORIZATION_VERBS = ["*", "get", "list", "watch", "create", "update", "patch", "delete", "deletecollection"];
+
 const PTYPES = [
   {value: "p", label: "p — policy"},
   {value: "g", label: "g — role assignment"},
@@ -44,9 +47,16 @@ class CasbinRuleListPage extends React.Component {
     this.loadRules();
   }
 
+  componentDidUpdate(prevProps) {
+    if (prevProps.scope !== this.props.scope) {
+      this.loadRules();
+    }
+  }
+
   loadRules() {
+    const {scope} = this.props;
     this.setState({loading: true});
-    CasbinRuleBackend.getCasbinRules()
+    CasbinRuleBackend.getCasbinRules(scope)
       .then(res => {
         if (res.status === "ok") {
           this.setState({rules: res.data || [], loading: false});
@@ -62,8 +72,10 @@ class CasbinRuleListPage extends React.Component {
   }
 
   handleAdd(values) {
+    const {scope} = this.props;
     this.setState({submitting: true});
     const rule = {
+      scope,
       pType: values.pType,
       v0: values.v0,
       v1: values.v1 || "",
@@ -90,7 +102,8 @@ class CasbinRuleListPage extends React.Component {
   }
 
   handleDelete(id) {
-    CasbinRuleBackend.deleteCasbinRule(id)
+    const {scope} = this.props;
+    CasbinRuleBackend.deleteCasbinRule(id, scope)
       .then(res => {
         if (res.status === "ok") {
           Setting.showMessage("success", "Rule deleted");
@@ -102,7 +115,8 @@ class CasbinRuleListPage extends React.Component {
   }
 
   handleReload() {
-    CasbinRuleBackend.reloadCasbinEnforcer()
+    const {scope} = this.props;
+    CasbinRuleBackend.reloadCasbinEnforcer(scope)
       .then(res => {
         if (res.status === "ok") {
           Setting.showMessage("success", "Enforcer reloaded");
@@ -114,9 +128,10 @@ class CasbinRuleListPage extends React.Component {
 
   renderAddModal() {
     const {modalVisible, submitting} = this.state;
+    const actionOptions = this.props.scope === "authorization" ? AUTHORIZATION_VERBS : ADMISSION_ACTIONS;
     return (
       <Modal
-        title="Add Casbin Rule"
+        title="Add Rule"
         open={modalVisible}
         onCancel={() => {
           this.setState({modalVisible: false});
@@ -150,9 +165,9 @@ class CasbinRuleListPage extends React.Component {
                           {RESOURCES.map(r => <Option key={r} value={r}>{r}</Option>)}
                         </Select>
                       </Form.Item>
-                      <Form.Item name="v3" label="Action">
-                        <Select placeholder="* for all actions">
-                          {ACTIONS.map(a => <Option key={a} value={a}>{a}</Option>)}
+                      <Form.Item name="v3" label={this.props.scope === "authorization" ? "Verb" : "Action"}>
+                        <Select placeholder="* for all">
+                          {actionOptions.map(a => <Option key={a} value={a}>{a}</Option>)}
                         </Select>
                       </Form.Item>
                       <Form.Item name="v4" label="Effect" rules={[{required: true}]}>
@@ -178,44 +193,20 @@ class CasbinRuleListPage extends React.Component {
 
   render() {
     const {rules, loading} = this.state;
+    const {title, description, scope} = this.props;
+    const actionLabel = scope === "authorization" ? "Verb" : "Action";
 
     const columns = [
+      {title: "Type", dataIndex: "pType", width: 90, render: (v) => ruleTag(v)},
+      {title: "Subject / User", dataIndex: "v0", render: (v) => <Text code>{v}</Text>},
+      {title: "Namespace / Role", dataIndex: "v1", render: (v) => v ? <Text code>{v}</Text> : <Text type="secondary">—</Text>},
+      {title: "Resource", dataIndex: "v2", render: (v) => v ? <Text code>{v}</Text> : <Text type="secondary">—</Text>},
+      {title: actionLabel, dataIndex: "v3", render: (v) => v ? <Tag>{v}</Tag> : <Text type="secondary">—</Text>},
+      {title: "Effect", dataIndex: "v4", width: 80, render: (v, record) => record.pType === "p" ? eftTag(v) : <Text type="secondary">—</Text>},
       {
-        title: "Type",
-        dataIndex: "pType",
-        width: 90,
-        render: (v) => ruleTag(v),
-      },
-      {
-        title: "Subject / User",
-        dataIndex: "v0",
-        render: (v) => <Text code>{v}</Text>,
-      },
-      {
-        title: "Namespace / Role",
-        dataIndex: "v1",
-        render: (v) => v ? <Text code>{v}</Text> : <Text type="secondary">—</Text>,
-      },
-      {
-        title: "Resource",
-        dataIndex: "v2",
-        render: (v) => v ? <Text code>{v}</Text> : <Text type="secondary">—</Text>,
-      },
-      {
-        title: "Action",
-        dataIndex: "v3",
-        render: (v) => v ? <Tag>{v}</Tag> : <Text type="secondary">—</Text>,
-      },
-      {
-        title: "Effect",
-        dataIndex: "v4",
-        width: 80,
-        render: (v, record) => record.pType === "p" ? eftTag(v) : <Text type="secondary">—</Text>,
-      },
-      {
-        title: "Action",
+        title: "Op",
         key: "actions",
-        width: 80,
+        width: 60,
         align: "center",
         render: (_, record) => (
           <Popconfirm title="Delete this rule?" onConfirm={() => this.handleDelete(record.id)}>
@@ -229,10 +220,10 @@ class CasbinRuleListPage extends React.Component {
       <div style={{padding: "24px"}}>
         <div style={{display: "flex", alignItems: "center", marginBottom: 16, gap: 8}}>
           <SafetyCertificateOutlined style={{fontSize: 20, color: "#1677ff"}} />
-          <span style={{fontSize: 16, fontWeight: 600}}>Casbin Admission Policy</span>
+          <span style={{fontSize: 16, fontWeight: 600}}>{title}</span>
           <div style={{flex: 1}} />
           <Space>
-            <Tooltip title="Reload enforcer from DB (auto-reloads on every change)">
+            <Tooltip title="Reload enforcer from DB (auto-reloads on every mutation)">
               <Button icon={<ReloadOutlined />} onClick={() => this.handleReload()}>Reload Enforcer</Button>
             </Tooltip>
             <Button type="primary" icon={<PlusOutlined />} onClick={() => this.setState({modalVisible: true})}>
@@ -241,13 +232,11 @@ class CasbinRuleListPage extends React.Component {
           </Space>
         </div>
 
-        <div style={{marginBottom: 12, padding: "8px 12px", background: "rgba(22,119,255,0.05)", borderRadius: 6, border: "1px solid rgba(22,119,255,0.15)"}}>
-          <Text type="secondary" style={{fontSize: 12}}>
-            The same rules are enforced by two in-process webhooks: <strong>ValidatingAdmissionWebhook</strong> (<Text code style={{fontSize: 11}}>casbin-admission</Text>) intercepts write operations before resources are persisted, and <strong>Authorization Webhook</strong> intercepts every API request (get / list / watch / create …) before it reaches RBAC.
-            <br />
-            <strong>p</strong> = policy (subject, namespace, resource, action, <em>effect</em>) · <strong>g</strong> = role assignment · <Text code style={{fontSize: 11}}>*</Text> = wildcard · effect <Text code style={{fontSize: 11}}>allow</Text> / <Text code style={{fontSize: 11}}>deny</Text>. A default <Text code style={{fontSize: 11}}>p, *, *, *, *, allow</Text> rule is seeded on first run so everything is permitted until you refine the policy. system:* users bypass the authorization webhook.
-          </Text>
-        </div>
+        {description && (
+          <div style={{marginBottom: 12, padding: "8px 12px", background: "rgba(22,119,255,0.05)", borderRadius: 6, border: "1px solid rgba(22,119,255,0.15)"}}>
+            <Text type="secondary" style={{fontSize: 12}}>{description}</Text>
+          </div>
+        )}
 
         <Table
           columns={columns}
