@@ -68,7 +68,7 @@ export function deletePod(namespace, name) {
   }).then(res => res.json());
 }
 
-export function openPodUI(namespace, name) {
+export function openPodUI(namespace, name, containerPort) {
   return fetch(`${Setting.ServerUrl}/api/open-pod-ui`, {
     method: "POST",
     credentials: "include",
@@ -76,6 +76,6 @@ export function openPodUI(namespace, name) {
       "Content-Type": "application/json",
       "Accept-Language": Setting.getAcceptLanguage(),
     },
-    body: JSON.stringify({namespace, name}),
+    body: JSON.stringify({namespace, name, containerPort}),
   }).then(res => res.json());
 }
