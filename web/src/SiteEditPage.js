@@ -1,24 +1,10 @@
 import React from "react";
 import Loading from "./common/Loading";
-import {Button, Card, Col, Image, Input, Row, Space, Tree} from "antd";
+import {Button, Card, Col, Image, Input, Row, Space} from "antd";
 import {EyeInvisibleOutlined, EyeTwoTone, LinkOutlined} from "@ant-design/icons";
 import * as SiteBackend from "./backend/SiteBackend";
 import * as Setting from "./Setting";
 import i18next from "i18next";
-
-const casosNavTreeData = [
-  {title: "Dashboard", key: "/dashboard"},
-  {title: "Workloads", key: "/workloads", children: [{title: "Deployments", key: "/deployments"}, {title: "Pods", key: "/pods"}]},
-  {title: "Cluster", key: "/cluster", children: [
-    {title: "Nodes", key: "/nodes"},
-    {title: "Namespaces", key: "/namespaces"},
-    {title: "Service Accounts", key: "/serviceaccounts"},
-  ]},
-  {title: "Configuration", key: "/configuration", children: [{title: "ConfigMaps", key: "/configmaps"}]},
-  {title: "Networking", key: "/networking", children: [{title: "Services", key: "/services"}]},
-  {title: "Access Control", key: "/accesscontrol", children: [{title: "ClusterRoleBindings", key: "/clusterrolebindings"}]},
-  {title: "Admin", key: "/admin", children: [{title: "Sites", key: "/sites"}]},
-];
 
 class SiteEditPage extends React.Component {
   constructor(props) {
@@ -168,21 +154,6 @@ class SiteEditPage extends React.Component {
               Setting.getLabel(i18next.t("general:Footer HTML"), i18next.t("general:Footer HTML - Tooltip")),
               <Input.TextArea rows={3} value={site.footerHtml} onChange={e => this.updateSiteField("footerHtml", e.target.value)} />,
               12
-            )}
-            {this.renderField(
-              Setting.getLabel(i18next.t("site:Navbar items"), i18next.t("site:Navbar items - Tooltip")),
-              <Tree
-                checkable
-                treeData={casosNavTreeData}
-                checkedKeys={site.navItems && !site.navItems.includes("all") ? site.navItems : casosNavTreeData.flatMap(n => [n.key, ...(n.children || []).map(c => c.key)])}
-                defaultExpandAll
-                onCheck={(checked) => {
-                  const checkedArr = Array.isArray(checked) ? [...checked] : [...checked.checked];
-                  if (!checkedArr.includes("/sites")) {checkedArr.push("/sites");}
-                  this.updateSiteField("navItems", checkedArr);
-                }}
-              />,
-              24
             )}
           </Row>
         </Card>

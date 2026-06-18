@@ -71,20 +71,6 @@ function persistMenuOpenKeys(keys) {
   }
 }
 
-function filterMenuItems(menuItems, navItems) {
-  if (!navItems || navItems.includes("all")) {return menuItems;}
-  const effectiveNavItems = new Set(navItems);
-  const filteredItems = menuItems.map(item => {
-    if (!Array.isArray(item.children)) {return item;}
-    const filteredChildren = item.children.filter(child => effectiveNavItems.has(child.key));
-    return {...item, children: filteredChildren};
-  });
-  return filteredItems.filter(item => {
-    if (Array.isArray(item.children)) {return item.children.length > 0;}
-    return effectiveNavItems.has(item.key);
-  });
-}
-
 function ManagementPage(props) {
   useTranslation();
   const [siderCollapsed, setSiderCollapsed] = useState(() => localStorage.getItem("siderCollapsed") === "true");
@@ -217,7 +203,7 @@ function ManagementPage(props) {
         Setting.getItem(<Link to="/sites/site-built-in">{i18next.t("general:Sites")}</Link>, "/sites"),
       ]),
     ];
-    return filterMenuItems(allItems, site?.navItems);
+    return allItems;
   }
 
   function renderRouter() {

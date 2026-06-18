@@ -10,14 +10,13 @@ type Site struct {
 	CreatedTime string `xorm:"varchar(100)" json:"createdTime"`
 	DisplayName string `xorm:"varchar(100)" json:"displayName"`
 
-	ThemeColor    string   `xorm:"varchar(100)" json:"themeColor"`
-	HtmlTitle     string   `xorm:"varchar(100)" json:"htmlTitle"`
-	FaviconUrl    string   `xorm:"varchar(200)" json:"faviconUrl"`
-	LogoUrl       string   `xorm:"varchar(200)" json:"logoUrl"`
-	NavbarHtml    string   `xorm:"mediumtext" json:"navbarHtml"`
-	FooterHtml    string   `xorm:"mediumtext" json:"footerHtml"`
-	StaticBaseUrl string   `xorm:"varchar(500)" json:"staticBaseUrl"`
-	NavItems      []string `xorm:"text" json:"navItems"`
+	ThemeColor    string `xorm:"varchar(100)" json:"themeColor"`
+	HtmlTitle     string `xorm:"varchar(100)" json:"htmlTitle"`
+	FaviconUrl    string `xorm:"varchar(200)" json:"faviconUrl"`
+	LogoUrl       string `xorm:"varchar(200)" json:"logoUrl"`
+	NavbarHtml    string `xorm:"mediumtext" json:"navbarHtml"`
+	FooterHtml    string `xorm:"mediumtext" json:"footerHtml"`
+	StaticBaseUrl string `xorm:"varchar(500)" json:"staticBaseUrl"`
 
 	Issuer       string `xorm:"varchar(500)" json:"issuer"`
 	ClientId     string `xorm:"varchar(100)" json:"clientId"`
@@ -103,7 +102,6 @@ func InitSite() {
 		Name:        "site-built-in",
 		DisplayName: "CasOS",
 		HtmlTitle:   "CasOS",
-		NavItems:    []string{"all"},
 	}
 	_, _ = AddSite(builtIn)
 }
