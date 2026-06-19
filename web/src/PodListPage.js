@@ -2,12 +2,13 @@ import React from "react";
 import {
   Alert, Button, Drawer, Form, Input, Modal, Popconfirm, Select, Space, Table, Tag, Tooltip
 } from "antd";
-import {AppstoreOutlined, DeleteOutlined, EditOutlined, FileTextOutlined, MinusCircleOutlined, PlusOutlined, ReloadOutlined, UnorderedListOutlined} from "@ant-design/icons";
+import {AppstoreOutlined, CodeOutlined, DeleteOutlined, EditOutlined, FileTextOutlined, MinusCircleOutlined, PlusOutlined, ReloadOutlined, UnorderedListOutlined} from "@ant-design/icons";
 import * as PodBackend from "./backend/PodBackend";
 import * as NamespaceBackend from "./backend/NamespaceBackend";
 import * as Setting from "./Setting";
 import DockerHubModal from "./DockerHubModal";
 import PodLogsDrawer from "./PodLogsDrawer";
+import PodTerminalDrawer from "./PodTerminalDrawer";
 
 const phaseColor = {
   Running: "green",
@@ -36,6 +37,8 @@ class PodListPage extends React.Component {
       eventsError: null,
       logsDrawerVisible: false,
       logsPod: null,
+      terminalDrawerVisible: false,
+      terminalPod: null,
       marketplaceVisible: false,
       modalInitialValues: {},
     };
@@ -213,6 +216,7 @@ class PodListPage extends React.Component {
     const {pods, namespaces, loading, error, modalVisible, modalMode, submitting,
       eventsDrawerVisible, eventsPod, events, eventsLoading, eventsError,
       logsDrawerVisible, logsPod,
+      terminalDrawerVisible, terminalPod,
       marketplaceVisible, modalInitialValues} = this.state;
 
     const nsOptions = namespaces.map(ns => ({label: ns.name, value: ns.name}));
@@ -250,6 +254,14 @@ class PodListPage extends React.Component {
               onClick={() => this.setState({logsDrawerVisible: true, logsPod: record})}
             >
               Logs
+            </Button>
+            <Button
+              size="small"
+              icon={<CodeOutlined />}
+              disabled={record.phase !== "Running"}
+              onClick={() => this.setState({terminalDrawerVisible: true, terminalPod: record})}
+            >
+              Terminal
             </Button>
             <Button
               size="small"
@@ -438,6 +450,12 @@ class PodListPage extends React.Component {
           pod={logsPod}
           open={logsDrawerVisible}
           onClose={() => this.setState({logsDrawerVisible: false, logsPod: null})}
+        />
+
+        <PodTerminalDrawer
+          pod={terminalPod}
+          open={terminalDrawerVisible}
+          onClose={() => this.setState({terminalDrawerVisible: false, terminalPod: null})}
         />
 
         <Drawer
