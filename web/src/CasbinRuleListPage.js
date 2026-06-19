@@ -127,7 +127,7 @@ class CasbinRuleListPage extends React.Component {
     const {modalVisible, submitting} = this.state;
     const {scope} = this.props;
     const actionOptions = scope === "authorization" ? AUTHORIZATION_VERBS : ADMISSION_ACTIONS;
-    const actionLabel = scope === "authorization" ? i18next.t("policy:Verb") : i18next.t("policy:Action");
+    const actionLabel = scope === "authorization" ? i18next.t("policy:Verb") : i18next.t("general:Action");
 
     return (
       <Modal
@@ -200,7 +200,7 @@ class CasbinRuleListPage extends React.Component {
   render() {
     const {rules, loading} = this.state;
     const {title, description, scope} = this.props;
-    const actionLabel = scope === "authorization" ? i18next.t("policy:Verb") : i18next.t("policy:Action");
+    const actionLabel = scope === "authorization" ? i18next.t("policy:Verb") : i18next.t("general:Action");
 
     const columns = [
       {title: i18next.t("policy:Type"), dataIndex: "pType", width: 90, render: (v) => ruleTag(v)},
