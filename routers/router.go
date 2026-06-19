@@ -118,6 +118,8 @@ func InitAPI() {
 	beego.Router("/api/update-hpa", &controllers.ApiController{}, "POST:UpdateHPA")
 	beego.Router("/api/delete-hpa", &controllers.ApiController{}, "POST:DeleteHPA")
 
+	beego.Router("/api/get-aggregated-logs", &controllers.ApiController{}, "GET:GetAggregatedLogs")
+
 	beego.Router("/api/pod-terminal", &controllers.ApiController{}, "GET:PodTerminal")
 	beego.Router("/api/pod-file-list", &controllers.ApiController{}, "GET:ListPodFiles")
 	beego.Router("/api/pod-file-download", &controllers.ApiController{}, "GET:DownloadPodFile")

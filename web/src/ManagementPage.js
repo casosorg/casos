@@ -7,6 +7,7 @@ import {
   ClusterOutlined,
   DashboardOutlined,
   DownOutlined,
+  FileSearchOutlined,
   LayoutOutlined,
   LockOutlined,
   LogoutOutlined,
@@ -44,6 +45,7 @@ import AppStorePage from "./AppStorePage";
 import AdmissionPolicyPage from "./AdmissionPolicyPage";
 import AuthorizationPolicyPage from "./AuthorizationPolicyPage";
 import TrivyScanPage from "./TrivyScanPage";
+import LogSearchPage from "./LogSearchPage";
 import i18next from "i18next";
 
 const {Header, Footer, Content, Sider} = Layout;
@@ -51,7 +53,7 @@ const {Header, Footer, Content, Sider} = Layout;
 function getMenuParentKey(uri) {
   if (!uri) {return null;}
   if (uri === "/dashboard" || uri === "/app-store") {return null;}
-  if (uri.includes("/pods") || uri.includes("/deployments") || uri.includes("/statefulsets") || uri.includes("/cronjobs") || uri.includes("/hpas")) {return "/workloads";}
+  if (uri.includes("/pods") || uri.includes("/deployments") || uri.includes("/statefulsets") || uri.includes("/cronjobs") || uri.includes("/hpas") || uri.includes("/log-search")) {return "/workloads";}
   if (uri.includes("/nodes") || uri.includes("/namespaces") || uri.includes("/serviceaccounts")) {return "/cluster";}
   if (uri.includes("/configmaps") || uri.includes("/secrets") || uri.includes("/pvcs")) {return "/configuration";}
   if (uri.includes("/ingresses") || uri.includes("/networkpolicies")) {return "/networking";}
@@ -200,6 +202,7 @@ function ManagementPage(props) {
         Setting.getItem(<Link to="/pods">{i18next.t("general:Pods")}</Link>, "/pods"),
         Setting.getItem(<Link to="/cronjobs">{i18next.t("general:Cron Jobs")}</Link>, "/cronjobs"),
         Setting.getItem(<Link to="/hpas">{i18next.t("general:Horizontal Pod Autoscaler")}</Link>, "/hpas"),
+        Setting.getItem(<Link to="/log-search"><FileSearchOutlined /> {i18next.t("general:Log Search")}</Link>, "/log-search"),
       ]),
       Setting.getItem(<Link to="/nodes">{i18next.t("general:Cluster")}</Link>, "/cluster", <ClusterOutlined />, [
         Setting.getItem(<Link to="/nodes">{i18next.t("general:Nodes")}</Link>, "/nodes"),
@@ -240,6 +243,7 @@ function ManagementPage(props) {
         <Route exact path="/pods" render={(props) => <PodListPage {...props} />} />
         <Route exact path="/cronjobs" render={(props) => <CronJobListPage {...props} />} />
         <Route exact path="/hpas" render={(props) => <HPAListPage {...props} />} />
+        <Route exact path="/log-search" render={(props) => <LogSearchPage {...props} />} />
         <Route exact path="/nodes" render={(props) => <NodeListPage {...props} />} />
         <Route exact path="/namespaces" render={(props) => <NamespaceListPage {...props} />} />
         <Route exact path="/serviceaccounts" render={(props) => <ServiceAccountListPage {...props} />} />
