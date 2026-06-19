@@ -221,7 +221,7 @@ class ServiceAccountListPage extends React.Component {
         />
 
         <Modal
-          title={modalMode === "add" ? "Add ServiceAccount" : "Edit ServiceAccount"}
+          title={modalMode === "add" ? "Add Service Account" : "Edit Service Account"}
           open={modalVisible}
           onOk={() => this.handleSubmit()}
           onCancel={() => this.closeModal()}

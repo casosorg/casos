@@ -215,7 +215,7 @@ class ClusterRoleBindingListPage extends React.Component {
         />
 
         <Modal
-          title={modalMode === "add" ? "Add ClusterRoleBinding" : "Edit ClusterRoleBinding"}
+          title={modalMode === "add" ? "Add Cluster Role Binding" : "Edit Cluster Role Binding"}
           open={modalVisible}
           onOk={() => this.handleSubmit()}
           onCancel={() => this.closeModal()}

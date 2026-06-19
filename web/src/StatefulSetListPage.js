@@ -267,7 +267,7 @@ class StatefulSetListPage extends React.Component {
         />
 
         <Modal
-          title={modalMode === "add" ? "Add StatefulSet" : "Edit StatefulSet"}
+          title={modalMode === "add" ? "Add Stateful Set" : "Edit Stateful Set"}
           open={modalVisible}
           onOk={() => this.handleSubmit()}
           onCancel={() => this.closeModal()}

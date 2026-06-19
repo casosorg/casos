@@ -215,7 +215,7 @@ class ConfigMapListPage extends React.Component {
         />
 
         <Modal
-          title={modalMode === "add" ? "Add ConfigMap" : "Edit ConfigMap"}
+          title={modalMode === "add" ? "Add Config Map" : "Edit Config Map"}
           open={modalVisible}
           onOk={() => this.handleSubmit()}
           onCancel={() => this.closeModal()}
