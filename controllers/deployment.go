@@ -20,6 +20,7 @@ type deploymentSummary struct {
 	AvailableReplicas int32           `json:"availableReplicas"`
 	Image             string          `json:"image"`
 	EnvVars           []envVarSummary `json:"envVars"`
+	Volumes           []volumeSummary `json:"volumes"`
 	CreatedAt         string          `json:"createdAt"`
 	ResourceVersion   string          `json:"resourceVersion"`
 }
@@ -41,6 +42,7 @@ func toDeploymentSummary(d appsv1.Deployment) deploymentSummary {
 		AvailableReplicas: d.Status.AvailableReplicas,
 		Image:             image,
 		EnvVars:           extractEnvVars(d.Spec.Template.Spec.Containers),
+		Volumes:           extractVolumes(d),
 		CreatedAt:         d.CreationTimestamp.UTC().Format("2006-01-02 15:04:05"),
 		ResourceVersion:   d.ResourceVersion,
 	}
@@ -94,6 +96,7 @@ type deploymentRequest struct {
 	CpuRequest      string          `json:"cpuRequest"`
 	MemoryRequest   string          `json:"memoryRequest"`
 	EnvVars         []envVarRequest `json:"envVars"`
+	Volumes         []volumeRequest `json:"volumes"`
 	ResourceVersion string          `json:"resourceVersion"`
 }
 
@@ -124,6 +127,9 @@ func buildDeployment(req deploymentRequest) *appsv1.Deployment {
 		container.Resources = corev1.ResourceRequirements{Requests: reqs}
 	}
 
+	podVolumes, mounts := buildPodVolumes(req.Name, req.Volumes)
+	container.VolumeMounts = mounts
+
 	return &appsv1.Deployment{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:            req.Name,
@@ -141,6 +147,7 @@ func buildDeployment(req deploymentRequest) *appsv1.Deployment {
 				},
 				Spec: corev1.PodSpec{
 					Containers: []corev1.Container{container},
+					Volumes:    podVolumes,
 				},
 			},
 		},
@@ -162,6 +169,10 @@ func (c *ApiController) AddDeployment() {
 	}
 	if req.Namespace == "" {
 		req.Namespace = "default"
+	}
+	if err := ensureDeploymentPVCs(cfg, req.Namespace, req.Name, req.Volumes); err != nil {
+		c.ResponseError(err.Error())
+		return
 	}
 	created, err := object.AddDeployment(cfg, buildDeployment(req))
 	if err != nil {

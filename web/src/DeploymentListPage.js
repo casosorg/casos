@@ -2,17 +2,18 @@ import React from "react";
 import {
   Alert, Button, Divider, Form, Input, InputNumber, Modal, Popconfirm, Select, Space, Table, Tag, Tooltip, Typography
 } from "antd";
-import {DeleteOutlined, EditOutlined, PlusOutlined, ReloadOutlined, ShareAltOutlined, SyncOutlined} from "@ant-design/icons";
+import {DeleteOutlined, EditOutlined, HddOutlined, PlusOutlined, ReloadOutlined, ShareAltOutlined, SyncOutlined} from "@ant-design/icons";
 import * as DeploymentBackend from "./backend/DeploymentBackend";
 import * as NamespaceBackend from "./backend/NamespaceBackend";
 import * as ConfigMapBackend from "./backend/ConfigMapBackend";
 import * as SecretBackend from "./backend/SecretBackend";
 import * as ServiceBackend from "./backend/ServiceBackend";
 import * as NodeBackend from "./backend/NodeBackend";
-import * as PodBackend from "./backend/PodBackend";
 import * as MetricsBackend from "./backend/MetricsBackend";
 import * as Setting from "./Setting";
 import DeploymentExposeModal from "./DeploymentExposeModal";
+import DeploymentUpdateImageModal from "./DeploymentUpdateImageModal";
+import DeploymentStorageEditor from "./DeploymentStorageEditor";
 import EnvVarEditor, {ENV_SOURCE_CONFIGMAP, ENV_SOURCE_PLAIN, ENV_SOURCE_SECRET} from "./EnvVarEditor";
 import ReplicasControl from "./ReplicasControl";
 
@@ -61,12 +62,9 @@ class DeploymentListPage extends React.Component {
       submitting: false,
       editingDeploy: null,
       exposeDeploy: null,
-      envVars: [],
       updateImageDeploy: null,
-      updateImageTags: [],
-      updateImageTagsLoading: false,
-      updateImageSelectedTag: null,
-      updateImageSubmitting: false,
+      envVars: [],
+      volumes: [],
       podMetrics: [],
     };
     this.formRef = React.createRef();
@@ -82,17 +80,13 @@ class DeploymentListPage extends React.Component {
 
   fetchNamespaces() {
     NamespaceBackend.getNamespaces().then(res => {
-      if (res.status === "ok") {
-        this.setState({namespaces: res.data ?? []});
-      }
+      if (res.status === "ok") {this.setState({namespaces: res.data ?? []});}
     }).catch(() => {});
   }
 
   fetchServices() {
     ServiceBackend.getServices().then(res => {
-      if (res.status === "ok") {
-        this.setState({services: res.data ?? []});
-      }
+      if (res.status === "ok") {this.setState({services: res.data ?? []});}
     }).catch(() => {});
   }
 
@@ -101,16 +95,10 @@ class DeploymentListPage extends React.Component {
       if (res.status === "ok") {
         const nodes = res.data ?? [];
         for (const node of nodes) {
-          if (node.externalIP) {
-            this.setState({nodeIP: node.externalIP});
-            return;
-          }
+          if (node.externalIP) {this.setState({nodeIP: node.externalIP}); return;}
         }
         for (const node of nodes) {
-          if (node.internalIP) {
-            this.setState({nodeIP: node.internalIP});
-            return;
-          }
+          if (node.internalIP) {this.setState({nodeIP: node.internalIP}); return;}
         }
       }
     }).catch(() => {});
@@ -118,18 +106,8 @@ class DeploymentListPage extends React.Component {
 
   fetchPodMetrics() {
     MetricsBackend.getMetrics().then(res => {
-      if (res.status === "ok") {
-        this.setState({podMetrics: res.data?.pods ?? []});
-      }
+      if (res.status === "ok") {this.setState({podMetrics: res.data?.pods ?? []});}
     }).catch(() => {});
-  }
-
-  getAccessUrls(deploy) {
-    const {services, nodeIP} = this.state;
-    if (!nodeIP) {return [];}
-    const svc = services.find(s => s.name === deploy.name && s.namespace === deploy.namespace && s.type === "NodePort");
-    if (!svc) {return [];}
-    return (svc.ports ?? []).filter(p => p.nodePort).map(p => `http://${nodeIP}:${p.nodePort}`);
   }
 
   fetchDeployments() {
@@ -160,9 +138,17 @@ class DeploymentListPage extends React.Component {
     }).catch(() => {});
   }
 
+  getAccessUrls(deploy) {
+    const {services, nodeIP} = this.state;
+    if (!nodeIP) {return [];}
+    const svc = services.find(s => s.name === deploy.name && s.namespace === deploy.namespace && s.type === "NodePort");
+    if (!svc) {return [];}
+    return (svc.ports ?? []).filter(p => p.nodePort).map(p => `http://${nodeIP}:${p.nodePort}`);
+  }
+
   openAddModal() {
     const defaultNs = this.state.namespaces.length > 0 ? this.state.namespaces[0].name : "default";
-    this.setState({modalVisible: true, modalMode: "add", editingDeploy: null, envVars: []}, () => {
+    this.setState({modalVisible: true, modalMode: "add", editingDeploy: null, envVars: [], volumes: []}, () => {
       setTimeout(() => {
         this.formRef.current?.setFieldsValue({namespace: defaultNs, name: "", replicas: 1, image: "", containerName: ""});
         this.fetchConfigMapsAndSecrets(defaultNs);
@@ -172,7 +158,8 @@ class DeploymentListPage extends React.Component {
 
   openEditModal(deploy) {
     this.setState(
-      {modalVisible: true, modalMode: "edit", editingDeploy: deploy, envVars: deploymentEnvVarsToEditorRows(deploy.envVars)},
+      {modalVisible: true, modalMode: "edit", editingDeploy: deploy,
+        envVars: deploymentEnvVarsToEditorRows(deploy.envVars), volumes: deploy.volumes ?? []},
       () => {
         setTimeout(() => {
           this.formRef.current?.setFieldsValue({
@@ -185,48 +172,7 @@ class DeploymentListPage extends React.Component {
   }
 
   closeModal() {
-    this.setState({modalVisible: false, editingDeploy: null, envVars: []});
-  }
-
-  openUpdateImageModal(deploy) {
-    const imageRepo = deploy.image ? deploy.image.split(":")[0] : "";
-    this.setState({
-      updateImageDeploy: deploy,
-      updateImageTags: [],
-      updateImageTagsLoading: true,
-      updateImageSelectedTag: null,
-    });
-    PodBackend.getDockerHubImageTags(imageRepo).then(res => {
-      if (res.status === "ok") {
-        this.setState({updateImageTags: res.data ?? []});
-      } else {
-        Setting.showMessage("error", res.msg);
-      }
-    }).catch(e => Setting.showMessage("error", e.message))
-      .finally(() => this.setState({updateImageTagsLoading: false}));
-  }
-
-  handleUpdateImage() {
-    const {updateImageDeploy, updateImageSelectedTag} = this.state;
-    if (!updateImageSelectedTag) {
-      Setting.showMessage("error", "Please select a version");
-      return;
-    }
-    const imageRepo = updateImageDeploy.image.split(":")[0];
-    const newImage = `${imageRepo}:${updateImageSelectedTag}`;
-    this.setState({updateImageSubmitting: true});
-    DeploymentBackend.updateDeployment({...updateImageDeploy, image: newImage})
-      .then(res => {
-        if (res.status === "ok") {
-          Setting.showMessage("success", `Updated to ${newImage}`);
-          this.setState({updateImageDeploy: null});
-          this.fetchDeployments();
-        } else {
-          Setting.showMessage("error", res.msg);
-        }
-      })
-      .catch(e => Setting.showMessage("error", e.message))
-      .finally(() => this.setState({updateImageSubmitting: false}));
+    this.setState({modalVisible: false, editingDeploy: null, envVars: [], volumes: []});
   }
 
   handleSubmit() {
@@ -238,6 +184,9 @@ class DeploymentListPage extends React.Component {
         image: values.image,
         containerName: values.containerName ?? "",
         envVars: editorRowsToPayload(this.state.envVars),
+        volumes: this.state.modalMode === "add"
+          ? (this.state.volumes ?? []).filter(v => v.mountPath)
+          : [],
       };
 
       this.setState({submitting: true});
@@ -284,11 +233,11 @@ class DeploymentListPage extends React.Component {
   }
 
   render() {
-    const {deployments, namespaces, configMaps, secrets, loading, error, modalVisible, modalMode, submitting, exposeDeploy, envVars,
-      updateImageDeploy, updateImageTags, updateImageTagsLoading, updateImageSelectedTag, updateImageSubmitting, podMetrics} = this.state;
+    const {deployments, namespaces, configMaps, secrets, loading, error,
+      modalVisible, modalMode, submitting, exposeDeploy, updateImageDeploy,
+      envVars, volumes, podMetrics} = this.state;
 
     const metricsAvailable = podMetrics.length > 0;
-
     const getDeployMetrics = (deploy) => {
       const pods = podMetrics.filter(
         p => p.namespace === deploy.namespace && p.name.startsWith(deploy.name + "-")
@@ -314,6 +263,24 @@ class DeploymentListPage extends React.Component {
               <span style={{fontSize: 13, color: "#595959"}}>{repo} </span>
               <Tag color="blue" style={{marginLeft: 2}}>{tag}</Tag>
             </Tooltip>
+          );
+        },
+      },
+      {
+        title: "Storage",
+        key: "storage",
+        width: 200,
+        render: (_, r) => {
+          const vols = r.volumes ?? [];
+          if (vols.length === 0) {return <span style={{color: "#bfbfbf", fontSize: 12}}>—</span>;}
+          return (
+            <Space size={4} wrap>
+              {vols.map((v, i) => (
+                <Tooltip key={i} title={`PVC: ${v.claimName}`}>
+                  <Tag icon={<HddOutlined />} color="geekblue" style={{fontSize: 11}}>{v.mountPath}</Tag>
+                </Tooltip>
+              ))}
+            </Space>
           );
         },
       },
@@ -344,9 +311,7 @@ class DeploymentListPage extends React.Component {
         key: "metrics",
         width: 180,
         render: (_, r) => {
-          if (!metricsAvailable) {
-            return <span style={{color: "#bfbfbf", fontSize: 12}}>—</span>;
-          }
+          if (!metricsAvailable) {return <span style={{color: "#bfbfbf", fontSize: 12}}>—</span>;}
           const {cpuM, memMi} = getDeployMetrics(r);
           const memStr = memMi >= 1024 ? `${(memMi / 1024).toFixed(1)}G` : `${memMi}M`;
           return (
@@ -363,9 +328,7 @@ class DeploymentListPage extends React.Component {
           const urls = this.getAccessUrls(record);
           if (urls.length === 0) {return null;}
           return urls.map((url, i) => (
-            <a key={i} href={url} target="_blank" rel="noopener noreferrer" style={{display: "block"}}>
-              {url}
-            </a>
+            <a key={i} href={url} target="_blank" rel="noopener noreferrer" style={{display: "block"}}>{url}</a>
           ));
         },
       },
@@ -377,13 +340,11 @@ class DeploymentListPage extends React.Component {
         render: (_, record) => (
           <Space size={4} wrap>
             <Button size="small" icon={<EditOutlined />} onClick={() => this.openEditModal(record)}>Edit</Button>
-            <Button size="small" icon={<SyncOutlined />} onClick={() => this.openUpdateImageModal(record)}>Update Image</Button>
+            <Button size="small" icon={<SyncOutlined />} onClick={() => this.setState({updateImageDeploy: record})}>Update Image</Button>
             <Button size="small" icon={<ShareAltOutlined />} onClick={() => this.setState({exposeDeploy: record})}>Expose</Button>
             <Popconfirm
               title={`Delete Deployment "${record.name}"?`}
-              okText="Delete"
-              okType="danger"
-              cancelText="Cancel"
+              okText="Delete" okType="danger" cancelText="Cancel"
               onConfirm={() => this.handleDelete(record)}
             >
               <Button size="small" danger icon={<DeleteOutlined />}>Delete</Button>
@@ -418,51 +379,12 @@ class DeploymentListPage extends React.Component {
           )}
         />
 
-        <Modal
-          title={
-            updateImageDeploy
-              ? `Update Image — ${updateImageDeploy.name}`
-              : "Update Image"
-          }
+        <DeploymentUpdateImageModal
+          deploy={updateImageDeploy}
           open={updateImageDeploy !== null}
-          onOk={() => this.handleUpdateImage()}
-          onCancel={() => this.setState({updateImageDeploy: null})}
-          confirmLoading={updateImageSubmitting}
-          okText="Update"
-          width={480}
-          destroyOnHidden
-        >
-          {updateImageDeploy && (() => {
-            const colonIdx = (updateImageDeploy.image ?? "").lastIndexOf(":");
-            const repo = colonIdx > 0 ? updateImageDeploy.image.slice(0, colonIdx) : updateImageDeploy.image;
-            const currentTag = colonIdx > 0 ? updateImageDeploy.image.slice(colonIdx + 1) : "latest";
-            return (
-              <div>
-                <div style={{marginBottom: 12, fontSize: 13, color: "#595959"}}>
-                  Image: <b>{repo}</b> &nbsp; Current version: <Tag color="blue">{currentTag}</Tag>
-                </div>
-                <Select
-                  style={{width: "100%"}}
-                  placeholder="Select a version to update to"
-                  loading={updateImageTagsLoading}
-                  value={updateImageSelectedTag}
-                  onChange={v => this.setState({updateImageSelectedTag: v})}
-                  showSearch
-                  options={updateImageTags.map(t => ({
-                    label: (
-                      <span>
-                        {t}
-                        {t === currentTag && <Tag color="blue" style={{marginLeft: 8}}>current</Tag>}
-                      </span>
-                    ),
-                    value: t,
-                  }))}
-                  notFoundContent={updateImageTagsLoading ? "Loading…" : "No tags found"}
-                />
-              </div>
-            );
-          })()}
-        </Modal>
+          onClose={() => this.setState({updateImageDeploy: null})}
+          onUpdated={() => this.fetchDeployments()}
+        />
 
         <DeploymentExposeModal
           deploy={exposeDeploy}
@@ -514,6 +436,16 @@ class DeploymentListPage extends React.Component {
               onChange={rows => this.setState({envVars: rows})}
               configMaps={configMaps}
               secrets={secrets}
+            />
+
+            <Divider orientation="left" orientationMargin={0} style={{marginTop: 8, marginBottom: 12}}>
+              <Text style={{fontSize: 13}}>Persistent Storage</Text>
+            </Divider>
+
+            <DeploymentStorageEditor
+              mode={modalMode}
+              value={volumes}
+              onChange={v => this.setState({volumes: v})}
             />
           </Form>
         </Modal>
