@@ -43,3 +43,14 @@ export function deleteIngress(namespace, name) {
     body: JSON.stringify({namespace, name}),
   }).then(res => res.json());
 }
+
+export function getIngressCertStatus(namespace, name) {
+  return fetch(
+    `${Setting.ServerUrl}/api/get-ingress-cert-status?namespace=${encodeURIComponent(namespace)}&name=${encodeURIComponent(name)}`,
+    {
+      method: "GET",
+      credentials: "include",
+      headers: {"Accept-Language": Setting.getAcceptLanguage()},
+    }
+  ).then(res => res.json());
+}

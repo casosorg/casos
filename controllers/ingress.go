@@ -22,6 +22,9 @@ type ingressSummary struct {
 	Name            string        `json:"name"`
 	IngressClass    string        `json:"ingressClass"`
 	Rules           []ingressRule `json:"rules"`
+	TLSEnabled      bool          `json:"tlsEnabled"`
+	ClusterIssuer   string        `json:"clusterIssuer"`
+	TLSSecretName   string        `json:"tlsSecretName"`
 	CreatedAt       string        `json:"createdAt"`
 	ResourceVersion string        `json:"resourceVersion"`
 }
@@ -58,11 +61,20 @@ func toIngressSummary(ing networkingv1.Ingress) ingressSummary {
 	if ing.Spec.IngressClassName != nil {
 		cls = *ing.Spec.IngressClassName
 	}
+	tlsEnabled := len(ing.Spec.TLS) > 0
+	clusterIssuer := ing.Annotations["cert-manager.io/cluster-issuer"]
+	tlsSecretName := ""
+	if tlsEnabled {
+		tlsSecretName = ing.Spec.TLS[0].SecretName
+	}
 	return ingressSummary{
 		Namespace:       ing.Namespace,
 		Name:            ing.Name,
 		IngressClass:    cls,
 		Rules:           rules,
+		TLSEnabled:      tlsEnabled,
+		ClusterIssuer:   clusterIssuer,
+		TLSSecretName:   tlsSecretName,
 		CreatedAt:       ing.CreationTimestamp.UTC().Format("2006-01-02 15:04:05"),
 		ResourceVersion: ing.ResourceVersion,
 	}
@@ -73,6 +85,8 @@ type ingressRequest struct {
 	Name            string        `json:"name"`
 	IngressClass    string        `json:"ingressClass"`
 	Rules           []ingressRule `json:"rules"`
+	TLSEnabled      bool          `json:"tlsEnabled"`
+	ClusterIssuer   string        `json:"clusterIssuer"`
 	ResourceVersion string        `json:"resourceVersion"`
 }
 
@@ -110,6 +124,22 @@ func buildIngressSpec(req ingressRequest) networkingv1.IngressSpec {
 	if req.IngressClass != "" {
 		cls := req.IngressClass
 		spec.IngressClassName = &cls
+	}
+	if req.TLSEnabled {
+		hostSet := map[string]struct{}{}
+		for _, r := range req.Rules {
+			if r.Host != "" {
+				hostSet[r.Host] = struct{}{}
+			}
+		}
+		hosts := make([]string, 0, len(hostSet))
+		for h := range hostSet {
+			hosts = append(hosts, h)
+		}
+		spec.TLS = []networkingv1.IngressTLS{{
+			Hosts:      hosts,
+			SecretName: req.Name + "-tls",
+		}}
 	}
 	return spec
 }
@@ -176,6 +206,11 @@ func (c *ApiController) AddIngress() {
 		},
 		Spec: buildIngressSpec(req),
 	}
+	if req.TLSEnabled && req.ClusterIssuer != "" {
+		ing.Annotations = map[string]string{
+			"cert-manager.io/cluster-issuer": req.ClusterIssuer,
+		}
+	}
 	created, err := object.AddIngress(cfg, ing)
 	if err != nil {
 		c.ResponseError(err.Error())
@@ -200,11 +235,16 @@ func (c *ApiController) UpdateIngress() {
 	if req.Namespace == "" {
 		req.Namespace = "default"
 	}
+	annotations := map[string]string{}
+	if req.TLSEnabled && req.ClusterIssuer != "" {
+		annotations["cert-manager.io/cluster-issuer"] = req.ClusterIssuer
+	}
 	ing := &networkingv1.Ingress{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:            req.Name,
 			Namespace:       req.Namespace,
 			ResourceVersion: req.ResourceVersion,
+			Annotations:     annotations,
 		},
 		Spec: buildIngressSpec(req),
 	}
@@ -214,6 +254,35 @@ func (c *ApiController) UpdateIngress() {
 		return
 	}
 	c.ResponseOk(toIngressSummary(*updated))
+}
+
+// GetIngressCertStatus returns the TLS certificate expiry for an Ingress managed
+// by cert-manager. Response: {status: "ready"|"pending"|"no-tls", expiry?: "YYYY-MM-DD"}
+// @router /api/get-ingress-cert-status [get]
+func (c *ApiController) GetIngressCertStatus() {
+	cfg := getAdminRestConfig()
+	if cfg == nil {
+		c.ResponseError("apiserver not ready")
+		return
+	}
+	namespace := c.GetString("namespace")
+	name := c.GetString("name")
+	ing, err := object.GetIngress(cfg, namespace, name)
+	if err != nil {
+		c.ResponseError(err.Error())
+		return
+	}
+	if len(ing.Spec.TLS) == 0 {
+		c.ResponseOk(map[string]string{"status": "no-tls"})
+		return
+	}
+	secretName := ing.Spec.TLS[0].SecretName
+	expiry, err := object.GetTLSCertExpiry(cfg, namespace, secretName)
+	if err != nil {
+		c.ResponseOk(map[string]string{"status": "pending"})
+		return
+	}
+	c.ResponseOk(map[string]string{"status": "ready", "expiry": expiry})
 }
 
 // DeleteIngress

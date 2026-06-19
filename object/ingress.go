@@ -2,6 +2,9 @@ package object
 
 import (
 	"context"
+	"crypto/x509"
+	"encoding/pem"
+	"fmt"
 
 	networkingv1 "k8s.io/api/networking/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -54,4 +57,31 @@ func DeleteIngress(cfg *rest.Config, namespace, name string) error {
 		return err
 	}
 	return client.NetworkingV1().Ingresses(namespace).Delete(context.Background(), name, metav1.DeleteOptions{})
+}
+
+// GetTLSCertExpiry reads the TLS secret created by cert-manager and returns
+// the certificate's NotAfter date (YYYY-MM-DD). Returns an error if the secret
+// does not yet exist (cert still being issued).
+func GetTLSCertExpiry(cfg *rest.Config, namespace, secretName string) (string, error) {
+	client, err := newClient(cfg)
+	if err != nil {
+		return "", err
+	}
+	secret, err := client.CoreV1().Secrets(namespace).Get(context.Background(), secretName, metav1.GetOptions{})
+	if err != nil {
+		return "", err
+	}
+	certPEM, ok := secret.Data["tls.crt"]
+	if !ok {
+		return "", fmt.Errorf("tls.crt not found in secret %s", secretName)
+	}
+	block, _ := pem.Decode(certPEM)
+	if block == nil {
+		return "", fmt.Errorf("failed to decode PEM in secret %s", secretName)
+	}
+	cert, err := x509.ParseCertificate(block.Bytes)
+	if err != nil {
+		return "", err
+	}
+	return cert.NotAfter.UTC().Format("2006-01-02"), nil
 }

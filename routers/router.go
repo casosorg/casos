@@ -45,6 +45,7 @@ func InitAPI() {
 	beego.Router("/api/add-ingress", &controllers.ApiController{}, "POST:AddIngress")
 	beego.Router("/api/update-ingress", &controllers.ApiController{}, "POST:UpdateIngress")
 	beego.Router("/api/delete-ingress", &controllers.ApiController{}, "POST:DeleteIngress")
+	beego.Router("/api/get-ingress-cert-status", &controllers.ApiController{}, "GET:GetIngressCertStatus")
 
 	beego.Router("/api/get-services", &controllers.ApiController{}, "GET:GetServices")
 	beego.Router("/api/get-service", &controllers.ApiController{}, "GET:GetService")
