@@ -38,6 +38,13 @@ function formRowsToRequest(rows) {
   }));
 }
 
+function getDefaultPorts(type) {
+  if (type === "ExternalName") {
+    return [];
+  }
+  return [{name: "", protocol: "TCP", port: 80, targetPort: "80"}];
+}
+
 function selectorToEntries(selector) {
   return Object.entries(selector ?? {}).map(([key, value]) => ({key, value}));
 }
@@ -131,8 +138,9 @@ class ServiceListPage extends React.Component {
           namespace: defaultNs,
           name: "",
           type: "ClusterIP",
+          externalName: "",
           selectorEntries: [],
-          ports: [{name: "", protocol: "TCP", port: 80, targetPort: "80"}],
+          ports: getDefaultPorts("ClusterIP"),
         });
       }, 0);
     });
@@ -145,6 +153,7 @@ class ServiceListPage extends React.Component {
           namespace: svc.namespace,
           name: svc.name,
           type: svc.type,
+          externalName: svc.externalName,
           selectorEntries: selectorToEntries(svc.selector),
           ports: portsToFormRows(svc.ports),
         });
@@ -162,8 +171,9 @@ class ServiceListPage extends React.Component {
         namespace: values.namespace,
         name: values.name,
         type: values.type,
-        selector: entriesToMap(values.selectorEntries),
-        ports: formRowsToRequest(values.ports),
+        externalName: values.externalName ?? "",
+        selector: values.type === "ExternalName" ? {} : entriesToMap(values.selectorEntries),
+        ports: values.type === "ExternalName" ? [] : formRowsToRequest(values.ports),
       };
 
       this.setState({submitting: true});
@@ -212,6 +222,8 @@ class ServiceListPage extends React.Component {
   render() {
     const {services, namespaces, loading, error, modalVisible, modalMode, submitting} = this.state;
     const nodeIP = this.getNodeIP();
+    const currentType = this.formRef.current?.getFieldValue("type") || "ClusterIP";
+    const isExternalName = currentType === "ExternalName";
 
     const nsOptions = namespaces.map(ns => ({label: ns.name, value: ns.name}));
 
@@ -226,6 +238,13 @@ class ServiceListPage extends React.Component {
         render: t => <Tag color={typeColor[t] ?? "default"}>{t}</Tag>,
       },
       {title: "Cluster IP", dataIndex: "clusterIP", key: "clusterIP", width: 130},
+      {
+        title: "External Name",
+        dataIndex: "externalName",
+        key: "externalName",
+        width: 180,
+        render: v => v || null,
+      },
       {
         title: "Ports",
         dataIndex: "ports",
@@ -312,7 +331,25 @@ class ServiceListPage extends React.Component {
           width={640}
           destroyOnHidden
         >
-          <Form ref={this.formRef} layout="vertical" onValuesChange={() => this.forceUpdate()}>
+          <Form
+            ref={this.formRef}
+            layout="vertical"
+            onValuesChange={(changedValues) => {
+              if (Object.prototype.hasOwnProperty.call(changedValues, "type")) {
+                const nextType = changedValues.type;
+                if (nextType === "ExternalName") {
+                  this.formRef.current?.setFieldsValue({
+                    externalName: this.formRef.current?.getFieldValue("externalName") ?? "",
+                    selectorEntries: [],
+                    ports: [],
+                  });
+                } else if ((this.formRef.current?.getFieldValue("ports") ?? []).length === 0) {
+                  this.formRef.current?.setFieldsValue({ports: getDefaultPorts(nextType)});
+                }
+              }
+              this.forceUpdate();
+            }}
+          >
             <Form.Item label="Namespace" name="namespace" rules={[{required: true, message: "Required"}]}>
               <Select disabled={modalMode === "edit"} options={nsOptions} placeholder="Select a namespace" showSearch />
             </Form.Item>
@@ -323,62 +360,72 @@ class ServiceListPage extends React.Component {
               <Select options={SERVICE_TYPES.map(t => ({label: t, value: t}))} />
             </Form.Item>
 
-            {/* Ports */}
-            <Form.List name="ports">
-              {(fields, {add, remove}) => (
-                <>
-                  <div style={{marginBottom: 8, fontWeight: 500}}>Ports</div>
-                  {fields.map(({key, name, ...rest}) => (
-                    <Space key={key} align="baseline" style={{display: "flex", marginBottom: 4, flexWrap: "wrap"}}>
-                      <Form.Item {...rest} name={[name, "protocol"]} style={{marginBottom: 0}}>
-                        <Select options={PROTOCOLS.map(p => ({label: p, value: p}))} style={{width: 80}} />
-                      </Form.Item>
-                      <Form.Item {...rest} name={[name, "port"]} rules={[{required: true, message: "Port required"}]} style={{marginBottom: 0}}>
-                        <InputNumber placeholder="port" min={1} max={65535} style={{width: 90}} />
-                      </Form.Item>
-                      <Form.Item {...rest} name={[name, "targetPort"]} style={{marginBottom: 0}}>
-                        <Input placeholder="targetPort" style={{width: 100}} />
-                      </Form.Item>
-                      {this.formRef.current?.getFieldValue("type") === "NodePort" && (
-                        <Form.Item {...rest} name={[name, "nodePort"]} style={{marginBottom: 0}}>
-                          <InputNumber placeholder="nodePort" min={30000} max={32767} style={{width: 110}} />
-                        </Form.Item>
-                      )}
-                      <Form.Item {...rest} name={[name, "name"]} style={{marginBottom: 0}}>
-                        <Input placeholder="name (opt)" style={{width: 110}} />
-                      </Form.Item>
-                      <MinusCircleOutlined onClick={() => remove(name)} style={{color: "#ff4d4f", cursor: "pointer"}} />
-                    </Space>
-                  ))}
-                  <Button type="dashed" onClick={() => add({protocol: "TCP", port: 80, targetPort: "80"})} icon={<PlusOutlined />} size="small" style={{marginTop: 4}}>
-                    Add Port
-                  </Button>
-                </>
-              )}
-            </Form.List>
+            {isExternalName ? (
+              <Form.Item
+                label="External Name"
+                name="externalName"
+                rules={[{required: true, message: "External name is required"}]}
+              >
+                <Input placeholder="example.com" />
+              </Form.Item>
+            ) : (
+              <>
+                <Form.List name="ports">
+                  {(fields, {add, remove}) => (
+                    <>
+                      <div style={{marginBottom: 8, fontWeight: 500}}>Ports</div>
+                      {fields.map(({key, name, ...rest}) => (
+                        <Space key={key} align="baseline" style={{display: "flex", marginBottom: 4, flexWrap: "wrap"}}>
+                          <Form.Item {...rest} name={[name, "protocol"]} style={{marginBottom: 0}}>
+                            <Select options={PROTOCOLS.map(p => ({label: p, value: p}))} style={{width: 80}} />
+                          </Form.Item>
+                          <Form.Item {...rest} name={[name, "port"]} rules={[{required: true, message: "Port required"}]} style={{marginBottom: 0}}>
+                            <InputNumber placeholder="port" min={1} max={65535} style={{width: 90}} />
+                          </Form.Item>
+                          <Form.Item {...rest} name={[name, "targetPort"]} style={{marginBottom: 0}}>
+                            <Input placeholder="targetPort" style={{width: 100}} />
+                          </Form.Item>
+                          {currentType === "NodePort" && (
+                            <Form.Item {...rest} name={[name, "nodePort"]} style={{marginBottom: 0}}>
+                              <InputNumber placeholder="nodePort" min={30000} max={32767} style={{width: 110}} />
+                            </Form.Item>
+                          )}
+                          <Form.Item {...rest} name={[name, "name"]} style={{marginBottom: 0}}>
+                            <Input placeholder="name (opt)" style={{width: 110}} />
+                          </Form.Item>
+                          <MinusCircleOutlined onClick={() => remove(name)} style={{color: "#ff4d4f", cursor: "pointer"}} />
+                        </Space>
+                      ))}
+                      <Button type="dashed" onClick={() => add({protocol: "TCP", port: 80, targetPort: "80"})} icon={<PlusOutlined />} size="small" style={{marginTop: 4}}>
+                        Add Port
+                      </Button>
+                    </>
+                  )}
+                </Form.List>
 
-            {/* Selector */}
-            <Form.List name="selectorEntries">
-              {(fields, {add, remove}) => (
-                <>
-                  <div style={{marginBottom: 8, marginTop: 16, fontWeight: 500}}>Selector (key-value)</div>
-                  {fields.map(({key, name, ...rest}) => (
-                    <Space key={key} align="baseline" style={{display: "flex", marginBottom: 4}}>
-                      <Form.Item {...rest} name={[name, "key"]} rules={[{required: true, message: "Key required"}]} style={{marginBottom: 0}}>
-                        <Input placeholder="key" style={{width: 180}} />
-                      </Form.Item>
-                      <Form.Item {...rest} name={[name, "value"]} style={{marginBottom: 0}}>
-                        <Input placeholder="value" style={{width: 200}} />
-                      </Form.Item>
-                      <MinusCircleOutlined onClick={() => remove(name)} style={{color: "#ff4d4f", cursor: "pointer"}} />
-                    </Space>
-                  ))}
-                  <Button type="dashed" onClick={() => add()} icon={<PlusOutlined />} size="small" style={{marginTop: 4}}>
-                    Add Selector
-                  </Button>
-                </>
-              )}
-            </Form.List>
+                <Form.List name="selectorEntries">
+                  {(fields, {add, remove}) => (
+                    <>
+                      <div style={{marginBottom: 8, marginTop: 16, fontWeight: 500}}>Selector (key-value)</div>
+                      {fields.map(({key, name, ...rest}) => (
+                        <Space key={key} align="baseline" style={{display: "flex", marginBottom: 4}}>
+                          <Form.Item {...rest} name={[name, "key"]} rules={[{required: true, message: "Key required"}]} style={{marginBottom: 0}}>
+                            <Input placeholder="key" style={{width: 180}} />
+                          </Form.Item>
+                          <Form.Item {...rest} name={[name, "value"]} style={{marginBottom: 0}}>
+                            <Input placeholder="value" style={{width: 200}} />
+                          </Form.Item>
+                          <MinusCircleOutlined onClick={() => remove(name)} style={{color: "#ff4d4f", cursor: "pointer"}} />
+                        </Space>
+                      ))}
+                      <Button type="dashed" onClick={() => add()} icon={<PlusOutlined />} size="small" style={{marginTop: 4}}>
+                        Add Selector
+                      </Button>
+                    </>
+                  )}
+                </Form.List>
+              </>
+            )}
           </Form>
         </Modal>
       </div>

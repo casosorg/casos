@@ -2,7 +2,9 @@ package controllers
 
 import (
 	"encoding/json"
+	"fmt"
 	"strconv"
+	"strings"
 
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -24,6 +26,7 @@ type serviceSummary struct {
 	Name            string            `json:"name"`
 	Type            string            `json:"type"`
 	ClusterIP       string            `json:"clusterIP"`
+	ExternalName    string            `json:"externalName"`
 	Selector        map[string]string `json:"selector"`
 	Ports           []portSummary     `json:"ports"`
 	CreatedAt       string            `json:"createdAt"`
@@ -46,6 +49,7 @@ func toSvcSummary(svc corev1.Service) serviceSummary {
 		Name:            svc.Name,
 		Type:            string(svc.Spec.Type),
 		ClusterIP:       svc.Spec.ClusterIP,
+		ExternalName:    svc.Spec.ExternalName,
 		Selector:        svc.Spec.Selector,
 		Ports:           ports,
 		CreatedAt:       svc.CreationTimestamp.UTC().Format("2006-01-02 15:04:05"),
@@ -104,9 +108,32 @@ type serviceRequest struct {
 	Namespace       string            `json:"namespace"`
 	Name            string            `json:"name"`
 	Type            string            `json:"type"`
+	ExternalName    string            `json:"externalName"`
 	Selector        map[string]string `json:"selector"`
 	Ports           []portRequest     `json:"ports"`
 	ResourceVersion string            `json:"resourceVersion"`
+}
+
+func normalizeServiceRequest(req *serviceRequest) error {
+	if req.Type == "" {
+		req.Type = string(corev1.ServiceTypeClusterIP)
+	}
+	if req.Type == string(corev1.ServiceTypeExternalName) {
+		req.ExternalName = strings.TrimSpace(req.ExternalName)
+		if req.ExternalName == "" {
+			return fmt.Errorf("ExternalName service requires externalName")
+		}
+		req.Selector = nil
+		req.Ports = nil
+	} else {
+		req.ExternalName = ""
+	}
+	if req.Type != string(corev1.ServiceTypeNodePort) && req.Type != string(corev1.ServiceTypeLoadBalancer) {
+		for i := range req.Ports {
+			req.Ports[i].NodePort = 0
+		}
+	}
+	return nil
 }
 
 func buildServiceSpec(req serviceRequest) corev1.ServiceSpec {
@@ -136,9 +163,10 @@ func buildServiceSpec(req serviceRequest) corev1.ServiceSpec {
 		ports = append(ports, sp)
 	}
 	return corev1.ServiceSpec{
-		Type:     svcType,
-		Selector: req.Selector,
-		Ports:    ports,
+		Type:         svcType,
+		Selector:     req.Selector,
+		Ports:        ports,
+		ExternalName: req.ExternalName,
 	}
 }
 
@@ -157,6 +185,10 @@ func (c *ApiController) AddService() {
 	}
 	if req.Namespace == "" {
 		req.Namespace = "default"
+	}
+	if err := normalizeServiceRequest(&req); err != nil {
+		c.ResponseError(err.Error())
+		return
 	}
 	svc := &corev1.Service{
 		ObjectMeta: metav1.ObjectMeta{
@@ -189,16 +221,21 @@ func (c *ApiController) UpdateService() {
 	if req.Namespace == "" {
 		req.Namespace = "default"
 	}
-	// Fetch current to preserve clusterIP (immutable field).
+	if err := normalizeServiceRequest(&req); err != nil {
+		c.ResponseError(err.Error())
+		return
+	}
+	// Fetch current to preserve immutable fields when still applicable.
 	existing, err := object.GetService(cfg, req.Namespace, req.Name)
 	if err != nil {
 		c.ResponseError(err.Error())
 		return
 	}
 	newSpec := buildServiceSpec(req)
-	// Preserve ClusterIP — it is immutable once assigned.
-	newSpec.ClusterIP = existing.Spec.ClusterIP
-	newSpec.ClusterIPs = existing.Spec.ClusterIPs
+	if req.Type != string(corev1.ServiceTypeExternalName) {
+		newSpec.ClusterIP = existing.Spec.ClusterIP
+		newSpec.ClusterIPs = existing.Spec.ClusterIPs
+	}
 	existing.Spec = newSpec
 	existing.ResourceVersion = req.ResourceVersion
 	updated, err := object.UpdateService(cfg, existing)
