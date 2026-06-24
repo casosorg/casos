@@ -15,6 +15,21 @@ import (
 	"time"
 )
 
+// tryParsePrivateKey attempts RSA (PKCS#1) first, then falls back to PKCS#8
+// and EC, matching whatever format ensureCerts wrote.
+func tryParsePrivateKey(der []byte) (interface{}, error) {
+	if k, err := x509.ParsePKCS1PrivateKey(der); err == nil {
+		return k, nil
+	}
+	if k, err := x509.ParsePKCS8PrivateKey(der); err == nil {
+		return k, nil
+	}
+	if k, err := x509.ParseECPrivateKey(der); err == nil {
+		return k, nil
+	}
+	return nil, fmt.Errorf("unsupported private key format")
+}
+
 // WorkerKubeconfig holds the kubeconfig content and the node cert files for a
 // worker node, all as PEM strings (base64-encoded inside the kubeconfig).
 type WorkerKubeconfig struct {
@@ -48,7 +63,7 @@ func GenerateWorkerKubeconfigForServer(cfg Config, nodeName, apiserverURL string
 	}
 
 	block, _ := pem.Decode(caKeyPEM)
-	caKey, err := x509.ParseECPrivateKey(block.Bytes)
+	caKeyRaw, err := tryParsePrivateKey(block.Bytes)
 	if err != nil {
 		return nil, fmt.Errorf("parse ca.key: %w", err)
 	}
@@ -74,7 +89,7 @@ func GenerateWorkerKubeconfigForServer(cfg Config, nodeName, apiserverURL string
 		KeyUsage:    x509.KeyUsageDigitalSignature | x509.KeyUsageKeyEncipherment,
 		ExtKeyUsage: []x509.ExtKeyUsage{x509.ExtKeyUsageClientAuth},
 	}
-	nodeCertDER, err := x509.CreateCertificate(rand.Reader, nodeTemplate, caCert, &nodeKey.PublicKey, caKey)
+	nodeCertDER, err := x509.CreateCertificate(rand.Reader, nodeTemplate, caCert, &nodeKey.PublicKey, caKeyRaw)
 	if err != nil {
 		return nil, err
 	}
