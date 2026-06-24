@@ -169,6 +169,9 @@ func (a *Ormer) createTable() {
 	a.Engine.ShowSQL(showSql)
 	_ = a.Engine.Sync2(new(Site))
 	_ = a.Engine.Sync2(new(Machine))
+	_ = a.Engine.Sync2(new(MachineNodeDeployTask))
+	_ = a.Engine.Sync2(new(MachineNodeDeployLog))
+	_ = a.Engine.Sync2(new(MachineNodeDeployCredential))
 	_ = a.Engine.Sync2(new(CasbinRule))
 	_ = a.Engine.Sync2(new(TrivyScanResult))
 }

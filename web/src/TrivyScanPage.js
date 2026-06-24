@@ -215,7 +215,7 @@ class TrivyScanPage extends React.Component {
           </Button>
           <Tooltip title={i18next.t("trivy:Refresh tooltip")}>
             <Button icon={<ReloadOutlined />} onClick={() => this.loadResults()}>
-              {i18next.t("appStore:Refresh")}
+              {i18next.t("general:Refresh")}
             </Button>
           </Tooltip>
         </Space>

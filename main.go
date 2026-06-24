@@ -12,6 +12,7 @@ import (
 
 	"github.com/casosorg/casos/casdoor"
 	"github.com/casosorg/casos/controllers"
+	"github.com/casosorg/casos/deploy"
 	"github.com/casosorg/casos/object"
 	"github.com/casosorg/casos/proxy"
 	"github.com/casosorg/casos/routers"
@@ -43,6 +44,7 @@ func main() {
 
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
+	deploy.Init(ctx, deploy.ConfigFromServerConfig(srvCfg))
 
 	readyCh, err := server.Start(ctx, srvCfg)
 	if err != nil {
@@ -59,6 +61,7 @@ func main() {
 		case <-readyCh:
 			adminCfg := server.AdminRestConfig(srvCfg)
 			controllers.SetAdminRestConfig(adminCfg)
+			deploy.SetRestConfig(adminCfg)
 			logs.Info("apiserver ready — kubectl endpoint: https://127.0.0.1:%d", srvCfg.ApiserverPort)
 			if err := server.Bootstrap(ctx, adminCfg, srvCfg); err != nil {
 				logs.Warning("bootstrap: %v", err)

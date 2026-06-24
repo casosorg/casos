@@ -1,15 +1,18 @@
 import React from "react";
 import {Link} from "react-router-dom";
 import {Button, Form, Input, InputNumber, Modal, Popconfirm, Select, Table, Tag, Tooltip} from "antd";
-import {DeleteOutlined, EditOutlined, PlusOutlined} from "@ant-design/icons";
+import {CloudSyncOutlined, DeleteOutlined, EditOutlined, PlusOutlined} from "@ant-design/icons";
 import * as Setting from "./Setting";
 import * as MachineBackend from "./backend/MachineBackend";
+import MachineNodeDeployPanel from "./MachineNodeDeployPanel";
 import i18next from "i18next";
 
 const statusColor = {
   Online: "green",
   Offline: "red",
+  Deploying: "processing",
   Deployed: "blue",
+  Failed: "red",
   Unknown: "default",
 };
 
@@ -21,8 +24,18 @@ class MachineListPage extends React.Component {
       loading: false,
       modalVisible: false,
       submitting: false,
+      deployPanelVisible: false,
+      deployingMachine: null,
     };
     this.formRef = React.createRef();
+  }
+
+  openDeployPanel(record) {
+    this.setState({deployPanelVisible: true, deployingMachine: record});
+  }
+
+  closeDeployPanel() {
+    this.setState({deployPanelVisible: false, deployingMachine: null}, () => this.getMachines());
   }
 
   UNSAFE_componentWillMount() {
@@ -155,10 +168,13 @@ class MachineListPage extends React.Component {
         title: i18next.t("general:Action"),
         dataIndex: "action",
         key: "action",
-        width: "130px",
+        width: "170px",
         fixed: "right",
         render: (text, record) => (
           <div style={{display: "flex", alignItems: "center", gap: "2px"}}>
+            <Tooltip title={i18next.t("machine:Deploy worker node", "Deploy worker node")}>
+              <Button type="text" size="small" icon={<CloudSyncOutlined />} style={{width: "28px", height: "28px", padding: 0, borderRadius: "6px"}} onClick={() => this.openDeployPanel(record)} />
+            </Tooltip>
             <Tooltip title={i18next.t("general:Edit")}>
               <Button type="text" size="small" icon={<EditOutlined />} style={{width: "28px", height: "28px", padding: 0, borderRadius: "6px"}} onClick={() => this.props.history.push(`/machines/${record.name}`)} />
             </Tooltip>
@@ -240,6 +256,12 @@ class MachineListPage extends React.Component {
             </Form.Item>
           </Form>
         </Modal>
+        <MachineNodeDeployPanel
+          open={this.state.deployPanelVisible}
+          machine={this.state.deployingMachine}
+          account={this.props.account}
+          onClose={() => this.closeDeployPanel()}
+        />
       </div>
     );
   }

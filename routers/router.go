@@ -87,6 +87,11 @@ func InitAPI() {
 	beego.Router("/api/add-machine", &controllers.ApiController{}, "POST:AddMachine")
 	beego.Router("/api/update-machine", &controllers.ApiController{}, "POST:UpdateMachine")
 	beego.Router("/api/delete-machine", &controllers.ApiController{}, "POST:DeleteMachine")
+	beego.Router("/api/preflight-machine-node", &controllers.ApiController{}, "POST:PreflightMachineNode")
+	beego.Router("/api/deploy-machine-node", &controllers.ApiController{}, "POST:DeployMachineNode")
+	beego.Router("/api/repair-machine-node", &controllers.ApiController{}, "POST:RepairMachineNode")
+	beego.Router("/api/get-machine-node-tasks", &controllers.ApiController{}, "GET:GetMachineNodeTasks")
+	beego.Router("/api/get-machine-node-logs", &controllers.ApiController{}, "GET:GetMachineNodeLogs")
 
 	beego.Router("/api/get-configmaps", &controllers.ApiController{}, "GET:GetConfigMaps")
 	beego.Router("/api/get-configmap", &controllers.ApiController{}, "GET:GetConfigMap")

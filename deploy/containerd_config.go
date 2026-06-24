@@ -1,4 +1,4 @@
-package server
+package deploy
 
 import "fmt"
 
@@ -10,7 +10,11 @@ func GenerateContainerdConfig(sandboxImage, socks5Proxy string) string {
 version = 2
 
 [plugins.'io.containerd.cri.v1.images']
-  sandbox = %q
+  [plugins.'io.containerd.cri.v1.images'.pinned_images]
+    sandbox = %q
+
+[plugins.'io.containerd.cri.v1.runtime'.containerd.runtimes.runc.options]
+  SystemdCgroup = true
 `, sandboxImage)
 
 	if socks5Proxy == "" {

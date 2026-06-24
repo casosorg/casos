@@ -165,7 +165,7 @@ function AppStorePage() {
             </div>
           )}
           <Button size="small" icon={<ReloadOutlined />} onClick={fetchTemplates} loading={loading}>
-            {t("appStore:Refresh")}
+            {t("general:Refresh")}
           </Button>
         </div>
       )}
