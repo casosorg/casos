@@ -28,6 +28,13 @@ type WorkerKubeconfig struct {
 //
 // The returned kubeconfig is intended for kubelet's --kubeconfig flag.
 func GenerateWorkerKubeconfig(cfg Config, nodeName string) (*WorkerKubeconfig, error) {
+	apiserverURL := fmt.Sprintf("https://127.0.0.1:%d", cfg.ApiserverPort)
+	return GenerateWorkerKubeconfigForServer(cfg, nodeName, apiserverURL)
+}
+
+// GenerateWorkerKubeconfigForServer signs a node client certificate and embeds
+// the provided apiserver URL as the cluster server endpoint.
+func GenerateWorkerKubeconfigForServer(cfg Config, nodeName, apiserverURL string) (*WorkerKubeconfig, error) {
 	certDir := filepath.Join(cfg.DataDir, "tls")
 
 	// Load cluster CA.
@@ -80,7 +87,6 @@ func GenerateWorkerKubeconfig(cfg Config, nodeName string) (*WorkerKubeconfig, e
 	nodeCertPEM := pemEncode("CERTIFICATE", nodeCertDER)
 	nodeKeyPEM := pemEncode("EC PRIVATE KEY", nodeKeyDER)
 
-	apiserverURL := fmt.Sprintf("https://127.0.0.1:%d", cfg.ApiserverPort)
 	kubeconfig := fmt.Sprintf(`apiVersion: v1
 kind: Config
 preferences: {}

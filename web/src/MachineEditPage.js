@@ -9,7 +9,9 @@ import i18next from "i18next";
 const statusColor = {
   Online: "green",
   Offline: "red",
+  Deploying: "processing",
   Deployed: "blue",
+  Failed: "red",
   Unknown: "default",
 };
 

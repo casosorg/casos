@@ -3,6 +3,7 @@ package controllers
 import (
 	"encoding/json"
 
+	"github.com/casosorg/casos/deploy"
 	"github.com/casosorg/casos/object"
 	"github.com/casosorg/casos/server"
 	corev1 "k8s.io/api/core/v1"
@@ -186,6 +187,6 @@ func (c *ApiController) GetWorkerKubeconfig() {
 	c.ResponseOk(map[string]string{
 		"nodeName":         wk.NodeName,
 		"kubeconfig":       wk.Kubeconfig,
-		"containerdConfig": server.GenerateContainerdConfig(cfg.SandboxImage, cfg.Socks5Proxy),
+		"containerdConfig": deploy.GenerateContainerdConfig(cfg.SandboxImage, cfg.Socks5Proxy),
 	})
 }
