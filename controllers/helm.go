@@ -211,6 +211,41 @@ func (c *ApiController) InstallHelmChart() {
 	c.ResponseOk()
 }
 
+// InstallHelmChartStream streams helm install progress as Server-Sent Events.
+// @router /api/install-helm-chart-stream [post]
+func (c *ApiController) InstallHelmChartStream() {
+	if c.RequireAdmin() {
+		return
+	}
+	cfg := getAdminRestConfig()
+	if cfg == nil {
+		c.Ctx.ResponseWriter.ResponseWriter.Header().Set("Content-Type", "text/event-stream")
+		fmt.Fprintf(c.Ctx.ResponseWriter.ResponseWriter, "data: ERROR: cluster not ready\n\n")
+		return
+	}
+	var req helmInstallReq
+	if err := json.Unmarshal(c.Ctx.Input.RequestBody, &req); err != nil {
+		c.Ctx.ResponseWriter.ResponseWriter.Header().Set("Content-Type", "text/event-stream")
+		fmt.Fprintf(c.Ctx.ResponseWriter.ResponseWriter, "data: ERROR: %s\n\n", err.Error())
+		return
+	}
+
+	w := c.Ctx.ResponseWriter.ResponseWriter
+	w.Header().Set("Content-Type", "text/event-stream")
+	w.Header().Set("Cache-Control", "no-cache")
+	w.Header().Set("X-Accel-Buffering", "no")
+	w.WriteHeader(http.StatusOK)
+
+	flusher, canFlush := w.(http.Flusher)
+	logCh := store.InstallHelmChartStream(cfg, req.ReleaseName, req.Namespace, req.ChartName, req.RepoURL, req.Version, req.ValuesYAML)
+	for line := range logCh {
+		fmt.Fprintf(w, "data: %s\n\n", line)
+		if canFlush {
+			flusher.Flush()
+		}
+	}
+}
+
 // UpgradeHelmRelease upgrades an existing Helm release.
 // @router /api/upgrade-helm-release [post]
 func (c *ApiController) UpgradeHelmRelease() {

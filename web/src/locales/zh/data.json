@@ -85,10 +85,20 @@
     "Successfully saved": "保存成功",
     "Sure to delete": "确认删除",
     "Updated": "更新时间",
-    "Workloads": "工作负载"
+    "Workloads": "工作负载",
+    "Close": "关闭",
+    "Done": "完成"
   },
   "helm": {
-    "Helm Releases": "Helm 发布"
+    "Helm Releases": "Helm 发布",
+    "Install chart": "安装 chart",
+    "Install": "安装",
+    "Installing": "安装中",
+    "Release name": "Release 名称",
+    "Release name pattern": "仅小写字母、数字和连字符",
+    "Version": "版本",
+    "Values (YAML)": "Values (YAML)",
+    "Loading values": "加载默认配置中"
   },
   "machine": {
     "Add Machine": "Add Machine",

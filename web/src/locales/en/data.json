@@ -85,10 +85,20 @@
     "Successfully saved": "Successfully saved",
     "Sure to delete": "Sure to delete",
     "Updated": "Updated",
-    "Workloads": "Workloads"
+    "Workloads": "Workloads",
+    "Close": "Close",
+    "Done": "Done"
   },
   "helm": {
-    "Helm Releases": "Helm Releases"
+    "Helm Releases": "Helm Releases",
+    "Install chart": "Install chart",
+    "Install": "Install",
+    "Installing": "Installing",
+    "Release name": "Release name",
+    "Release name pattern": "Lowercase letters, numbers, and hyphens only",
+    "Version": "Version",
+    "Values (YAML)": "Values (YAML)",
+    "Loading values": "Loading default values"
   },
   "machine": {
     "Add Machine": "Add Machine",

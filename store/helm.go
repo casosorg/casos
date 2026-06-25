@@ -114,8 +114,12 @@ func (r *restClientGetter) ToRawKubeConfigLoader() clientcmd.ClientConfig {
 // ---------- action.Configuration builder ----------
 
 func newHelmConfig(cfg *rest.Config, namespace string) (*action.Configuration, error) {
+	return newHelmConfigWithLog(cfg, namespace, func(string, ...interface{}) {})
+}
+
+func newHelmConfigWithLog(cfg *rest.Config, namespace string, logFn func(string, ...interface{})) (*action.Configuration, error) {
 	actionConfig := new(action.Configuration)
-	if err := actionConfig.Init(newRESTClientGetter(cfg, namespace), namespace, "secret", func(string, ...interface{}) {}); err != nil {
+	if err := actionConfig.Init(newRESTClientGetter(cfg, namespace), namespace, "secret", logFn); err != nil {
 		return nil, fmt.Errorf("helm config init: %w", err)
 	}
 	return actionConfig, nil
@@ -328,6 +332,45 @@ func InstallHelmChart(cfg *rest.Config, releaseName, namespace, chartName, repoU
 
 	_, err = install.Run(ch, vals)
 	return err
+}
+
+// InstallHelmChartStream runs helm install asynchronously and pushes log lines to the returned channel.
+// The channel is closed when the operation finishes; a final line of "ERROR: <msg>" or "DONE" signals the outcome.
+func InstallHelmChartStream(cfg *rest.Config, releaseName, namespace, chartName, repoURL, version, valuesYAML string) <-chan string {
+	ch := make(chan string, 64)
+	go func() {
+		defer close(ch)
+		logFn := func(format string, args ...interface{}) {
+			ch <- fmt.Sprintf(format, args...)
+		}
+		actionConfig, err := newHelmConfigWithLog(cfg, namespace, logFn)
+		if err != nil {
+			ch <- "ERROR: " + err.Error()
+			return
+		}
+		chart, err := loadChart(chartName, repoURL, version)
+		if err != nil {
+			ch <- "ERROR: " + err.Error()
+			return
+		}
+		vals, err := parseValues(valuesYAML)
+		if err != nil {
+			ch <- "ERROR: " + err.Error()
+			return
+		}
+		install := action.NewInstall(actionConfig)
+		install.ReleaseName = releaseName
+		install.Namespace = namespace
+		install.CreateNamespace = true
+		install.Wait = true
+		install.Timeout = 5 * time.Minute
+		if _, err = install.Run(chart, vals); err != nil {
+			ch <- "ERROR: " + err.Error()
+			return
+		}
+		ch <- "DONE"
+	}()
+	return ch
 }
 
 func UpgradeHelmRelease(cfg *rest.Config, releaseName, namespace, chartName, repoURL, version, valuesYAML string) error {
