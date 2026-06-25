@@ -1,6 +1,6 @@
 import React, {useEffect, useRef, useState} from "react";
 import {useTranslation} from "react-i18next";
-import {Link, Redirect, Route, Switch, withRouter} from "react-router-dom";
+import {Link, Route, Switch, withRouter} from "react-router-dom";
 import {Avatar, Button, Card, Dropdown, Layout, Menu, Result} from "antd";
 import {
   AppstoreOutlined,
@@ -60,7 +60,7 @@ const {Header, Footer, Content, Sider} = Layout;
 
 function getMenuParentKey(uri) {
   if (!uri) {return null;}
-  if (uri === "/dashboard" || uri === "/app-store" || uri === "/helm-releases") {return null;}
+  if (uri === "/" || uri === "/dashboard" || uri === "/app-store" || uri === "/helm-releases") {return null;}
   if (uri.includes("/pods") || uri.includes("/deployments") || uri.includes("/statefulsets") || uri.includes("/daemonsets") || uri.includes("/jobs") || uri.includes("/cronjobs")) {return "/workloads";}
   if (uri.includes("/log-search") || uri.includes("/topology")) {return "/observability";}
   if (uri.includes("/nodes") || uri.includes("/namespaces") || uri.includes("/serviceaccounts")) {return "/cluster";}
@@ -255,8 +255,7 @@ function ManagementPage(props) {
   function renderRouter() {
     return (
       <Switch>
-        <Redirect exact from="/" to="/dashboard" />
-        <Route exact path="/dashboard" render={(props) => <DashboardPage {...props} />} />
+        <Route exact path={["/", "/dashboard"]} render={(props) => <DashboardPage {...props} />} />
         <Route exact path="/app-store" render={(props) => <AppStorePage {...props} />} />
         <Route exact path="/helm-releases" render={(props) => <HelmReleasePage {...props} />} />
         <Route exact path="/deployments" render={(props) => <DeploymentListPage {...props} />} />
