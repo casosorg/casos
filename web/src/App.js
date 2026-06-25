@@ -4,6 +4,7 @@ import {StyleProvider, legacyLogicalPropertiesTransformer} from "@ant-design/css
 import {ConfigProvider, FloatButton, Layout} from "antd";
 import * as Setting from "./Setting";
 import * as AccountBackend from "./backend/AccountBackend";
+import * as ConfigBackend from "./backend/ConfigBackend";
 import * as SiteBackend from "./backend/SiteBackend";
 import * as Conf from "./Conf";
 import {getShadcnThemeComponents, getShadcnThemeToken} from "./shadcnTheme";
@@ -14,8 +15,6 @@ import SigninPage from "./SigninPage";
 class App extends Component {
   constructor(props) {
     super(props);
-    Setting.initServerUrl();
-    Setting.initCasdoorSdk(Conf.AuthConfig);
 
     let storageThemeAlgorithm = ["default"];
     try {
@@ -32,12 +31,33 @@ class App extends Component {
       themeAlgorithm: storageThemeAlgorithm,
       site: undefined,
       logo: null,
+      configLoaded: false,
     };
   }
 
-  UNSAFE_componentWillMount() {
-    this.getAccount();
-    this.loadSite();
+  componentDidMount() {
+    this.initConfig();
+  }
+
+  initConfig() {
+    Setting.initServerUrl();
+    ConfigBackend.getApplicationConfig()
+      .then((res) => {
+        if (res.status === "ok") {
+          Conf.setConfig(res.data);
+        } else {
+          Setting.showMessage("error", `Failed to load config: ${res.msg}`);
+        }
+      })
+      .catch(error => {
+        Setting.showMessage("error", `Failed to load config: ${error}`);
+      })
+      .then(() => {
+        Setting.initCasdoorSdk(Conf.AuthConfig);
+        this.setState({configLoaded: true});
+        this.getAccount();
+        this.loadSite();
+      });
   }
 
   componentDidUpdate() {
@@ -74,8 +94,13 @@ class App extends Component {
 
   getAccount() {
     AccountBackend.getAccount().then((res) => {
-      const account = res.data;
-      this.setState({account: account});
+      if (res.status === "ok") {
+        this.setState({account: res.data});
+      } else {
+        this.setState({account: null});
+      }
+    }).catch(() => {
+      this.setState({account: null});
     });
   }
 
@@ -106,7 +131,10 @@ class App extends Component {
   };
 
   renderHomeIfSignedIn(component) {
-    if (this.state.account !== null && this.state.account !== undefined) {
+    if (this.state.account === undefined) {
+      return null;
+    }
+    if (this.state.account !== null) {
       return <Redirect to="/" />;
     }
     return component;
@@ -123,6 +151,10 @@ class App extends Component {
   }
 
   renderContent() {
+    if (!this.state.configLoaded) {
+      return null;
+    }
+
     return (
       <Layout id="parent-area">
         <Switch>
