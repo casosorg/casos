@@ -2,6 +2,7 @@ import React, {useEffect, useRef} from "react";
 import {Drawer, Select, Space} from "antd";
 import {Terminal} from "xterm";
 import {FitAddon} from "xterm-addon-fit";
+import * as Setting from "./Setting";
 import "xterm/css/xterm.css";
 
 /**
@@ -62,9 +63,11 @@ function PodTerminalDrawer({pod, open, onClose}) {
       fitAddon.fit();
     }
 
-    const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
-    const params = new URLSearchParams({namespace: ns, name, container: ctr});
-    const ws = new WebSocket(`${protocol}//${window.location.host}/api/pod-terminal?${params}`);
+    const ws = new WebSocket(Setting.getWebSocketUrl("/api/pod-terminal", {
+      namespace: ns,
+      name,
+      container: ctr,
+    }));
     ws.binaryType = "arraybuffer";
     wsRef.current = ws;
 
@@ -73,9 +76,17 @@ function PodTerminalDrawer({pod, open, onClose}) {
       sendResize(term.cols, term.rows);
     };
 
-    ws.onmessage = (e) => {
-      const data = new Uint8Array(e.data);
-      term.write(data);
+    ws.onmessage = async(e) => {
+      if (termRef.current !== term) {return;}
+      if (typeof e.data === "string") {
+        term.write(e.data);
+        return;
+      }
+
+      const buffer = e.data instanceof Blob ? await e.data.arrayBuffer() : e.data;
+      if (termRef.current === term) {
+        term.write(new Uint8Array(buffer));
+      }
     };
 
     ws.onclose = () => {
