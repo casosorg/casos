@@ -76,17 +76,14 @@ function PodTerminalDrawer({pod, open, onClose}) {
       sendResize(term.cols, term.rows);
     };
 
-    ws.onmessage = async(e) => {
+    ws.onmessage = (e) => {
       if (termRef.current !== term) {return;}
       if (typeof e.data === "string") {
         term.write(e.data);
         return;
       }
 
-      const buffer = e.data instanceof Blob ? await e.data.arrayBuffer() : e.data;
-      if (termRef.current === term) {
-        term.write(new Uint8Array(buffer));
-      }
+      term.write(new Uint8Array(e.data));
     };
 
     ws.onclose = () => {

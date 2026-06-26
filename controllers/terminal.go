@@ -56,21 +56,29 @@ func pumpTerminalInput(
 	resizeCh chan<- termResizeMsg,
 	cancel context.CancelFunc,
 ) {
+	done := make(chan struct{})
+	go func() {
+		select {
+		case <-ctx.Done():
+			// Closing the WebSocket unblocks ReadMessage when the exec context ends.
+			_ = conn.Close()
+		case <-done:
+		}
+	}()
+
+	defer close(done)
 	defer cancel()
 	defer close(resizeCh)
 	defer stdin.Close()
 
 	for {
-		select {
-		case <-ctx.Done():
-			_ = stdin.CloseWithError(ctx.Err())
-			return
-		default:
-		}
-
 		_, msg, err := conn.ReadMessage()
 		if err != nil {
-			_ = stdin.CloseWithError(err)
+			if ctx.Err() != nil {
+				_ = stdin.CloseWithError(ctx.Err())
+			} else {
+				_ = stdin.CloseWithError(err)
+			}
 			return
 		}
 		if len(msg) == 0 {
@@ -141,8 +149,8 @@ func (c *ApiController) PodTerminal() {
 	}
 	defer conn.Close()
 
-	clientset, err := kubernetes.NewForConfig(cfg)
 	writeMu := &sync.Mutex{}
+	clientset, err := kubernetes.NewForConfig(cfg)
 	if err != nil {
 		writeTerminalMessage(conn, writeMu, "k8s client error: "+err.Error())
 		return
@@ -158,7 +166,7 @@ func (c *ApiController) PodTerminal() {
 			Command:   []string{"sh", "-c", "if command -v bash >/dev/null 2>&1; then exec bash; else exec sh; fi"},
 			Stdin:     true,
 			Stdout:    true,
-			Stderr:    false,
+			Stderr:    false, // TTY mode combines stderr into stdout, so use one output stream.
 			TTY:       true,
 		}, scheme.ParameterCodec)
 
