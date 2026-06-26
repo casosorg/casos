@@ -78,6 +78,7 @@ test("renders the built-in site editor through the real backend", async ({page})
       await expect(page.getByText("Edit Site")).toBeVisible();
       await expect(page.locator("input[disabled]").first()).toHaveValue("site-built-in");
       await expect(page.getByRole("button", {name: "Save"}).first()).toBeVisible();
+      await expect(page.getByText("CI artifact failure demo marker")).toBeVisible();
     });
   });
 });
