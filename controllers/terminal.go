@@ -66,8 +66,8 @@ func pumpTerminalInput(
 		}
 	}()
 
-	defer close(done)
 	defer cancel()
+	defer close(done)
 	defer close(resizeCh)
 	defer stdin.Close()
 

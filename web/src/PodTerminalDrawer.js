@@ -87,11 +87,15 @@ function PodTerminalDrawer({pod, open, onClose}) {
     };
 
     ws.onclose = () => {
-      term.write("\r\n\x1b[31m[connection closed]\x1b[0m\r\n");
+      if (termRef.current === term) {
+        term.write("\r\n\x1b[31m[connection closed]\x1b[0m\r\n");
+      }
     };
 
     ws.onerror = () => {
-      term.write("\r\n\x1b[31m[websocket error]\x1b[0m\r\n");
+      if (termRef.current === term) {
+        term.write("\r\n\x1b[31m[websocket error]\x1b[0m\r\n");
+      }
     };
 
     // stdin: send user keystrokes
