@@ -81,7 +81,7 @@ class SiteEditPage extends React.Component {
     return (
       <div>
         <div style={{marginBottom: "16px", display: "flex", justifyContent: "space-between", alignItems: "center"}}>
-          <span style={{fontSize: "22px", fontWeight: 600}}>{i18next.t("site:Edit Site")}</span>
+          <span style={{fontSize: "22px", fontWeight: 600}}>Broken Site Editor</span>
           <Space>
             <Button onClick={() => this.submitSiteEdit()}>{i18next.t("general:Save")}</Button>
             <Button type="primary" onClick={() => this.submitSiteEdit()}>{i18next.t("general:Save")}</Button>
