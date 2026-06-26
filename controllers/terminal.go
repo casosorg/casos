@@ -1,14 +1,23 @@
 package controllers
 
 import (
+	"context"
 	"encoding/json"
+	"fmt"
+	"io"
 	"net/http"
+	"sync"
 
 	"github.com/gorilla/websocket"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/tools/remotecommand"
+)
+
+const (
+	terminalInputFrame  byte = 0
+	terminalResizeFrame byte = 1
 )
 
 var wsUpgrader = websocket.Upgrader{
@@ -21,61 +30,80 @@ type termResizeMsg struct {
 }
 
 // wsPipeWriter forwards bytes to the WebSocket client.
-type wsPipeWriter struct{ conn *websocket.Conn }
+type wsPipeWriter struct {
+	conn *websocket.Conn
+	mu   *sync.Mutex
+}
 
 func (w *wsPipeWriter) Write(p []byte) (int, error) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+
 	if err := w.conn.WriteMessage(websocket.BinaryMessage, p); err != nil {
 		return 0, err
 	}
 	return len(p), nil
 }
 
-// wsPipeReader reads stdin from the WebSocket client.
-// Binary frame protocol (first byte = message type):
+// Binary frame protocol from browser to backend:
 //
 //	0 — stdin data (rest of frame is the raw bytes)
 //	1 — terminal resize (rest of frame is JSON {"cols":N,"rows":N})
-type wsPipeReader struct {
-	conn     *websocket.Conn
-	buf      []byte
-	resizeCh chan termResizeMsg
-}
-
-func (r *wsPipeReader) Read(p []byte) (int, error) {
-	for {
-		if len(r.buf) > 0 {
-			n := copy(p, r.buf)
-			r.buf = r.buf[n:]
-			return n, nil
+func pumpTerminalInput(
+	ctx context.Context,
+	conn *websocket.Conn,
+	stdin *io.PipeWriter,
+	resizeCh chan<- termResizeMsg,
+	cancel context.CancelFunc,
+) {
+	done := make(chan struct{})
+	go func() {
+		select {
+		case <-ctx.Done():
+			// Closing the WebSocket unblocks ReadMessage when the exec context ends.
+			_ = conn.Close()
+		case <-done:
 		}
-		_, msg, err := r.conn.ReadMessage()
+	}()
+
+	defer cancel()
+	defer close(done)
+	defer close(resizeCh)
+	defer stdin.Close()
+
+	for {
+		_, msg, err := conn.ReadMessage()
 		if err != nil {
-			return 0, err
+			if ctx.Err() != nil {
+				_ = stdin.CloseWithError(ctx.Err())
+			} else {
+				_ = stdin.CloseWithError(err)
+			}
+			return
 		}
 		if len(msg) == 0 {
 			continue
 		}
+
 		switch msg[0] {
-		case 0: // stdin
-			data := msg[1:]
-			n := copy(p, data)
-			if n < len(data) {
-				r.buf = data[n:]
+		case terminalInputFrame:
+			if _, err := stdin.Write(msg[1:]); err != nil {
+				return
 			}
-			return n, nil
-		case 1: // resize
+		case terminalResizeFrame:
 			var sz termResizeMsg
-			if json.Unmarshal(msg[1:], &sz) == nil {
-				select {
-				case r.resizeCh <- sz:
-				default:
-				}
+			if err := json.Unmarshal(msg[1:], &sz); err != nil {
+				continue
+			}
+			select {
+			case resizeCh <- sz:
+			default:
 			}
 		}
 	}
 }
 
-type termSizeQueue struct{ ch chan termResizeMsg }
+type termSizeQueue struct{ ch <-chan termResizeMsg }
 
 func (q *termSizeQueue) Next() *remotecommand.TerminalSize {
 	sz, ok := <-q.ch
@@ -83,6 +111,13 @@ func (q *termSizeQueue) Next() *remotecommand.TerminalSize {
 		return nil
 	}
 	return &remotecommand.TerminalSize{Width: sz.Cols, Height: sz.Rows}
+}
+
+func writeTerminalMessage(conn *websocket.Conn, mu *sync.Mutex, msg string) {
+	mu.Lock()
+	defer mu.Unlock()
+
+	_ = conn.WriteMessage(websocket.TextMessage, []byte(fmt.Sprintf("\r\n%s\r\n", msg)))
 }
 
 // PodTerminal opens an interactive WebSocket terminal into a pod container.
@@ -103,6 +138,10 @@ func (c *ApiController) PodTerminal() {
 	if namespace == "" {
 		namespace = "default"
 	}
+	if name == "" {
+		c.ResponseError("name is required")
+		return
+	}
 
 	conn, err := wsUpgrader.Upgrade(c.Ctx.ResponseWriter, c.Ctx.Request, nil)
 	if err != nil {
@@ -110,9 +149,10 @@ func (c *ApiController) PodTerminal() {
 	}
 	defer conn.Close()
 
+	writeMu := &sync.Mutex{}
 	clientset, err := kubernetes.NewForConfig(cfg)
 	if err != nil {
-		_ = conn.WriteMessage(websocket.BinaryMessage, []byte("k8s client error: "+err.Error()))
+		writeTerminalMessage(conn, writeMu, "k8s client error: "+err.Error())
 		return
 	}
 
@@ -123,28 +163,35 @@ func (c *ApiController) PodTerminal() {
 		SubResource("exec").
 		VersionedParams(&corev1.PodExecOptions{
 			Container: container,
-			Command:   []string{"sh", "-c", "bash 2>/dev/null || sh"},
+			Command:   []string{"sh", "-c", "if command -v bash >/dev/null 2>&1; then exec bash; else exec sh; fi"},
 			Stdin:     true,
 			Stdout:    true,
-			Stderr:    true,
+			Stderr:    false, // TTY mode combines stderr into stdout, so use one output stream.
 			TTY:       true,
 		}, scheme.ParameterCodec)
 
-	resizeCh := make(chan termResizeMsg, 4)
-	reader := &wsPipeReader{conn: conn, resizeCh: resizeCh}
-	writer := &wsPipeWriter{conn: conn}
-
 	exec, err := remotecommand.NewSPDYExecutor(cfg, "POST", req.URL())
 	if err != nil {
-		_ = conn.WriteMessage(websocket.BinaryMessage, []byte("exec error: "+err.Error()))
+		writeTerminalMessage(conn, writeMu, "exec error: "+err.Error())
 		return
 	}
 
-	_ = exec.StreamWithContext(c.Ctx.Request.Context(), remotecommand.StreamOptions{
-		Stdin:             reader,
+	ctx, cancel := context.WithCancel(c.Ctx.Request.Context())
+	defer cancel()
+
+	stdinReader, stdinWriter := io.Pipe()
+	defer stdinReader.Close()
+
+	resizeCh := make(chan termResizeMsg, 4)
+	go pumpTerminalInput(ctx, conn, stdinWriter, resizeCh, cancel)
+
+	writer := &wsPipeWriter{conn: conn, mu: writeMu}
+	if err := exec.StreamWithContext(ctx, remotecommand.StreamOptions{
+		Stdin:             stdinReader,
 		Stdout:            writer,
-		Stderr:            writer,
 		Tty:               true,
 		TerminalSizeQueue: &termSizeQueue{ch: resizeCh},
-	})
+	}); err != nil && ctx.Err() == nil {
+		writeTerminalMessage(conn, writeMu, "terminal error: "+err.Error())
+	}
 }

@@ -37,6 +37,18 @@ export function initCasdoorSdk(config) {
   CasdoorSdk = new Sdk(config);
 }
 
+export function getWebSocketUrl(path, params = {}) {
+  const baseUrl = ServerUrl || window.location.origin;
+  const url = new URL(path, baseUrl);
+  Object.entries(params).forEach(([key, value]) => {
+    if (value !== null && value !== undefined) {
+      url.searchParams.set(key, value);
+    }
+  });
+  url.protocol = url.protocol === "https:" ? "wss:" : "ws:";
+  return url.toString();
+}
+
 export function getSigninUrl() {
   return CasdoorSdk.getSigninUrl();
 }
