@@ -9,6 +9,10 @@ on:
       - master
   pull_request:
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
 
   go-tests:
@@ -42,6 +46,67 @@ jobs:
         with:
           name: frontend-build-${{ github.run_id }}
           path: ./web/build
+
+  ui-tests:
+    name: UI tests
+    runs-on: ubuntu-latest
+    needs: [ go-tests ]
+    permissions:
+      contents: read
+      actions: write
+    timeout-minutes: 20
+    services:
+      mysql:
+        image: mysql:8.0.35
+        env:
+          MYSQL_ROOT_PASSWORD: casos-${{ github.run_id }}-${{ github.run_attempt }}
+          MYSQL_DATABASE: casos
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="mysqladmin ping -h 127.0.0.1 -uroot -p$MYSQL_ROOT_PASSWORD"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=10
+    env:
+      dataSourceName: root:casos-${{ github.run_id }}-${{ github.run_attempt }}@tcp(127.0.0.1:3306)/
+      dbName: casos
+      socks5Proxy: ""
+      E2E_DATA_DIR: /tmp/casos-e2e-${{ github.run_id }}-${{ github.run_attempt }}
+      E2E_APISERVER_PORT: 16443
+      E2E_WEBHOOK_PORT: 19443
+      E2E_TEST_TOKEN: casos-e2e-${{ github.run_id }}-${{ github.run_attempt }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v4
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache-dependency-path: ./go.mod
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: 'yarn'
+          cache-dependency-path: ./web/yarn.lock
+      - run: yarn install
+        working-directory: ./web
+      - run: yarn playwright install --with-deps chromium
+        working-directory: ./web
+      - name: Run UI tests
+        working-directory: ./web
+        shell: bash
+        run: |
+          set -o pipefail
+          yarn run ui:test 2>&1 | tee ui-test.log
+      - name: Upload Playwright artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-artifacts-${{ github.run_id }}
+          path: |
+            ./web/playwright-report
+            ./web/test-results
+            ./web/ui-test.log
+          if-no-files-found: ignore
 
   backend:
     name: Back-end
@@ -87,7 +152,7 @@ jobs:
       contents: write
       issues: write
     if: github.repository == 'casosorg/casos' && github.event_name == 'push'
-    needs: [ frontend, backend, linter ]
+    needs: [ frontend, ui-tests, backend, linter ]
     outputs:
       new-release-published: ${{ steps.semantic.outputs.new_release_published }}
       new-release-version: ${{ steps.semantic.outputs.new_release_version }}

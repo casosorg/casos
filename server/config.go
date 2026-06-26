@@ -3,9 +3,10 @@ package server
 import (
 	"fmt"
 	"net"
+	"strconv"
 	"strings"
 
-	"github.com/beego/beego"
+	"github.com/casosorg/casos/conf"
 )
 
 // Config holds control-plane settings populated from app.conf.
@@ -22,23 +23,23 @@ type Config struct {
 
 // ConfigFromAppConf reads server config from the beego app.conf.
 func ConfigFromAppConf() (Config, error) {
-	dataDir := beego.AppConfig.String("dataDir")
+	dataDir := conf.GetConfigString("dataDir")
 	if dataDir == "" {
 		dataDir = "/var/lib/casos"
 	}
-	bind := beego.AppConfig.String("apiserverBind")
+	bind := conf.GetConfigString("apiserverBind")
 	if bind == "" {
 		bind = outboundIP()
 	}
-	port, _ := beego.AppConfig.Int("apiserverPort")
+	port := configInt("apiserverPort")
 	if port == 0 {
 		port = 6443
 	}
-	dsn := beego.AppConfig.String("dataSourceName")
+	dsn := conf.GetConfigString("dataSourceName")
 	if dsn == "" {
 		return Config{}, fmt.Errorf("dataSourceName not set in app.conf")
 	}
-	dbName := beego.AppConfig.String("dbName")
+	dbName := conf.GetConfigString("dbName")
 	if dbName == "" {
 		dbName = "casos"
 	}
@@ -49,14 +50,14 @@ func ConfigFromAppConf() (Config, error) {
 		advertise = bind
 	}
 
-	webhookPort, _ := beego.AppConfig.Int("webhookPort")
+	webhookPort := configInt("webhookPort")
 	if webhookPort == 0 {
 		webhookPort = 9443
 	}
 
-	socks5Proxy := beego.AppConfig.String("socks5Proxy")
+	socks5Proxy := conf.GetConfigString("socks5Proxy")
 
-	sandboxImage := beego.AppConfig.String("sandboxImage")
+	sandboxImage := conf.GetConfigString("sandboxImage")
 	if sandboxImage == "" {
 		if socks5Proxy != "" {
 			sandboxImage = "registry.aliyuncs.com/google_containers/pause:3.10.1"
@@ -75,6 +76,20 @@ func ConfigFromAppConf() (Config, error) {
 		SandboxImage:     sandboxImage,
 		Socks5Proxy:      socks5Proxy,
 	}, nil
+}
+
+func configInt(key string) int {
+	// Preserve the old AppConfig.Int behavior here: missing or malformed values
+	// should fall back to 0 instead of panicking like conf.GetConfigInt.
+	value := conf.GetConfigString(key)
+	if value == "" {
+		return 0
+	}
+	res, err := strconv.Atoi(value)
+	if err != nil {
+		return 0
+	}
+	return res
 }
 
 // injectDBName inserts dbName into a MySQL DSN of the form
