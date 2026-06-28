@@ -50,7 +50,7 @@ jobs:
     permissions:
       contents: read
       actions: write
-    timeout-minutes: 20
+    timeout-minutes: 30
     services:
       mysql:
         image: mysql:8
@@ -74,6 +74,8 @@ jobs:
       E2E_TEST_TOKEN: casos-e2e-${{ github.run_id }}-${{ github.run_attempt }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       - uses: actions/setup-go@v4
         with:
           go-version: ${{ env.GO_VERSION }}
@@ -85,14 +87,57 @@ jobs:
           cache-dependency-path: ./web/yarn.lock
       - run: yarn install --frozen-lockfile
         working-directory: ./web
+      - run: yarn run ui:test:selector:check
+        working-directory: ./web
       - run: yarn playwright install --with-deps chromium
         working-directory: ./web
-      - name: Run UI tests
+      - name: Run UI smoke tests
         working-directory: ./web
         shell: bash
         run: |
           set -o pipefail
-          yarn run ui:test 2>&1 | tee ui-test.log
+          yarn run ui:test:smoke 2>&1 | tee ui-smoke-test.log
+      - name: Select UI regression tests
+        id: ui-regression-tests
+        shell: bash
+        env:
+          BASE_REF: ${{ github.base_ref }}
+          EVENT_NAME: ${{ github.event_name }}
+        run: |
+          set -euo pipefail
+          if [[ "$EVENT_NAME" == "pull_request" ]]; then
+            git fetch --no-tags --prune origin "+refs/heads/$BASE_REF:refs/remotes/origin/$BASE_REF"
+            git diff --name-only "origin/$BASE_REF"...HEAD > web/ui-changed-files.txt
+          elif git rev-parse HEAD^ >/dev/null 2>&1; then
+            git diff --name-only HEAD^ HEAD > web/ui-changed-files.txt
+          else
+            git diff-tree --no-commit-id --name-only -r HEAD > web/ui-changed-files.txt
+          fi
+          node web/scripts/select-ui-tests.js web/ui-changed-files.txt > web/ui-regression-tests.txt
+          echo "Changed files considered for UI regression:"
+          cat web/ui-changed-files.txt
+          echo "Selected UI regression tests:"
+          if [[ -s web/ui-regression-tests.txt ]]; then
+            cat web/ui-regression-tests.txt
+            echo "has_tests=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "(none; fixed smoke already ran)"
+            echo "has_tests=false" >> "$GITHUB_OUTPUT"
+          fi
+      - name: Run UI regression tests
+        if: steps.ui-regression-tests.outputs.has_tests == 'true'
+        working-directory: ./web
+        shell: bash
+        run: |
+          set -o pipefail
+          mapfile -t ui_test_files < ui-regression-tests.txt
+          yarn run ui:test:regression -- "${ui_test_files[@]}" 2>&1 | tee ui-test.log
+      - name: Skip UI regression tests
+        if: steps.ui-regression-tests.outputs.has_tests != 'true'
+        working-directory: ./web
+        shell: bash
+        run: |
+          echo "No changed-path UI regression tests selected; fixed smoke already ran." | tee ui-test.log
       - name: Upload Playwright artifacts
         if: always()
         uses: actions/upload-artifact@v4
@@ -101,6 +146,9 @@ jobs:
           path: |
             ./web/playwright-report
             ./web/test-results
+            ./web/ui-changed-files.txt
+            ./web/ui-regression-tests.txt
+            ./web/ui-smoke-test.log
             ./web/ui-test.log
           if-no-files-found: ignore
 

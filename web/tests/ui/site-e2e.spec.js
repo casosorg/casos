@@ -1,30 +1,12 @@
 const {expect, test} = require("@playwright/test");
+const {signInAsCiUser} = require("./e2e-helpers");
 
-const e2eToken = process.env.E2E_TEST_TOKEN;
+test.beforeEach(async({page}) => {
+  await signInAsCiUser(page);
+});
 
-test("renders the built-in site editor through the real backend", async ({page}) => {
-  expect(e2eToken).toBeTruthy();
-
-  await page.addInitScript(() => {
-    localStorage.setItem("language", "en");
-  });
-
-  const signin = await page.context().request.post("/api/e2e/signin", {
-    headers: {
-      "X-Casos-E2E-Token": e2eToken,
-    },
-  });
-  await expect(signin).toBeOK();
-  await expect(signin.json()).resolves.toMatchObject({
-    status: "ok",
-    data: {
-      name: "ci-user",
-      displayName: "CI User",
-    },
-  });
-
+test("renders the built-in site editor through the real backend @smoke", async({page}) => {
   await page.goto("/sites/site-built-in");
-  await page.waitForLoadState("networkidle");
 
   await expect(page).toHaveURL(/\/sites\/site-built-in$/);
   await expect(page.locator("#parent-area")).toBeVisible();
@@ -32,4 +14,15 @@ test("renders the built-in site editor through the real backend", async ({page})
   await expect(page.getByText("Edit Site")).toBeVisible();
   await expect(page.locator("input[disabled]").first()).toHaveValue("site-built-in");
   await expect(page.getByRole("button", {name: "Save"}).first()).toBeVisible();
+});
+
+test("renders the sites list through the real backend", async({page}) => {
+  await page.goto("/sites");
+
+  await expect(page).toHaveURL(/\/sites$/);
+  const sitesTable = page.locator(".ant-table-wrapper").filter({hasText: "Sites"});
+  await expect(sitesTable).toBeVisible();
+  await expect(sitesTable.getByRole("link", {name: "site-built-in"})).toBeVisible();
+  await expect(sitesTable.getByRole("cell", {name: "CasOS", exact: true})).toBeVisible();
+  await expect(sitesTable.getByRole("button", {name: "Add"})).toBeDisabled();
 });

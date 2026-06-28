@@ -119,6 +119,7 @@ class MachineListPage extends React.Component {
   }
 
   render() {
+    const deployWorkerNodeLabel = i18next.t("machine:Deploy worker node", {defaultValue: "Deploy worker node"});
     const columns = [
       {
         title: i18next.t("general:Name"),
@@ -172,8 +173,8 @@ class MachineListPage extends React.Component {
         fixed: "right",
         render: (text, record) => (
           <div style={{display: "flex", alignItems: "center", gap: "2px"}}>
-            <Tooltip title={i18next.t("machine:Deploy worker node", "Deploy worker node")}>
-              <Button type="text" size="small" icon={<CloudSyncOutlined />} style={{width: "28px", height: "28px", padding: 0, borderRadius: "6px"}} onClick={() => this.openDeployPanel(record)} />
+            <Tooltip title={deployWorkerNodeLabel}>
+              <Button aria-label={deployWorkerNodeLabel} type="text" size="small" icon={<CloudSyncOutlined />} style={{width: "28px", height: "28px", padding: 0, borderRadius: "6px"}} onClick={() => this.openDeployPanel(record)} />
             </Tooltip>
             <Tooltip title={i18next.t("general:Edit")}>
               <Button type="text" size="small" icon={<EditOutlined />} style={{width: "28px", height: "28px", padding: 0, borderRadius: "6px"}} onClick={() => this.props.history.push(`/machines/${record.name}`)} />
