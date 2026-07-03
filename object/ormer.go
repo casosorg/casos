@@ -159,6 +159,13 @@ func (a *Ormer) open() {
 	a.Engine = engine
 }
 
+func PingDatabase() error {
+	if ormer == nil || ormer.Engine == nil {
+		return fmt.Errorf("database adapter is not initialized")
+	}
+	return ormer.Engine.Ping()
+}
+
 func (a *Ormer) close() {
 	_ = a.Engine.Close()
 	a.Engine = nil

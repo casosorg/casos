@@ -54,6 +54,7 @@ import AuthorizationPolicyPage from "./AuthorizationPolicyPage";
 import TrivyScanPage from "./TrivyScanPage";
 import LogSearchPage from "./LogSearchPage";
 import TopologyPage from "./TopologyPage";
+import MonitorPage from "./MonitorPage";
 import i18next from "i18next";
 
 const {Header, Footer, Content, Sider} = Layout;
@@ -62,7 +63,7 @@ function getMenuParentKey(uri) {
   if (!uri) {return null;}
   if (uri === "/" || uri === "/dashboard" || uri === "/app-store" || uri === "/helm-releases") {return null;}
   if (uri.includes("/pods") || uri.includes("/deployments") || uri.includes("/statefulsets") || uri.includes("/daemonsets") || uri.includes("/jobs") || uri.includes("/cronjobs")) {return "/workloads";}
-  if (uri.includes("/log-search") || uri.includes("/topology")) {return "/observability";}
+  if (uri.includes("/monitor") || uri.includes("/log-search") || uri.includes("/topology")) {return "/observability";}
   if (uri.includes("/nodes") || uri.includes("/namespaces") || uri.includes("/serviceaccounts")) {return "/cluster";}
   if (uri.includes("/configmaps") || uri.includes("/secrets") || uri.includes("/pvcs") || uri.includes("/resourcequotas") || uri.includes("/hpas")) {return "/configuration";}
   if (uri.includes("/ingresses") || uri.includes("/networkpolicies")) {return "/networking";}
@@ -239,6 +240,7 @@ function ManagementPage(props) {
         Setting.getItem(<Link to="/trivy-scans">{i18next.t("general:Image Scan")}</Link>, "/trivy-scans"),
       ]),
       Setting.getItem(<Link to="/log-search">{i18next.t("general:Observability")}</Link>, "/observability", <FundViewOutlined />, [
+        Setting.getItem(<Link to="/monitor">{i18next.t("general:Monitor Center")}</Link>, "/monitor"),
         Setting.getItem(<Link to="/log-search">{i18next.t("general:Log Search")}</Link>, "/log-search"),
         Setting.getItem(<Link to="/topology">{i18next.t("general:Resource Topology")}</Link>, "/topology"),
       ]),
@@ -265,6 +267,7 @@ function ManagementPage(props) {
         <Route exact path="/jobs" render={(props) => <JobListPage {...props} />} />
         <Route exact path="/cronjobs" render={(props) => <CronJobListPage {...props} />} />
         <Route exact path="/hpas" render={(props) => <HPAListPage {...props} />} />
+        <Route exact path="/monitor" render={(props) => <MonitorPage {...props} />} />
         <Route exact path="/log-search" render={(props) => <LogSearchPage {...props} />} />
         <Route exact path="/topology" render={(props) => <TopologyPage {...props} />} />
         <Route exact path="/nodes" render={(props) => <NodeListPage {...props} />} />

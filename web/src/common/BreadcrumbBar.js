@@ -18,6 +18,7 @@ const RESOURCE_LABELS = {
   "statefulsets": "general:Stateful Sets",
   "sites": "general:Sites",
   "machines": "general:Machines",
+  "monitor": "general:Monitor Center",
 };
 
 function buildBreadcrumbItems(uri) {
