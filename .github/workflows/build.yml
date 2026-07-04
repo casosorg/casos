@@ -124,32 +124,35 @@ jobs:
             echo "(none; fixed smoke already ran)"
             echo "has_tests=false" >> "$GITHUB_OUTPUT"
           fi
-          if grep -qxF "tests/ui/worker-node-ready.spec.js" web/ui-regression-tests.txt; then
-            echo "has_worker_vm_tests=true" >> "$GITHUB_OUTPUT"
+          grep -vxF "tests/ui/worker-node-ready.spec.js" web/ui-regression-tests.txt | grep -vxF "tests/ui/app-store.spec.js" > web/ui-standard-regression-tests.txt || true
+          grep -xF "tests/ui/app-store.spec.js" web/ui-regression-tests.txt > web/ui-app-store-tests.txt || true
+          echo "Standard UI regression tests:"
+          if [[ -s web/ui-standard-regression-tests.txt ]]; then
+            cat web/ui-standard-regression-tests.txt
+            echo "has_standard_tests=true" >> "$GITHUB_OUTPUT"
           else
-            echo "has_worker_vm_tests=false" >> "$GITHUB_OUTPUT"
+            echo "(none)"
+            echo "has_standard_tests=false" >> "$GITHUB_OUTPUT"
           fi
-      - name: Run UI regression tests
-        if: steps.ui-regression-tests.outputs.has_tests == 'true'
-        working-directory: ./web
-        shell: bash
-        run: |
-          set -o pipefail
-          mapfile -t ui_test_files < <(grep -vxF "tests/ui/worker-node-ready.spec.js" ui-regression-tests.txt || true)
-          if [[ ${#ui_test_files[@]} -gt 0 ]]; then
-            yarn run ui:test:regression -- "${ui_test_files[@]}" 2>&1 | tee ui-test.log
+          echo "App Store UI regression tests:"
+          if [[ -s web/ui-app-store-tests.txt ]]; then
+            cat web/ui-app-store-tests.txt
           else
-            echo "Only the worker-node-ready VM test was selected; it runs in its own step." | tee ui-test.log
+            echo "(none)"
           fi
-      - name: Skip UI regression tests
-        if: steps.ui-regression-tests.outputs.has_tests != 'true'
-        working-directory: ./web
-        shell: bash
-        run: |
-          echo "No changed-path UI regression tests selected; fixed smoke already ran." | tee ui-test.log
+          if [[ -s web/ui-app-store-tests.txt ]]; then
+            echo "has_app_store_tests=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "has_app_store_tests=false" >> "$GITHUB_OUTPUT"
+          fi
+          if grep -qxF "tests/ui/worker-node-ready.spec.js" web/ui-regression-tests.txt || grep -qxF "tests/ui/app-store.spec.js" web/ui-regression-tests.txt; then
+            echo "needs_worker_vm=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "needs_worker_vm=false" >> "$GITHUB_OUTPUT"
+          fi
       - name: Prepare worker node VM
         id: prepare-worker-vm
-        if: steps.ui-regression-tests.outputs.has_worker_vm_tests == 'true'
+        if: steps.ui-regression-tests.outputs.needs_worker_vm == 'true'
         continue-on-error: true
         timeout-minutes: 15
         shell: bash
@@ -274,16 +277,51 @@ jobs:
           echo "E2E_WORKER_VM_IP=$worker_vm_ip" >> "$GITHUB_ENV"
           echo "apiserverBind=0.0.0.0" >> "$GITHUB_ENV"
           echo "E2E_APISERVER_URL=https://${host_bridge_ip}:${E2E_APISERVER_PORT}" >> "$GITHUB_ENV"
-      - name: Run worker node ready UI test
-        if: steps.ui-regression-tests.outputs.has_worker_vm_tests == 'true' && steps.prepare-worker-vm.outcome == 'success'
+      - name: Require worker node VM for selected UI tests
+        if: steps.ui-regression-tests.outputs.needs_worker_vm == 'true' && steps.prepare-worker-vm.outcome != 'success'
+        shell: bash
+        run: |
+          echo "Selected UI tests require a prepared worker node VM." >&2
+          exit 1
+      - name: Validate worker node is ready for worker VM UI tests
+        if: steps.ui-regression-tests.outputs.needs_worker_vm == 'true' && steps.prepare-worker-vm.outcome == 'success'
+        working-directory: ./web
+        timeout-minutes: 20
+        shell: bash
+        env:
+          E2E_DATA_DIR: ${{ runner.temp }}/casos-e2e-${{ github.run_id }}-${{ github.run_attempt }}-worker
+        run: |
+          set -o pipefail
+          yarn playwright test --workers=1 tests/ui/worker-node-ready.spec.js 2>&1 | tee ui-worker-node-ready-test.log
+      - name: Run App Store UI tests
+        if: steps.ui-regression-tests.outputs.has_app_store_tests == 'true' && steps.prepare-worker-vm.outcome == 'success'
+        working-directory: ./web
+        timeout-minutes: 20
+        shell: bash
+        env:
+          E2E_DATA_DIR: ${{ runner.temp }}/casos-e2e-${{ github.run_id }}-${{ github.run_attempt }}-worker
+        run: |
+          set -o pipefail
+          mapfile -t ui_test_files < ui-app-store-tests.txt
+          # App install tests share VM and cluster state, so run serially without retries to avoid retrying against partially installed releases.
+          yarn playwright test --grep-invert @smoke --workers=1 --retries=0 --reporter=list "${ui_test_files[@]}" 2>&1 | tee ui-app-store-test.log
+      - name: Run UI regression tests
+        if: steps.ui-regression-tests.outputs.has_standard_tests == 'true'
         working-directory: ./web
         timeout-minutes: 20
         shell: bash
         run: |
           set -o pipefail
-          yarn playwright test --workers=1 tests/ui/worker-node-ready.spec.js 2>&1 | tee ui-worker-node-ready-test.log
+          mapfile -t ui_test_files < ui-standard-regression-tests.txt
+          yarn run ui:test:regression -- "${ui_test_files[@]}" 2>&1 | tee ui-test.log
+      - name: Skip UI regression tests
+        if: steps.ui-regression-tests.outputs.has_standard_tests != 'true'
+        working-directory: ./web
+        shell: bash
+        run: |
+          echo "No standard changed-path UI regression tests selected; fixed smoke already ran." | tee ui-test.log
       - name: Cleanup worker node VM
-        if: always() && steps.ui-regression-tests.outputs.has_worker_vm_tests == 'true'
+        if: always() && steps.ui-regression-tests.outputs.needs_worker_vm == 'true'
         shell: bash
         run: |
           set +e
@@ -314,9 +352,12 @@ jobs:
             ./web/test-results
             ./web/ui-changed-files.txt
             ./web/ui-regression-tests.txt
+            ./web/ui-standard-regression-tests.txt
+            ./web/ui-app-store-tests.txt
             ./web/ui-smoke-test.log
             ./web/ui-test.log
             ./web/ui-worker-node-ready-test.log
+            ./web/ui-app-store-test.log
             ${{ runner.temp }}/casos-worker-vm/serial.log
           if-no-files-found: ignore
 

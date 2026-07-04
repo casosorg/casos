@@ -6,6 +6,7 @@ const API_UNINSTALL_HELM_RELEASE = "/api/uninstall-helm-release";
 const API_ADD_HELM_REPO = "/api/add-helm-repo";
 const API_GET_HELM_REPOS = "/api/get-helm-repos";
 const API_DELETE_HELM_REPO = "/api/delete-helm-repo";
+const INSTALL_DONE_TIMEOUT_MS = Number(process.env.E2E_APP_INSTALL_DONE_TIMEOUT_MS) || 11 * 60 * 1000;
 const HTTP_CHECK_TIMEOUT_MS = Number(process.env.E2E_APP_HTTP_TIMEOUT_MS) || 180_000;
 const HTTP_CHECK_INTERVAL_MS = 3_000;
 
@@ -95,12 +96,40 @@ function installModal(page) {
   return page.getByRole("dialog").filter({hasText: "Install chart"});
 }
 
+function compactInstallDialogText(text) {
+  const trimmed = text.trim();
+  if (trimmed.length <= 4000) {
+    return trimmed || "No install dialog text was available.";
+  }
+  return `${trimmed.slice(0, 1800)}\n...\n${trimmed.slice(-1800)}`;
+}
+
+async function waitForInstallDone(dialog) {
+  const doneButton = dialog.getByRole("button", {name: "Done"});
+  const errorAlert = dialog.locator(".ant-alert-error").first();
+  const deadline = Date.now() + INSTALL_DONE_TIMEOUT_MS;
+
+  while (Date.now() < deadline) {
+    if (await doneButton.isVisible()) {
+      return;
+    }
+    if (await errorAlert.isVisible()) {
+      const dialogText = compactInstallDialogText(await dialog.innerText());
+      throw new Error(`Helm install failed before completion:\n${dialogText}`);
+    }
+    await new Promise(resolve => setTimeout(resolve, 1000));
+  }
+
+  const dialogText = compactInstallDialogText(await dialog.innerText());
+  throw new Error(`Timed out waiting for Helm install to complete:\n${dialogText}`);
+}
+
 async function openChartInstallModal(page, {repoName, chartName}) {
   await page.goto("/app-store");
   await expect(page).toHaveURL(/\/app-store$/);
 
   await page.getByText(repoName, {exact: true}).click();
-  const chartCard = page.locator(".ant-card").filter({has: page.getByText(chartName, {exact: true})});
+  const chartCard = page.locator(".ant-row .ant-col .ant-card").filter({has: page.getByText(chartName, {exact: true})});
   await expect(chartCard).toBeVisible({timeout: 30_000});
   await chartCard.getByRole("button", {name: "Install"}).click();
 
@@ -125,7 +154,7 @@ async function installAppFromAppStore(page, {repoName, chartName, releaseName, n
   await dialog.getByRole("button", {name: "Install"}).click();
   installedReleases.push({name: releaseName, namespace});
 
-  await expect(dialog.getByRole("button", {name: "Done"})).toBeVisible({timeout: 120_000});
+  await waitForInstallDone(dialog);
   await dialog.getByRole("button", {name: "Done"}).click();
   await expect(dialog).toBeHidden();
 }
