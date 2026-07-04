@@ -5,6 +5,7 @@ import (
 	"crypto/elliptic"
 	"crypto/rand"
 	"crypto/rsa"
+	"crypto/tls"
 	"crypto/x509"
 	"crypto/x509/pkix"
 	"encoding/base64"
@@ -18,6 +19,10 @@ import (
 
 	"k8s.io/client-go/rest"
 )
+
+func apiServerServingDNSNames() []string {
+	return []string{"localhost", "kubernetes", "kubernetes.default", "kubernetes.default.svc"}
+}
 
 // ensureCerts generates a self-signed CA, apiserver cert/key, and admin client
 // cert/key if absent.
@@ -90,10 +95,23 @@ func ensureCerts(dir, ip, advertiseIP string) error {
 		if err := writePEM(caKeyFile, "RSA PRIVATE KEY", caKeyDER); err != nil {
 			return err
 		}
-		caCert, _ = x509.ParseCertificate(caDER)
+		caCert, err = x509.ParseCertificate(caDER)
+		if err != nil {
+			return err
+		}
 	}
 
-	if !fileExists(srvCrtFile) {
+	serverIPs := desiredAPIServerIPs(ip, advertiseIP)
+	if !apiServerServingCertUsable(srvCrtFile, srvKeyFile, serverIPs, caCert) {
+		if err := removeIfExists(srvKeyFile); err != nil {
+			return err
+		}
+		if err := removeIfExists(srvCrtFile); err != nil {
+			return err
+		}
+	}
+
+	if !fileExists(srvCrtFile) || !fileExists(srvKeyFile) {
 		srvKey, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
 		if err != nil {
 			return err
@@ -105,8 +123,8 @@ func ensureCerts(dir, ip, advertiseIP string) error {
 			NotAfter:     time.Now().Add(10 * 365 * 24 * time.Hour),
 			KeyUsage:     x509.KeyUsageDigitalSignature | x509.KeyUsageKeyEncipherment,
 			ExtKeyUsage:  []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
-			IPAddresses:  uniqueIPs(append([]string{"127.0.0.1", ip, advertiseIP}, allInterfaceIPs()...)...),
-			DNSNames:     []string{"localhost", "kubernetes", "kubernetes.default", "kubernetes.default.svc"},
+			IPAddresses:  serverIPs,
+			DNSNames:     apiServerServingDNSNames(),
 		}
 		srvDER, err := x509.CreateCertificate(rand.Reader, srvTemplate, caCert, &srvKey.PublicKey, caKey)
 		if err != nil {
@@ -392,6 +410,13 @@ func fileExists(path string) bool {
 	return err == nil
 }
 
+func removeIfExists(path string) error {
+	if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
+		return err
+	}
+	return nil
+}
+
 func uniqueIPs(addrs ...string) []net.IP {
 	seen := map[string]bool{}
 	var result []net.IP
@@ -404,6 +429,70 @@ func uniqueIPs(addrs ...string) []net.IP {
 		result = append(result, ip)
 	}
 	return result
+}
+
+func desiredAPIServerIPs(ip, advertiseIP string) []net.IP {
+	return uniqueIPs(append([]string{"127.0.0.1", ip, advertiseIP}, allInterfaceIPs()...)...)
+}
+
+func apiServerServingCertUsable(certFile, keyFile string, desiredIPs []net.IP, caCert *x509.Certificate) bool {
+	if caCert == nil || !fileExists(certFile) || !fileExists(keyFile) {
+		return false
+	}
+	tlsCert, err := tls.LoadX509KeyPair(certFile, keyFile)
+	if err != nil || len(tlsCert.Certificate) == 0 {
+		return false
+	}
+	cert, err := x509.ParseCertificate(tlsCert.Certificate[0])
+	if err != nil {
+		return false
+	}
+	pool := x509.NewCertPool()
+	pool.AddCert(caCert)
+	if _, err := cert.Verify(x509.VerifyOptions{Roots: pool, KeyUsages: []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth}}); err != nil {
+		return false
+	}
+	for _, desiredIP := range desiredIPs {
+		if !certHasIP(cert.IPAddresses, desiredIP) {
+			return false
+		}
+	}
+	for _, dnsName := range apiServerServingDNSNames() {
+		if !certHasDNS(cert.DNSNames, dnsName) {
+			return false
+		}
+	}
+	return true
+}
+
+func certHasIP(certIPs []net.IP, desiredIP net.IP) bool {
+	if desiredIP == nil {
+		return false
+	}
+	desired := desiredIP
+	desired4 := desiredIP.To4()
+	if desired4 != nil {
+		desired = desired4
+	}
+	for _, certIP := range certIPs {
+		candidate := certIP
+		if desired4 != nil {
+			candidate = certIP.To4()
+		}
+		if candidate != nil && candidate.Equal(desired) {
+			return true
+		}
+	}
+	return false
+}
+
+func certHasDNS(certDNS []string, desiredDNS string) bool {
+	for _, name := range certDNS {
+		if name == desiredDNS {
+			return true
+		}
+	}
+	return false
 }
 
 // webhookCertValidUnderCA returns true if the PEM cert at certFile verifies
