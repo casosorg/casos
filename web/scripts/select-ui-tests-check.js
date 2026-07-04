@@ -11,13 +11,13 @@ function expectSelection(name, changedFiles, expectedTests) {
 expectSelection(
   "worker node UI changes select worker node regression",
   ["web/src/MachineNodeDeployPanel.js"],
-  ["tests/ui/worker-node.spec.js"]
+  ["tests/ui/worker-node.spec.js", "tests/ui/worker-node-ready.spec.js"]
 );
 
 expectSelection(
   "worker node backend changes select worker node regression once",
   ["controllers/machine.go", "object/machine_node_deploy.go", "web/src/MachineListPage.js"],
-  ["tests/ui/worker-node.spec.js"]
+  ["tests/ui/worker-node.spec.js", "tests/ui/worker-node-ready.spec.js"]
 );
 
 expectSelection(
@@ -45,8 +45,14 @@ expectSelection(
 );
 
 expectSelection(
+  "app store UI and access URL changes select app store regression",
+  ["web/src/AppStorePage.js", "web/src/DeploymentListPage.js", "web/src/ServiceListPage.js", "controllers/helm.go"],
+  ["tests/ui/app-store.spec.js"]
+);
+
+expectSelection(
   "unknown frontend code changes run all regression tests",
-  ["web/src/DeploymentListPage.js"],
+  ["web/src/PodListPage.js"],
   ALL_REGRESSION_TESTS
 );
 
@@ -68,7 +74,7 @@ try {
   const output = execFileSync(process.execPath, [path.join(__dirname, "select-ui-tests.js"), cliInputPath], {
     encoding: "utf8",
   });
-  assert.strictEqual(output, "tests/ui/worker-node.spec.js\n", "CLI prints selected regression tests");
+  assert.strictEqual(output, "tests/ui/worker-node.spec.js\ntests/ui/worker-node-ready.spec.js\n", "CLI prints selected regression tests");
 } finally {
   fs.rmSync(cliInputPath, {force: true});
 }

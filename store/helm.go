@@ -12,6 +12,7 @@ import (
 	"helm.sh/helm/v3/pkg/action"
 	"helm.sh/helm/v3/pkg/chart"
 	"helm.sh/helm/v3/pkg/chart/loader"
+	"helm.sh/helm/v3/pkg/registry"
 	"helm.sh/helm/v3/pkg/release"
 	"helm.sh/helm/v3/pkg/repo"
 
@@ -177,8 +178,13 @@ func fetchIndexFile(repoURL string) (*repo.IndexFile, error) {
 	return &idx, nil
 }
 
-// FetchRepoIndex returns all charts listed in a Helm repo's index.yaml.
+// FetchRepoIndex returns all charts listed in a Helm repo's index.yaml, or, for an
+// "oci://" repoURL, the single chart hosted at that OCI reference.
 func FetchRepoIndex(repoURL string) ([]HelmChartSummary, error) {
+	if isOCIRepo(repoURL) {
+		return fetchOCIChartSummary(repoURL)
+	}
+
 	idx, err := fetchIndexFile(repoURL)
 	if err != nil {
 		return nil, err
@@ -201,9 +207,84 @@ func FetchRepoIndex(repoURL string) ([]HelmChartSummary, error) {
 	return charts, nil
 }
 
+// ---------- OCI chart support ----------
+
+// isOCIRepo reports whether repoURL is an OCI registry reference (e.g.
+// "oci://registry-1.docker.io/casbin/casdoor-helm-charts") rather than a classic
+// index.yaml-based Helm repo.
+func isOCIRepo(repoURL string) bool {
+	return strings.HasPrefix(repoURL, fmt.Sprintf("%s://", registry.OCIScheme))
+}
+
+func newOCIRegistryClient() (*registry.Client, error) {
+	return registry.NewClient(registry.ClientOptHTTPClient(proxypkg.ProxyHttpClient))
+}
+
+// pullOCIChart pulls the chart hosted at repoURL, resolving to the newest published
+// semver tag when version is empty.
+func pullOCIChart(repoURL, version string) (*registry.PullResult, error) {
+	ref := strings.TrimPrefix(repoURL, fmt.Sprintf("%s://", registry.OCIScheme))
+
+	rc, err := newOCIRegistryClient()
+	if err != nil {
+		return nil, fmt.Errorf("oci registry client: %w", err)
+	}
+
+	resolvedVersion := version
+	if resolvedVersion == "" {
+		tags, err := rc.Tags(ref)
+		if err != nil {
+			return nil, fmt.Errorf("list oci tags: %w", err)
+		}
+		if len(tags) == 0 {
+			return nil, fmt.Errorf("no tags found for %s", repoURL)
+		}
+		resolvedVersion = tags[0]
+	}
+
+	pull, err := rc.Pull(fmt.Sprintf("%s:%s", ref, resolvedVersion), registry.PullOptWithChart(true))
+	if err != nil {
+		return nil, fmt.Errorf("pull oci chart: %w", err)
+	}
+	return pull, nil
+}
+
+func loadOCIChart(repoURL, version string) (*chart.Chart, error) {
+	pull, err := pullOCIChart(repoURL, version)
+	if err != nil {
+		return nil, err
+	}
+	return loader.LoadArchive(bytes.NewReader(pull.Chart.Data))
+}
+
+func fetchOCIChartSummary(repoURL string) ([]HelmChartSummary, error) {
+	pull, err := pullOCIChart(repoURL, "")
+	if err != nil {
+		return nil, err
+	}
+	meta := pull.Chart.Meta
+	if meta == nil {
+		return nil, fmt.Errorf("chart metadata not found for %s", repoURL)
+	}
+	return []HelmChartSummary{
+		{
+			Name:        meta.Name,
+			Version:     meta.Version,
+			AppVersion:  meta.AppVersion,
+			Description: meta.Description,
+			Icon:        meta.Icon,
+			Keywords:    meta.Keywords,
+		},
+	}, nil
+}
+
 // ---------- Chart loader ----------
 
 func loadChart(chartName, repoURL, version string) (*chart.Chart, error) {
+	if isOCIRepo(repoURL) {
+		return loadOCIChart(repoURL, version)
+	}
+
 	idx, err := fetchIndexFile(repoURL)
 	if err != nil {
 		return nil, err

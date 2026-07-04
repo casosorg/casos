@@ -50,7 +50,7 @@ jobs:
     permissions:
       contents: read
       actions: write
-    timeout-minutes: 30
+    timeout-minutes: 60
     services:
       mysql:
         image: mysql:8
@@ -124,20 +124,186 @@ jobs:
             echo "(none; fixed smoke already ran)"
             echo "has_tests=false" >> "$GITHUB_OUTPUT"
           fi
+          if grep -qxF "tests/ui/worker-node-ready.spec.js" web/ui-regression-tests.txt; then
+            echo "has_worker_vm_tests=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "has_worker_vm_tests=false" >> "$GITHUB_OUTPUT"
+          fi
       - name: Run UI regression tests
         if: steps.ui-regression-tests.outputs.has_tests == 'true'
         working-directory: ./web
         shell: bash
         run: |
           set -o pipefail
-          mapfile -t ui_test_files < ui-regression-tests.txt
-          yarn run ui:test:regression -- "${ui_test_files[@]}" 2>&1 | tee ui-test.log
+          mapfile -t ui_test_files < <(grep -vxF "tests/ui/worker-node-ready.spec.js" ui-regression-tests.txt || true)
+          if [[ ${#ui_test_files[@]} -gt 0 ]]; then
+            yarn run ui:test:regression -- "${ui_test_files[@]}" 2>&1 | tee ui-test.log
+          else
+            echo "Only the worker-node-ready VM test was selected; it runs in its own step." | tee ui-test.log
+          fi
       - name: Skip UI regression tests
         if: steps.ui-regression-tests.outputs.has_tests != 'true'
         working-directory: ./web
         shell: bash
         run: |
           echo "No changed-path UI regression tests selected; fixed smoke already ran." | tee ui-test.log
+      - name: Prepare worker node VM
+        id: prepare-worker-vm
+        if: steps.ui-regression-tests.outputs.has_worker_vm_tests == 'true'
+        continue-on-error: true
+        timeout-minutes: 15
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          sudo apt-get update
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+            cloud-image-utils \
+            iproute2 \
+            iptables \
+            qemu-system-x86 \
+            qemu-utils
+
+          sudo modprobe kvm || true
+          if [[ ! -e /dev/kvm ]]; then
+            echo "KVM device is unavailable on this runner; cannot start a worker VM." >&2
+            exit 1
+          fi
+          sudo chown "${USER}:$(id -gn)" /dev/kvm
+          sudo chmod 660 /dev/kvm
+
+          vm_dir="$RUNNER_TEMP/casos-worker-vm"
+          mkdir -p "$vm_dir"
+
+          bridge_name="casosbr0"
+          tap_name="casostap0"
+          host_bridge_ip="192.168.100.1"
+          worker_vm_ip="192.168.100.2"
+          worker_cidr="192.168.100.0/24"
+          worker_mac="52:54:00:ca:50:01"
+          default_iface="$(ip -4 route list default | awk 'NR == 1 {print $5}')"
+
+          sudo ip link add "$bridge_name" type bridge
+          sudo ip addr add "${host_bridge_ip}/24" dev "$bridge_name"
+          sudo ip link set "$bridge_name" up
+          sudo ip tuntap add dev "$tap_name" mode tap user "$USER"
+          sudo ip link set "$tap_name" master "$bridge_name"
+          sudo ip link set "$tap_name" up
+          sudo sysctl -w net.ipv4.ip_forward=1
+          sudo iptables -t nat -A POSTROUTING -s "$worker_cidr" -o "$default_iface" -j MASQUERADE
+          sudo iptables -A FORWARD -i "$bridge_name" -o "$default_iface" -j ACCEPT
+          sudo iptables -A FORWARD -i "$default_iface" -o "$bridge_name" -m conntrack --ctstate RELATED,ESTABLISHED -j ACCEPT
+
+          image_url="https://cloud-images.ubuntu.com/jammy/current/jammy-server-cloudimg-amd64.img"
+          base_image="$vm_dir/ubuntu-jammy-server-cloudimg-amd64.img"
+          worker_disk="$vm_dir/worker.qcow2"
+          seed_image="$vm_dir/seed.img"
+
+          curl -fsSL --retry 3 --retry-delay 5 --retry-connrefused "$image_url" -o "$base_image"
+          qemu-img create -f qcow2 -F qcow2 -b "$base_image" "$worker_disk" 20G
+
+          worker_ssh_password="casos-worker-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          echo "::add-mask::$worker_ssh_password"
+          echo "E2E_SSH_PASSWORD=$worker_ssh_password" >> "$GITHUB_ENV"
+
+          cat > "$vm_dir/user-data" <<EOF
+          #cloud-config
+          disable_root: false
+          ssh_pwauth: true
+          chpasswd:
+            expire: false
+            list: |
+              root:${worker_ssh_password}
+          runcmd:
+            - sed -i 's/^#\?PermitRootLogin.*/PermitRootLogin yes/' /etc/ssh/sshd_config
+            - sed -i 's/^#\?PasswordAuthentication.*/PasswordAuthentication yes/' /etc/ssh/sshd_config
+            - systemctl restart ssh
+          EOF
+          cat > "$vm_dir/meta-data" <<EOF
+          instance-id: casos-worker-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}
+          local-hostname: casos-worker
+          EOF
+          cat > "$vm_dir/network-config" <<EOF
+          version: 2
+          ethernets:
+            worker0:
+              match:
+                macaddress: "$worker_mac"
+              addresses:
+                - ${worker_vm_ip}/24
+              routes:
+                - to: default
+                  via: $host_bridge_ip
+              nameservers:
+                addresses:
+                  - 1.1.1.1
+          EOF
+          cloud-localds --network-config="$vm_dir/network-config" "$seed_image" "$vm_dir/user-data" "$vm_dir/meta-data"
+
+          qemu-system-x86_64 \
+            -daemonize \
+            -enable-kvm \
+            -cpu host \
+            -smp 2 \
+            -m 2048 \
+            -drive "file=$worker_disk,if=virtio,format=qcow2" \
+            -drive "file=$seed_image,if=virtio,format=raw,readonly=on" \
+            -netdev "tap,id=net0,ifname=$tap_name,script=no,downscript=no" \
+            -device "virtio-net-pci,netdev=net0,mac=$worker_mac" \
+            -display none \
+            -serial "file:$vm_dir/serial.log" \
+            -pidfile "$vm_dir/qemu.pid"
+
+          ssh_ready=false
+          for i in {1..60}; do
+            echo "Worker VM SSH port check: attempt $i/60..." >&2
+            if (exec 3<>"/dev/tcp/${worker_vm_ip}/22") 2>/dev/null; then
+              exec 3<&- 3>&-
+              ssh_ready=true
+              break
+            fi
+            sleep 5
+          done
+          if [[ "$ssh_ready" != "true" ]]; then
+            echo "Worker VM SSH port did not become reachable after 60 attempts" >&2
+            echo "---- VM serial log ----" >&2
+            sudo cat "$vm_dir/serial.log" >&2 || true
+            exit 1
+          fi
+
+          echo "E2E_WORKER_VM_IP=$worker_vm_ip" >> "$GITHUB_ENV"
+          echo "apiserverBind=0.0.0.0" >> "$GITHUB_ENV"
+          echo "E2E_APISERVER_URL=https://${host_bridge_ip}:${E2E_APISERVER_PORT}" >> "$GITHUB_ENV"
+      - name: Run worker node ready UI test
+        if: steps.ui-regression-tests.outputs.has_worker_vm_tests == 'true' && steps.prepare-worker-vm.outcome == 'success'
+        working-directory: ./web
+        timeout-minutes: 20
+        shell: bash
+        run: |
+          set -o pipefail
+          yarn playwright test --workers=1 tests/ui/worker-node-ready.spec.js 2>&1 | tee ui-worker-node-ready-test.log
+      - name: Cleanup worker node VM
+        if: always() && steps.ui-regression-tests.outputs.has_worker_vm_tests == 'true'
+        shell: bash
+        run: |
+          set +e
+          vm_dir="$RUNNER_TEMP/casos-worker-vm"
+          default_iface="$(ip -4 route list default | awk 'NR == 1 {print $5}')"
+
+          if [[ -f "$vm_dir/qemu.pid" ]]; then
+            qemu_pid="$(cat "$vm_dir/qemu.pid")"
+            kill "$qemu_pid" 2>/dev/null || true
+            for i in {1..10}; do
+              kill -0 "$qemu_pid" 2>/dev/null || break
+              sleep 1
+            done
+            kill -9 "$qemu_pid" 2>/dev/null || true
+          fi
+          sudo iptables -t nat -D POSTROUTING -s "192.168.100.0/24" -o "$default_iface" -j MASQUERADE 2>/dev/null || true
+          sudo iptables -D FORWARD -i "casosbr0" -o "$default_iface" -j ACCEPT 2>/dev/null || true
+          sudo iptables -D FORWARD -i "$default_iface" -o "casosbr0" -m conntrack --ctstate RELATED,ESTABLISHED -j ACCEPT 2>/dev/null || true
+          sudo ip link delete "casostap0" 2>/dev/null || true
+          sudo ip link delete "casosbr0" 2>/dev/null || true
       - name: Upload Playwright artifacts
         if: always()
         uses: actions/upload-artifact@v4
@@ -150,6 +316,8 @@ jobs:
             ./web/ui-regression-tests.txt
             ./web/ui-smoke-test.log
             ./web/ui-test.log
+            ./web/ui-worker-node-ready-test.log
+            ${{ runner.temp }}/casos-worker-vm/serial.log
           if-no-files-found: ignore
 
   backend:
