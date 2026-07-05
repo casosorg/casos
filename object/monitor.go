@@ -38,6 +38,11 @@ type MonitorSummary struct {
 	LastCheckedAt      string `json:"lastCheckedAt"`
 }
 
+type MonitorOverview struct {
+	Summary MonitorSummary      `json:"summary"`
+	Checks  []HealthCheckResult `json:"checks"`
+}
+
 type HealthCheckResult struct {
 	ID               string `json:"id"`
 	Name             string `json:"name"`
@@ -86,9 +91,48 @@ type monitorSnapshot struct {
 	eventsErr  error
 }
 
+func GetMonitorOverview(cfg *rest.Config) MonitorOverview {
+	snapshot := loadMonitorSnapshot(cfg)
+	checks := buildMonitorChecks(snapshot)
+	return MonitorOverview{
+		Summary: buildMonitorSummary(snapshot, checks),
+		Checks:  checks,
+	}
+}
+
 func GetMonitorSummary(cfg *rest.Config) MonitorSummary {
 	snapshot := loadMonitorSnapshot(cfg)
 	checks := buildMonitorChecks(snapshot)
+	return buildMonitorSummary(snapshot, checks)
+}
+
+func GetMonitorChecks(cfg *rest.Config) []HealthCheckResult {
+	return buildMonitorChecks(loadMonitorSnapshot(cfg))
+}
+
+func GetMonitorEvents(cfg *rest.Config, namespace string, limit int) ([]MonitorEvent, error) {
+	if cfg == nil {
+		return nil, errors.New("apiserver not ready")
+	}
+	client, err := newClient(cfg)
+	if err != nil {
+		return nil, err
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	events, err := listMonitorEvents(ctx, client, namespace, limit)
+	if err != nil {
+		return nil, err
+	}
+	result := make([]MonitorEvent, 0, len(events))
+	for _, event := range events {
+		result = append(result, toMonitorEvent(event))
+	}
+	return result, nil
+}
+
+func buildMonitorSummary(snapshot monitorSnapshot, checks []HealthCheckResult) MonitorSummary {
 	summary := MonitorSummary{
 		OverallStatus: MonitorStatusHealthy,
 		LastCheckedAt: snapshot.checkedAt,
@@ -143,46 +187,6 @@ func GetMonitorSummary(cfg *rest.Config) MonitorSummary {
 	return summary
 }
 
-func GetMonitorChecks(cfg *rest.Config) []HealthCheckResult {
-	return buildMonitorChecks(loadMonitorSnapshot(cfg))
-}
-
-func GetMonitorEvents(cfg *rest.Config, namespace string, limit int) ([]MonitorEvent, error) {
-	if cfg == nil {
-		return nil, errors.New("apiserver not ready")
-	}
-	client, err := newClient(cfg)
-	if err != nil {
-		return nil, err
-	}
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
-	ns := namespace
-	if ns == "" {
-		ns = metav1.NamespaceAll
-	}
-	list, err := client.CoreV1().Events(ns).List(ctx, metav1.ListOptions{})
-	if err != nil {
-		return nil, err
-	}
-	events := list.Items
-	sortEvents(events)
-	if limit <= 0 {
-		limit = 100
-	}
-	if limit > 500 {
-		limit = 500
-	}
-	if len(events) > limit {
-		events = events[:limit]
-	}
-	result := make([]MonitorEvent, 0, len(events))
-	for _, event := range events {
-		result = append(result, toMonitorEvent(event))
-	}
-	return result, nil
-}
-
 func loadMonitorSnapshot(cfg *rest.Config) monitorSnapshot {
 	snapshot := monitorSnapshot{
 		checkedAt: formatTime(time.Now().UTC()),
@@ -209,7 +213,7 @@ func loadMonitorSnapshot(cfg *rest.Config) monitorSnapshot {
 	snapshot.pods, snapshot.podsErr = listMonitorPods(ctx, client, metav1.NamespaceAll)
 	snapshot.systemPods, snapshot.systemErr = listMonitorPods(ctx, client, metav1.NamespaceSystem)
 	snapshot.pvcs, snapshot.pvcsErr = listMonitorPVCs(ctx, client)
-	snapshot.events, snapshot.eventsErr = listMonitorEvents(ctx, client)
+	snapshot.events, snapshot.eventsErr = listMonitorEvents(ctx, client, metav1.NamespaceAll, 100)
 
 	if snapshot.apiErr == nil && snapshot.nodesErr != nil {
 		snapshot.apiErr = snapshot.nodesErr
@@ -242,17 +246,31 @@ func listMonitorPVCs(ctx context.Context, client *kubernetes.Clientset) ([]corev
 	return list.Items, nil
 }
 
-func listMonitorEvents(ctx context.Context, client *kubernetes.Clientset) ([]corev1.Event, error) {
-	list, err := client.CoreV1().Events(metav1.NamespaceAll).List(ctx, metav1.ListOptions{})
+func listMonitorEvents(ctx context.Context, client *kubernetes.Clientset, namespace string, limit int) ([]corev1.Event, error) {
+	ns := namespace
+	if ns == "" {
+		ns = metav1.NamespaceAll
+	}
+	limit = normalizeMonitorEventLimit(limit)
+	list, err := client.CoreV1().Events(ns).List(ctx, metav1.ListOptions{
+		Limit: int64(limit),
+	})
 	if err != nil {
 		return nil, err
 	}
 	events := list.Items
 	sortEvents(events)
-	if len(events) > 500 {
-		events = events[:500]
-	}
 	return events, nil
+}
+
+func normalizeMonitorEventLimit(limit int) int {
+	if limit <= 0 {
+		return 100
+	}
+	if limit > 500 {
+		return 500
+	}
+	return limit
 }
 
 func buildMonitorChecks(snapshot monitorSnapshot) []HealthCheckResult {

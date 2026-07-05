@@ -117,25 +117,15 @@ function MonitorPage() {
   const [namespaceFilter, setNamespaceFilter] = useState("");
   const [selectedEvent, setSelectedEvent] = useState(null);
 
-  function fetchSummaryAndChecks() {
+  function fetchOverview() {
     setLoading(true);
     setError(null);
-    Promise.allSettled([
-      MonitorBackend.getMonitorSummary(),
-      MonitorBackend.getMonitorChecks(),
-    ]).then(([summaryResult, checksResult]) => {
-      if (summaryResult.status === "fulfilled" && summaryResult.value.status === "ok") {
-        setSummary(summaryResult.value.data);
+    MonitorBackend.getMonitorOverview().then(res => {
+      if (res.status === "ok") {
+        setSummary(res.data?.summary || null);
+        setChecks(res.data?.checks || []);
       } else {
-        const msg = summaryResult.status === "fulfilled" ? summaryResult.value.msg : summaryResult.reason?.message;
-        setError(msg || t("monitor:Failed to load monitor summary"));
-      }
-
-      if (checksResult.status === "fulfilled" && checksResult.value.status === "ok") {
-        setChecks(checksResult.value.data || []);
-      } else {
-        const msg = checksResult.status === "fulfilled" ? checksResult.value.msg : checksResult.reason?.message;
-        setError(msg || t("monitor:Failed to load health checks"));
+        setError(res.msg || t("monitor:Failed to load monitor data"));
       }
     }).catch(err => {
       setError(err.message);
@@ -158,7 +148,7 @@ function MonitorPage() {
   }
 
   useEffect(() => {
-    fetchSummaryAndChecks();
+    fetchOverview();
     fetchEvents("");
   }, []);
 
@@ -373,7 +363,7 @@ function MonitorPage() {
         variant="borderless"
         style={{borderRadius: 8, border: "1px solid #e8e8e8", marginTop: 16}}
         extra={
-          <Button icon={<ReloadOutlined />} loading={loading} onClick={fetchSummaryAndChecks}>
+          <Button icon={<ReloadOutlined />} loading={loading} onClick={fetchOverview}>
             {t("general:Refresh")}
           </Button>
         }

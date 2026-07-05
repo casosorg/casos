@@ -5,7 +5,7 @@ function getHeaders() {
 }
 
 export function getMonitorSummary() {
-  return fetch(`${Setting.ServerUrl}/api/monitor/summary`, {
+  return fetch(`${Setting.ServerUrl}/api/get-monitor-summary`, {
     method: "GET",
     credentials: "include",
     headers: getHeaders(),
@@ -13,7 +13,15 @@ export function getMonitorSummary() {
 }
 
 export function getMonitorChecks() {
-  return fetch(`${Setting.ServerUrl}/api/monitor/checks`, {
+  return fetch(`${Setting.ServerUrl}/api/get-monitor-checks`, {
+    method: "GET",
+    credentials: "include",
+    headers: getHeaders(),
+  }).then(res => res.json());
+}
+
+export function getMonitorOverview() {
+  return fetch(`${Setting.ServerUrl}/api/get-monitor-overview`, {
     method: "GET",
     credentials: "include",
     headers: getHeaders(),
@@ -23,7 +31,7 @@ export function getMonitorChecks() {
 export function getMonitorEvents(namespace = "", limit = 100) {
   const params = new URLSearchParams({limit});
   if (namespace) {params.set("namespace", namespace);}
-  return fetch(`${Setting.ServerUrl}/api/monitor/events?${params}`, {
+  return fetch(`${Setting.ServerUrl}/api/get-monitor-events?${params}`, {
     method: "GET",
     credentials: "include",
     headers: getHeaders(),

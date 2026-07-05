@@ -74,6 +74,10 @@ func InitAPI() {
 
 	beego.Router("/api/get-dashboard", &controllers.ApiController{}, "GET:GetDashboard")
 	beego.Router("/api/get-metrics", &controllers.ApiController{}, "GET:GetMetrics")
+	beego.Router("/api/get-monitor-overview", &controllers.ApiController{}, "GET:GetMonitorOverview")
+	beego.Router("/api/get-monitor-summary", &controllers.ApiController{}, "GET:GetMonitorSummary")
+	beego.Router("/api/get-monitor-checks", &controllers.ApiController{}, "GET:GetMonitorChecks")
+	beego.Router("/api/get-monitor-events", &controllers.ApiController{}, "GET:GetMonitorEvents")
 	beego.Router("/api/monitor/summary", &controllers.ApiController{}, "GET:GetMonitorSummary")
 	beego.Router("/api/monitor/checks", &controllers.ApiController{}, "GET:GetMonitorChecks")
 	beego.Router("/api/monitor/events", &controllers.ApiController{}, "GET:GetMonitorEvents")
