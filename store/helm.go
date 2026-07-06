@@ -7,13 +7,16 @@ import (
 	"io"
 	"net/http"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
 	semver "github.com/Masterminds/semver/v3"
+	"github.com/sirupsen/logrus"
 	"helm.sh/helm/v3/pkg/action"
 	"helm.sh/helm/v3/pkg/chart"
 	"helm.sh/helm/v3/pkg/chart/loader"
+	"helm.sh/helm/v3/pkg/chartutil"
 	"helm.sh/helm/v3/pkg/registry"
 	"helm.sh/helm/v3/pkg/release"
 	"helm.sh/helm/v3/pkg/repo"
@@ -24,6 +27,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/fields"
 	"k8s.io/apimachinery/pkg/labels"
+	k8sversion "k8s.io/apimachinery/pkg/util/version"
 	"k8s.io/client-go/discovery"
 	"k8s.io/client-go/discovery/cached/memory"
 	"k8s.io/client-go/kubernetes"
@@ -142,6 +146,102 @@ func newHelmConfigWithLog(cfg *rest.Config, namespace string, logFn func(string,
 		return nil, fmt.Errorf("helm config init: %w", err)
 	}
 	return actionConfig, nil
+}
+
+func attachHelmCapabilities(actionConfig *action.Configuration, cfg *rest.Config, namespace string, logFn func(string, ...interface{})) {
+	capabilities, err := buildHelmCapabilities(cfg, namespace, logFn)
+	if err != nil {
+		logFn("WARNING: failed to build helm capabilities, using defaults: %v", err)
+		capabilities = chartutil.DefaultCapabilities
+	}
+	actionConfig.Capabilities = capabilities
+}
+
+func helmWarningLog(format string, args ...interface{}) {
+	logrus.Warnf(format, args...)
+}
+
+func buildHelmCapabilities(cfg *rest.Config, namespace string, logFn func(string, ...interface{})) (*chartutil.Capabilities, error) {
+	dc, err := newRESTClientGetter(cfg, namespace).ToDiscoveryClient()
+	if err != nil {
+		return nil, fmt.Errorf("helm discovery client: %w", err)
+	}
+	dc.Invalidate()
+
+	kubeVersion, err := dc.ServerVersion()
+	if err != nil {
+		return nil, fmt.Errorf("helm server version: %w", err)
+	}
+
+	apiVersions, err := action.GetVersionSet(dc)
+	if err != nil {
+		if discovery.IsGroupDiscoveryFailedError(err) {
+			logFn("WARNING: The Kubernetes server has an orphaned API service. Server reports: %s", err)
+			logFn("WARNING: To fix this, kubectl delete apiservice <service-name>")
+			if apiVersions == nil {
+				apiVersions = chartutil.VersionSet{}
+			}
+		} else {
+			return nil, fmt.Errorf("helm api versions: %w", err)
+		}
+	}
+
+	normalizedVersion := normalizeHelmKubeVersion(kubeVersion.GitVersion, kubeVersion.Major, kubeVersion.Minor)
+
+	return &chartutil.Capabilities{
+		APIVersions: apiVersions,
+		KubeVersion: normalizedVersion,
+		HelmVersion: chartutil.DefaultCapabilities.HelmVersion,
+	}, nil
+}
+
+func normalizeHelmKubeVersion(gitVersion, major, minor string) chartutil.KubeVersion {
+	normalizedGitVersion := gitVersion
+	if idx := strings.Index(normalizedGitVersion, "+"); idx >= 0 {
+		normalizedGitVersion = normalizedGitVersion[:idx]
+	}
+
+	semanticVersion, err := k8sversion.ParseSemantic(normalizedGitVersion)
+	if err == nil {
+		normalized := chartutil.KubeVersion{
+			Version: "v" + semanticVersion.String(),
+			Major:   strconv.Itoa(int(semanticVersion.Major())),
+			Minor:   strconv.Itoa(int(semanticVersion.Minor())),
+		}
+		if shouldKeepHelmKubePrerelease(semanticVersion.PreRelease()) {
+			return normalized
+		}
+		normalized.Version = fmt.Sprintf("v%d.%d.%d", semanticVersion.Major(), semanticVersion.Minor(), semanticVersion.Patch())
+		return normalized
+	}
+
+	parsedVersion, err := chartutil.ParseKubeVersion(normalizedGitVersion)
+	if err == nil {
+		return *parsedVersion
+	}
+
+	if _, err := strconv.Atoi(major); err != nil {
+		major = "0"
+	}
+	if _, err := strconv.Atoi(minor); err != nil {
+		minor = "0"
+	}
+
+	return chartutil.KubeVersion{
+		Version: normalizedGitVersion,
+		Major:   major,
+		Minor:   minor,
+	}
+}
+
+func shouldKeepHelmKubePrerelease(preRelease string) bool {
+	// Preserve canonical Kubernetes prereleases, but strip distro/vendor
+	// suffixes such as k3s/eks so Helm's kubeVersion checks see the base
+	// upstream version instead of a distribution tag.
+	return preRelease == "" ||
+		strings.HasPrefix(preRelease, "alpha") ||
+		strings.HasPrefix(preRelease, "beta") ||
+		strings.HasPrefix(preRelease, "rc")
 }
 
 // ---------- HTTP helper ----------
@@ -863,6 +963,7 @@ func InstallHelmChart(cfg *rest.Config, releaseName, namespace, chartName, repoU
 		return err
 	}
 
+	attachHelmCapabilities(actionConfig, cfg, namespace, helmWarningLog)
 	install := action.NewInstall(actionConfig)
 	install.ReleaseName = releaseName
 	install.Namespace = namespace
@@ -912,6 +1013,7 @@ func InstallHelmChartStream(ctx context.Context, cfg *rest.Config, releaseName, 
 			send("ERROR: " + err.Error())
 			return
 		}
+		attachHelmCapabilities(actionConfig, cfg, namespace, logFn)
 		install := action.NewInstall(actionConfig)
 		install.ReleaseName = releaseName
 		install.Namespace = namespace
@@ -950,6 +1052,7 @@ func UpgradeHelmRelease(cfg *rest.Config, releaseName, namespace, chartName, rep
 		return err
 	}
 
+	attachHelmCapabilities(actionConfig, cfg, namespace, helmWarningLog)
 	upgrade := action.NewUpgrade(actionConfig)
 	upgrade.Namespace = namespace
 	upgrade.Wait = true
