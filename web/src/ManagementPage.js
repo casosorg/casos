@@ -34,6 +34,7 @@ import ServiceListPage from "./ServiceListPage";
 import ClusterRoleBindingListPage from "./ClusterRoleBindingListPage";
 import RoleBindingListPage from "./RoleBindingListPage";
 import PvcListPage from "./PvcListPage";
+import StorageClassListPage from "./StorageClassListPage";
 import IngressListPage from "./IngressListPage";
 import DaemonSetListPage from "./DaemonSetListPage";
 import StatefulSetListPage from "./StatefulSetListPage";
@@ -224,6 +225,7 @@ function ManagementPage(props) {
         Setting.getItem(<Link to="/configmaps">{i18next.t("general:ConfigMaps")}</Link>, "/configmaps"),
         Setting.getItem(<Link to="/secrets">{i18next.t("general:Secrets")}</Link>, "/secrets"),
         Setting.getItem(<Link to="/pvcs">{i18next.t("general:Persistent Volume Claims")}</Link>, "/pvcs"),
+        Setting.getItem(<Link to="/storageclasses">{i18next.t("general:Storage Classes")}</Link>, "/storageclasses"),
         Setting.getItem(<Link to="/resourcequotas">{i18next.t("general:Resource Quotas")}</Link>, "/resourcequotas"),
         Setting.getItem(<Link to="/hpas">{i18next.t("general:Horizontal Pod Autoscaler")}</Link>, "/hpas"),
       ]),
@@ -276,6 +278,7 @@ function ManagementPage(props) {
         <Route exact path="/configmaps" render={(props) => <ConfigMapListPage {...props} />} />
         <Route exact path="/secrets" render={(props) => <SecretListPage {...props} />} />
         <Route exact path="/pvcs" render={(props) => <PvcListPage {...props} />} />
+        <Route exact path="/storageclasses" render={(props) => <StorageClassListPage {...props} />} />
         <Route exact path="/resourcequotas" render={(props) => <ResourceQuotaListPage {...props} />} />
         <Route exact path="/services" render={(props) => <ServiceListPage {...props} />} />
         <Route exact path="/ingresses" render={(props) => <IngressListPage {...props} />} />

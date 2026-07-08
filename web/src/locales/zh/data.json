@@ -81,6 +81,7 @@
     "Static base URL": "静态资源根地址",
     "Static base URL - Tooltip": "CDN或静态文件服务器的根地址，所有静态资源路径都以此为前缀",
     "Status": "状态",
+    "Storage Classes": "存储类",
     "Successfully added": "Successfully added",
     "Successfully deleted": "删除成功",
     "Successfully saved": "保存成功",

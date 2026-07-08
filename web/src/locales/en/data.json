@@ -81,6 +81,7 @@
     "Static base URL": "Static base URL",
     "Static base URL - Tooltip": "Base URL of your CDN or static file server; used to prefix all static asset paths",
     "Status": "Status",
+    "Storage Classes": "Storage Classes",
     "Successfully added": "Successfully added",
     "Successfully deleted": "Successfully deleted",
     "Successfully saved": "Successfully saved",
