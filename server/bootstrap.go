@@ -25,6 +25,14 @@ func Bootstrap(ctx context.Context, cfg *rest.Config, srvCfg Config) error {
 	if err := ensureNodeProxierBinding(ctx, client); err != nil {
 		return err
 	}
+	if err := ensureClusterDNS(ctx, client, srvCfg); err != nil {
+		return err
+	}
+	if srvCfg.StorageProvisionerEnabled {
+		if err := ensureDefaultStorageProvisioner(ctx, client, srvCfg); err != nil {
+			return err
+		}
+	}
 	return ensureCasbinWebhook(ctx, client, srvCfg)
 }
 

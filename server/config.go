@@ -7,18 +7,23 @@ import (
 	"strings"
 
 	"github.com/casosorg/casos/conf"
+	"github.com/sirupsen/logrus"
 )
 
 // Config holds control-plane settings populated from app.conf.
 type Config struct {
-	DataDir          string
-	ApiserverBind    string // actual bind / SAN IP (may be loopback in dev)
-	AdvertiseAddress string // non-loopback IP registered as kubernetes service endpoint
-	ApiserverPort    int
-	WebhookPort      int    // HTTPS port for the Casbin admission webhook server
-	DSN              string // MySQL DSN forwarded to kine
-	SandboxImage     string // containerd sandbox (pause) image, empty = upstream default
-	Socks5Proxy      string // outbound socks5 proxy, e.g. 127.0.0.1:10808
+	DataDir                   string
+	ApiserverBind             string // actual bind / SAN IP (may be loopback in dev)
+	AdvertiseAddress          string // non-loopback IP registered as kubernetes service endpoint
+	ApiserverPort             int
+	WebhookPort               int    // HTTPS port for the Casbin admission webhook server
+	DSN                       string // MySQL DSN forwarded to kine
+	SandboxImage              string // containerd sandbox (pause) image, empty = upstream default
+	Socks5Proxy               string // outbound socks5 proxy, e.g. 127.0.0.1:10808
+	CoreDNSImage              string // CoreDNS image used by the built-in DNS bootstrap
+	LocalPathProvisionerImage string // local-path-provisioner controller image
+	LocalPathHelperImage      string // helper pod image used by local-path-provisioner
+	StorageProvisionerEnabled bool   // install the built-in local-path provisioner for local clusters
 }
 
 // ConfigFromAppConf reads server config from the beego app.conf.
@@ -66,15 +71,24 @@ func ConfigFromAppConf() (Config, error) {
 		}
 	}
 
+	storageProvisionerEnabled := configBool("storageProvisionerEnabled", true)
+	coreDNSImage := configStringDefault("coreDNSImage", "docker.1ms.run/coredns/coredns:1.12.4")
+	localPathProvisionerImage := configStringDefault("localPathProvisionerImage", "docker.1ms.run/rancher/local-path-provisioner:v0.0.32")
+	localPathHelperImage := configStringDefault("localPathHelperImage", "docker.1ms.run/library/busybox:1.37.0")
+
 	return Config{
-		DataDir:          dataDir,
-		ApiserverBind:    bind,
-		AdvertiseAddress: advertise,
-		ApiserverPort:    port,
-		WebhookPort:      webhookPort,
-		DSN:              dsn,
-		SandboxImage:     sandboxImage,
-		Socks5Proxy:      socks5Proxy,
+		DataDir:                   dataDir,
+		ApiserverBind:             bind,
+		AdvertiseAddress:          advertise,
+		ApiserverPort:             port,
+		WebhookPort:               webhookPort,
+		DSN:                       dsn,
+		SandboxImage:              sandboxImage,
+		Socks5Proxy:               socks5Proxy,
+		CoreDNSImage:              coreDNSImage,
+		LocalPathProvisionerImage: localPathProvisionerImage,
+		LocalPathHelperImage:      localPathHelperImage,
+		StorageProvisionerEnabled: storageProvisionerEnabled,
 	}, nil
 }
 
@@ -88,6 +102,33 @@ func configInt(key string) int {
 		return 0
 	}
 	return res
+}
+
+func configBool(key string, defaultValue bool) bool {
+	value := strings.TrimSpace(conf.GetConfigString(key))
+	if value == "" {
+		return defaultValue
+	}
+	switch strings.ToLower(value) {
+	case "yes", "y", "on":
+		return true
+	case "no", "n", "off":
+		return false
+	}
+	res, err := strconv.ParseBool(value)
+	if err != nil {
+		logrus.Warnf("invalid boolean config %s=%q, using default %t", key, value, defaultValue)
+		return defaultValue
+	}
+	return res
+}
+
+func configStringDefault(key, defaultValue string) string {
+	value := strings.TrimSpace(conf.GetConfigString(key))
+	if value == "" {
+		return defaultValue
+	}
+	return value
 }
 
 // injectDBName inserts dbName into a MySQL DSN of the form
