@@ -3,6 +3,24 @@ import {Form, Input, InputNumber, Modal, Select} from "antd";
 import * as ServiceBackend from "./backend/ServiceBackend";
 import * as Setting from "./Setting";
 
+function getDefaultExposePorts(deploy) {
+  const containerPort = deploy?.ports?.find((port) => Number(port.port) > 0)?.port;
+  const numericPort = Number(containerPort);
+  const port = numericPort > 0 ? numericPort : 80;
+  return {
+    port,
+    targetPort: port,
+  };
+}
+
+function getDefaultExposeSelector(deploy) {
+  const entries = Object.entries(deploy?.selector || {}).filter(([key, value]) => key && value);
+  if (entries.length > 0) {
+    return Object.fromEntries(entries);
+  }
+  return deploy?.name ? {"app": deploy.name} : {};
+}
+
 function DeploymentExposeModal({deploy, open, onClose}) {
   const [form] = Form.useForm();
   const [submitting, setSubmitting] = React.useState(false);
@@ -10,10 +28,11 @@ function DeploymentExposeModal({deploy, open, onClose}) {
 
   useEffect(() => {
     if (open && !prevOpen.current && deploy) {
+      const defaults = getDefaultExposePorts(deploy);
       form.setFieldsValue({
         name: deploy.name,
-        port: 80,
-        targetPort: 80,
+        port: defaults.port,
+        targetPort: defaults.targetPort,
         type: "ClusterIP",
       });
     }
@@ -26,7 +45,7 @@ function DeploymentExposeModal({deploy, open, onClose}) {
         namespace: deploy.namespace,
         name: values.name,
         type: values.type,
-        selector: {"app": deploy.name},
+        selector: getDefaultExposeSelector(deploy),
         ports: [{
           name: "http",
           protocol: "TCP",
