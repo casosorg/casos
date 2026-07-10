@@ -78,6 +78,8 @@ func InitAPI() {
 	beego.Router("/api/get-monitor-summary", &controllers.ApiController{}, "GET:GetMonitorSummary")
 	beego.Router("/api/get-monitor-checks", &controllers.ApiController{}, "GET:GetMonitorChecks")
 	beego.Router("/api/get-monitor-events", &controllers.ApiController{}, "GET:GetMonitorEvents")
+	beego.Router("/api/get-monitor-issues", &controllers.ApiController{}, "GET:GetMonitorIssues")
+	beego.Router("/api/get-monitor-diagnosis", &controllers.ApiController{}, "GET:GetMonitorDiagnosis")
 
 	beego.Router("/api/get-global-sites", &controllers.ApiController{}, "GET:GetGlobalSites")
 	beego.Router("/api/get-sites", &controllers.ApiController{}, "GET:GetSites")

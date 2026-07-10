@@ -1,5 +1,5 @@
-import React, {useEffect, useMemo, useState} from "react";
-import {Alert, Button, Card, Col, Descriptions, Input, Modal, Row, Space, Spin, Statistic, Table, Tag, Typography} from "antd";
+import React, {useCallback, useEffect, useMemo, useState} from "react";
+import {Alert, Button, Card, Col, Descriptions, Drawer, Input, Modal, Row, Space, Spin, Statistic, Table, Tag, Typography} from "antd";
 import {
   AppstoreOutlined,
   BellOutlined,
@@ -17,7 +17,7 @@ import i18next from "i18next";
 import * as MonitorBackend from "./backend/MonitorBackend";
 import * as Setting from "./Setting";
 
-const {Paragraph} = Typography;
+const {Paragraph, Text} = Typography;
 
 const statusMeta = {
   healthy: {color: "green", icon: <CheckCircleOutlined />},
@@ -44,20 +44,30 @@ function registerMonitorI18nKeys() {
   i18next.t("monitor:Check");
   i18next.t("monitor:Count");
   i18next.t("monitor:Critical Checks");
+  i18next.t("monitor:Current");
   i18next.t("monitor:Details");
+  i18next.t("monitor:Diagnosis");
+  i18next.t("monitor:Diagnosis Context");
   i18next.t("monitor:Event Center");
   i18next.t("monitor:Event Details");
+  i18next.t("monitor:Failed to load diagnosis");
   i18next.t("monitor:Failed to load events");
   i18next.t("monitor:Failed to load health checks");
+  i18next.t("monitor:Failed to load monitor issues");
   i18next.t("monitor:Failed to load monitor data");
   i18next.t("monitor:Failed to load monitor summary");
   i18next.t("monitor:Health Checks");
+  i18next.t("monitor:Last Seen");
+  i18next.t("monitor:Log Preview");
   i18next.t("monitor:Last Checked");
   i18next.t("monitor:Message");
+  i18next.t("monitor:Monitor Issues");
   i18next.t("monitor:Object");
   i18next.t("monitor:Overall Status");
+  i18next.t("monitor:Previous");
   i18next.t("monitor:Ready Nodes");
   i18next.t("monitor:Reason");
+  i18next.t("monitor:Related Events");
   i18next.t("monitor:Running Pods");
   i18next.t("monitor:Source");
   i18next.t("monitor:Suggestion");
@@ -95,17 +105,30 @@ function eventDisplayTime(event) {
   return event.lastTimestamp || event.eventTime || event.firstTimestamp;
 }
 
+function objectLabel(record) {
+  if (!record) {return "-";}
+  const name = record.namespace ? `${record.namespace}/${record.name}` : record.name;
+  return `${record.kind || "-"} / ${name || "-"}`;
+}
+
 function MonitorPage() {
   const {t} = useTranslation();
   const [summary, setSummary] = useState(null);
   const [checks, setChecks] = useState([]);
+  const [issues, setIssues] = useState([]);
   const [events, setEvents] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [issuesLoading, setIssuesLoading] = useState(true);
   const [eventsLoading, setEventsLoading] = useState(true);
   const [error, setError] = useState(null);
+  const [issuesError, setIssuesError] = useState(null);
   const [eventsError, setEventsError] = useState(null);
   const [namespaceFilter, setNamespaceFilter] = useState("");
   const [selectedEvent, setSelectedEvent] = useState(null);
+  const [selectedIssue, setSelectedIssue] = useState(null);
+  const [diagnosis, setDiagnosis] = useState(null);
+  const [diagnosisLoading, setDiagnosisLoading] = useState(false);
+  const [diagnosisError, setDiagnosisError] = useState(null);
 
   function fetchOverview() {
     setLoading(true);
@@ -137,33 +160,46 @@ function MonitorPage() {
     }).finally(() => setEventsLoading(false));
   }
 
+  function fetchIssues() {
+    setIssuesLoading(true);
+    setIssuesError(null);
+    MonitorBackend.getMonitorIssues().then(res => {
+      if (res.status === "ok") {
+        setIssues(res.data || []);
+      } else {
+        setIssuesError(res.msg || t("monitor:Failed to load monitor issues"));
+      }
+    }).catch(err => {
+      setIssuesError(err.message);
+    }).finally(() => setIssuesLoading(false));
+  }
+
+  const openDiagnosis = useCallback((issue) => {
+    setSelectedIssue(issue);
+    setDiagnosis(null);
+    setDiagnosisError(null);
+    setDiagnosisLoading(true);
+    MonitorBackend.getMonitorDiagnosis(issue, 100, true).then(res => {
+      if (res.status === "ok") {
+        setDiagnosis(res.data || null);
+      } else {
+        setDiagnosisError(res.msg || t("monitor:Failed to load diagnosis"));
+      }
+    }).catch(err => {
+      setDiagnosisError(err.message);
+    }).finally(() => setDiagnosisLoading(false));
+  }, [t]);
+
   useEffect(() => {
     fetchOverview();
+    fetchIssues();
     fetchEvents("");
   }, []);
 
   const checkColumns = useMemo(() => [
-    {
-      title: t("monitor:Check"),
-      dataIndex: "name",
-      key: "name",
-      width: 280,
-      ellipsis: true,
-    },
-    {
-      title: t("monitor:Category"),
-      dataIndex: "category",
-      key: "category",
-      width: 130,
-      render: value => <Tag>{value}</Tag>,
-    },
-    {
-      title: t("general:Status"),
-      dataIndex: "status",
-      key: "status",
-      width: 130,
-      render: value => renderStatusTag(value, t),
-    },
+    {title: t("monitor:Check"), dataIndex: "name", key: "name", width: 280, ellipsis: true},
+    {title: t("monitor:Category"), dataIndex: "category", key: "category", width: 130, render: value => <Tag>{value}</Tag>},
+    {title: t("general:Status"), dataIndex: "status", key: "status", width: 130, render: value => renderStatusTag(value, t)},
     {
       title: t("trivy:Severity"),
       dataIndex: "severity",
@@ -171,27 +207,9 @@ function MonitorPage() {
       width: 130,
       render: value => <Tag color={severityColor[value] || "default"}>{t(`monitor:severity ${value || "info"}`)}</Tag>,
     },
-    {
-      title: t("monitor:Message"),
-      dataIndex: "message",
-      key: "message",
-      width: 340,
-      ellipsis: true,
-    },
-    {
-      title: t("monitor:Suggestion"),
-      dataIndex: "suggestion",
-      key: "suggestion",
-      width: 360,
-      ellipsis: true,
-    },
-    {
-      title: t("monitor:Last Checked"),
-      dataIndex: "lastCheckedAt",
-      key: "lastCheckedAt",
-      width: 190,
-      render: formatTime,
-    },
+    {title: t("monitor:Message"), dataIndex: "message", key: "message", width: 340, ellipsis: true},
+    {title: t("monitor:Suggestion"), dataIndex: "suggestion", key: "suggestion", width: 360, ellipsis: true},
+    {title: t("monitor:Last Checked"), dataIndex: "lastCheckedAt", key: "lastCheckedAt", width: 190, render: formatTime},
   ], [t]);
 
   const eventColumns = useMemo(() => [
@@ -235,6 +253,80 @@ function MonitorPage() {
         </Button>
       ),
     },
+  ], [t]);
+
+  const issueColumns = useMemo(() => [
+    {
+      title: t("trivy:Severity"),
+      dataIndex: "severity",
+      key: "severity",
+      width: 120,
+      render: value => <Tag color={severityColor[value] || "default"}>{t(`monitor:severity ${value || "info"}`)}</Tag>,
+    },
+    {
+      title: t("monitor:Object"),
+      key: "object",
+      width: 280,
+      ellipsis: true,
+      render: (_, record) => objectLabel(record),
+    },
+    {title: t("monitor:Reason"), dataIndex: "reason", key: "reason", width: 180},
+    {
+      title: t("monitor:Message"),
+      dataIndex: "message",
+      key: "message",
+      width: 360,
+      ellipsis: true,
+    },
+    {
+      title: t("monitor:Suggestion"),
+      dataIndex: "suggestion",
+      key: "suggestion",
+      width: 360,
+      ellipsis: true,
+    },
+    {
+      title: t("monitor:Last Seen"),
+      dataIndex: "lastSeenAt",
+      key: "lastSeenAt",
+      width: 190,
+      render: formatTime,
+    },
+    {
+      title: t("general:Action"),
+      key: "action",
+      width: 110,
+      render: (_, record) => (
+        <Button size="small" onClick={() => openDiagnosis(record)}>
+          {t("monitor:Diagnosis")}
+        </Button>
+      ),
+    },
+  ], [openDiagnosis, t]);
+
+  const diagnosisEventColumns = useMemo(() => [
+    {
+      title: t("monitor:Time"),
+      key: "time",
+      width: 180,
+      render: (_, record) => formatTime(eventDisplayTime(record)),
+    },
+    {
+      title: t("policy:Type"),
+      dataIndex: "type",
+      key: "type",
+      width: 100,
+      render: value => <Tag color={eventTypeColor[value] || "default"}>{value || "-"}</Tag>,
+    },
+    {title: t("monitor:Reason"), dataIndex: "reason", key: "reason", width: 160},
+    {
+      title: t("monitor:Message"),
+      dataIndex: "message",
+      key: "message",
+      width: 420,
+      ellipsis: true,
+    },
+    {title: t("monitor:Count"), dataIndex: "count", key: "count", width: 80},
   ], [t]);
 
   const overallStatus = summary?.overallStatus || "unknown";
@@ -369,6 +461,39 @@ function MonitorPage() {
       </Card>
 
       <Card
+        title={t("monitor:Monitor Issues")}
+        variant="borderless"
+        style={{borderRadius: 8, border: "1px solid #e8e8e8", marginTop: 16}}
+        extra={
+          <Button icon={<ReloadOutlined />} loading={issuesLoading} onClick={fetchIssues}>
+            {t("general:Refresh")}
+          </Button>
+        }
+      >
+        {issuesError && (
+          <Alert
+            type="error"
+            showIcon
+            message={t("monitor:Failed to load monitor issues")}
+            description={issuesError}
+            style={{marginBottom: 16, borderRadius: 8}}
+          />
+        )}
+        <Table
+          rowKey="id"
+          columns={issueColumns}
+          dataSource={issues}
+          loading={issuesLoading}
+          size="middle"
+          pagination={{pageSize: 20}}
+          scroll={{x: 1600}}
+          onRow={(record) => ({
+            onDoubleClick: () => openDiagnosis(record),
+          })}
+        />
+      </Card>
+
+      <Card
         title={t("monitor:Event Center")}
         variant="borderless"
         style={{borderRadius: 8, border: "1px solid #e8e8e8", marginTop: 16}}
@@ -436,6 +561,80 @@ function MonitorPage() {
           </Space>
         )}
       </Modal>
+
+      <Drawer
+        title={t("monitor:Diagnosis Context")}
+        open={!!selectedIssue}
+        onClose={() => {
+          setSelectedIssue(null);
+          setDiagnosis(null);
+          setDiagnosisError(null);
+        }}
+        width={820}
+        destroyOnHidden
+      >
+        {diagnosisError && (
+          <Alert
+            type="error"
+            showIcon
+            message={t("monitor:Failed to load diagnosis")}
+            description={diagnosisError}
+            style={{marginBottom: 16, borderRadius: 8}}
+          />
+        )}
+        <Spin spinning={diagnosisLoading}>
+          {diagnosis && (
+            <Space direction="vertical" size={16} style={{width: "100%"}}>
+              <Descriptions bordered size="small" column={1}>
+                <Descriptions.Item label={t("monitor:Object")}>{objectLabel(diagnosis.issue)}</Descriptions.Item>
+                <Descriptions.Item label={t("trivy:Severity")}><Tag color={severityColor[diagnosis.issue?.severity] || "default"}>{t(`monitor:severity ${diagnosis.issue?.severity || "info"}`)}</Tag></Descriptions.Item>
+                <Descriptions.Item label={t("monitor:Reason")}>{diagnosis.issue?.reason || "-"}</Descriptions.Item>
+                <Descriptions.Item label={t("monitor:Message")}>{diagnosis.issue?.message || "-"}</Descriptions.Item>
+                <Descriptions.Item label={t("monitor:Suggestion")}>{diagnosis.issue?.suggestion || "-"}</Descriptions.Item>
+                <Descriptions.Item label={t("monitor:Last Seen")}>{formatTime(diagnosis.issue?.lastSeenAt)}</Descriptions.Item>
+              </Descriptions>
+
+              <div>
+                <Text strong>{t("monitor:Related Events")}</Text>
+                <Table
+                  size="small"
+                  rowKey={(record, index) => `${record.namespace}-${record.reason}-${eventDisplayTime(record)}-${index}`}
+                  columns={diagnosisEventColumns}
+                  dataSource={diagnosis.relatedEvents || []}
+                  pagination={false}
+                  scroll={{x: 920}}
+                  style={{marginTop: 8}}
+                />
+              </div>
+
+              <div>
+                <Text strong>{t("monitor:Log Preview")}</Text>
+                <Space direction="vertical" size={12} style={{width: "100%", marginTop: 8}}>
+                  {(diagnosis.logPreview || []).map((log, index) => (
+                    <div key={`${log.container}-${log.previous}-${index}`}>
+                      <Space style={{marginBottom: 6}}>
+                        <Tag>{log.container || "-"}</Tag>
+                        <Tag color={log.previous ? "gold" : "blue"}>{log.previous ? t("monitor:Previous") : t("monitor:Current")}</Tag>
+                        <Tag>{`tail ${log.tailLines || 0}`}</Tag>
+                      </Space>
+                      <Paragraph style={{whiteSpace: "pre-wrap", maxHeight: 220, overflow: "auto", padding: 12, border: "1px solid #f0f0f0", borderRadius: 6, marginBottom: 0}}>
+                        {log.error || log.content || "-"}
+                      </Paragraph>
+                    </div>
+                  ))}
+                </Space>
+              </div>
+
+              <div>
+                <Text strong>{t("monitor:Diagnosis")}</Text>
+                <Paragraph style={{whiteSpace: "pre-wrap", maxHeight: 260, overflow: "auto", padding: 12, border: "1px solid #f0f0f0", borderRadius: 6, marginTop: 8, marginBottom: 0}}>
+                  {JSON.stringify(diagnosis.aiContext || {}, null, 2)}
+                </Paragraph>
+              </div>
+            </Space>
+          )}
+        </Spin>
+      </Drawer>
     </div>
   );
 }

@@ -41,3 +41,46 @@ func (c *ApiController) GetMonitorEvents() {
 	}
 	c.ResponseOk(events)
 }
+
+// GetMonitorIssues returns actionable monitor issues built from the cluster snapshot.
+// @router /api/get-monitor-issues [get]
+func (c *ApiController) GetMonitorIssues() {
+	issues, err := object.GetMonitorIssues(getAdminRestConfig())
+	if err != nil {
+		c.ResponseError(err.Error())
+		return
+	}
+	c.ResponseOk(issues)
+}
+
+// GetMonitorDiagnosis returns events, log preview, and AI-ready context for one object.
+// @router /api/get-monitor-diagnosis [get]
+func (c *ApiController) GetMonitorDiagnosis() {
+	tailLines := int64(100)
+	if raw := c.GetString("tailLines"); raw != "" {
+		if parsed, err := strconv.ParseInt(raw, 10, 64); err == nil {
+			tailLines = parsed
+		}
+	}
+	includePrevious := true
+	if raw := c.GetString("previous"); raw != "" {
+		if parsed, err := strconv.ParseBool(raw); err == nil {
+			includePrevious = parsed
+		}
+	}
+
+	diagnosis, err := object.GetMonitorDiagnosis(
+		getAdminRestConfig(),
+		c.GetString("kind"),
+		c.GetString("namespace"),
+		c.GetString("name"),
+		c.GetString("container"),
+		tailLines,
+		includePrevious,
+	)
+	if err != nil {
+		c.ResponseError(err.Error())
+		return
+	}
+	c.ResponseOk(diagnosis)
+}

@@ -4,12 +4,14 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"sort"
 	"strings"
 	"time"
 
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/fields"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
 )
@@ -75,6 +77,43 @@ type MonitorEvent struct {
 	InvolvedObjectVersion string `json:"involvedObjectResourceVersion"`
 }
 
+type MonitorIssue struct {
+	ID                string         `json:"id"`
+	Severity          string         `json:"severity"`
+	Kind              string         `json:"kind"`
+	Namespace         string         `json:"namespace"`
+	Name              string         `json:"name"`
+	Reason            string         `json:"reason"`
+	Message           string         `json:"message"`
+	Suggestion        string         `json:"suggestion"`
+	LastSeenAt        string         `json:"lastSeenAt"`
+	RelatedEventCount int            `json:"relatedEventCount"`
+	RelatedEvents     []MonitorEvent `json:"relatedEvents,omitempty"`
+}
+
+type MonitorLogPreview struct {
+	Container string `json:"container"`
+	Previous  bool   `json:"previous"`
+	TailLines int64  `json:"tailLines"`
+	Content   string `json:"content"`
+	Error     string `json:"error,omitempty"`
+}
+
+type MonitorAIContext struct {
+	Issue            string            `json:"issue"`
+	Object           map[string]string `json:"object"`
+	Signals          []string          `json:"signals"`
+	Evidence         []string          `json:"evidence"`
+	SuggestedActions []string          `json:"suggestedActions"`
+}
+
+type MonitorDiagnosis struct {
+	Issue         MonitorIssue        `json:"issue"`
+	RelatedEvents []MonitorEvent      `json:"relatedEvents"`
+	LogPreview    []MonitorLogPreview `json:"logPreview"`
+	AIContext     MonitorAIContext    `json:"aiContext"`
+}
+
 type monitorSnapshot struct {
 	checkedAt string
 	apiErr    error
@@ -130,6 +169,66 @@ func GetMonitorEvents(cfg *rest.Config, namespace string, limit int) ([]MonitorE
 		result = append(result, toMonitorEvent(event))
 	}
 	return result, nil
+}
+
+func GetMonitorIssues(cfg *rest.Config) ([]MonitorIssue, error) {
+	if cfg == nil {
+		return nil, errors.New("apiserver not ready")
+	}
+	client, err := newClient(cfg)
+	if err != nil {
+		return nil, err
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	snapshot := loadMonitorSnapshotFromClient(ctx, client, formatTime(time.Now().UTC()))
+	return buildMonitorIssues(snapshot), nil
+}
+
+func GetMonitorDiagnosis(cfg *rest.Config, kind, namespace, name, container string, tailLines int64, includePrevious bool) (MonitorDiagnosis, error) {
+	if cfg == nil {
+		return MonitorDiagnosis{}, errors.New("apiserver not ready")
+	}
+	if kind == "" || name == "" {
+		return MonitorDiagnosis{}, errors.New("kind and name are required")
+	}
+	client, err := newClient(cfg)
+	if err != nil {
+		return MonitorDiagnosis{}, err
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	snapshot := loadMonitorSnapshotFromClient(ctx, client, formatTime(time.Now().UTC()))
+	issue := findMonitorIssue(buildMonitorIssues(snapshot), kind, namespace, name)
+	if issue.ID == "" {
+		issue = newMonitorIssue(MonitorSeverityInfo, kind, namespace, name, "NoActiveIssue",
+			fmt.Sprintf("No active monitor issue was found for %s %s.", kind, monitorObjectName(namespace, name)),
+			"No action required.", snapshot.checkedAt)
+	}
+
+	relatedEvents, _ := listMonitorEventsForObject(ctx, client, kind, namespace, name, 50)
+	monitorEvents := toMonitorEvents(relatedEvents)
+	if len(monitorEvents) > 0 {
+		issue.RelatedEventCount = len(monitorEvents)
+		issue.RelatedEvents = limitMonitorEvents(monitorEvents, 3)
+		issue.LastSeenAt = eventDisplayTime(monitorEvents[0])
+	}
+
+	logPreview := []MonitorLogPreview{}
+	if strings.EqualFold(kind, "Pod") {
+		logPreview = buildPodLogPreview(ctx, client, namespace, name, container, normalizeMonitorTailLines(tailLines), includePrevious)
+	}
+
+	return MonitorDiagnosis{
+		Issue:         issue,
+		RelatedEvents: monitorEvents,
+		LogPreview:    logPreview,
+		AIContext:     buildMonitorAIContext(issue, monitorEvents, logPreview),
+	}, nil
 }
 
 func buildMonitorSummary(snapshot monitorSnapshot, checks []HealthCheckResult) MonitorSummary {
@@ -188,24 +287,33 @@ func buildMonitorSummary(snapshot monitorSnapshot, checks []HealthCheckResult) M
 }
 
 func loadMonitorSnapshot(cfg *rest.Config) monitorSnapshot {
-	snapshot := monitorSnapshot{
-		checkedAt: formatTime(time.Now().UTC()),
-	}
 	if cfg == nil {
-		snapshot.apiErr = errors.New("apiserver not ready")
-		return snapshot
+		return monitorSnapshot{
+			checkedAt: formatTime(time.Now().UTC()),
+			apiErr:    errors.New("apiserver not ready"),
+		}
 	}
 
 	client, err := newClient(cfg)
 	if err != nil {
-		snapshot.apiErr = err
-		return snapshot
+		return monitorSnapshot{
+			checkedAt: formatTime(time.Now().UTC()),
+			apiErr:    err,
+		}
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
-	if _, err = client.Discovery().ServerVersion(); err != nil {
+	return loadMonitorSnapshotFromClient(ctx, client, formatTime(time.Now().UTC()))
+}
+
+func loadMonitorSnapshotFromClient(ctx context.Context, client kubernetes.Interface, checkedAt string) monitorSnapshot {
+	snapshot := monitorSnapshot{
+		checkedAt: checkedAt,
+	}
+
+	if _, err := client.Discovery().ServerVersion(); err != nil {
 		snapshot.apiErr = err
 	}
 
@@ -222,7 +330,7 @@ func loadMonitorSnapshot(cfg *rest.Config) monitorSnapshot {
 	return snapshot
 }
 
-func listMonitorNodes(ctx context.Context, client *kubernetes.Clientset) ([]corev1.Node, error) {
+func listMonitorNodes(ctx context.Context, client kubernetes.Interface) ([]corev1.Node, error) {
 	list, err := client.CoreV1().Nodes().List(ctx, metav1.ListOptions{})
 	if err != nil {
 		return nil, err
@@ -230,7 +338,7 @@ func listMonitorNodes(ctx context.Context, client *kubernetes.Clientset) ([]core
 	return list.Items, nil
 }
 
-func listMonitorPods(ctx context.Context, client *kubernetes.Clientset, namespace string) ([]corev1.Pod, error) {
+func listMonitorPods(ctx context.Context, client kubernetes.Interface, namespace string) ([]corev1.Pod, error) {
 	list, err := client.CoreV1().Pods(namespace).List(ctx, metav1.ListOptions{})
 	if err != nil {
 		return nil, err
@@ -238,7 +346,7 @@ func listMonitorPods(ctx context.Context, client *kubernetes.Clientset, namespac
 	return list.Items, nil
 }
 
-func listMonitorPVCs(ctx context.Context, client *kubernetes.Clientset) ([]corev1.PersistentVolumeClaim, error) {
+func listMonitorPVCs(ctx context.Context, client kubernetes.Interface) ([]corev1.PersistentVolumeClaim, error) {
 	list, err := client.CoreV1().PersistentVolumeClaims(metav1.NamespaceAll).List(ctx, metav1.ListOptions{})
 	if err != nil {
 		return nil, err
@@ -251,7 +359,7 @@ func listMonitorPVCs(ctx context.Context, client *kubernetes.Clientset) ([]corev
 // complete set of matching events, then sorts and caps the sample afterward -
 // unlike listMonitorEvents, capping happens after we already have everything
 // that matters, so recent warnings can't be silently dropped by an API-side Limit.
-func listMonitorWarningEvents(ctx context.Context, client *kubernetes.Clientset) ([]corev1.Event, error) {
+func listMonitorWarningEvents(ctx context.Context, client kubernetes.Interface) ([]corev1.Event, error) {
 	list, err := client.CoreV1().Events(metav1.NamespaceAll).List(ctx, metav1.ListOptions{
 		FieldSelector: "type=" + corev1.EventTypeWarning,
 	})
@@ -266,7 +374,7 @@ func listMonitorWarningEvents(ctx context.Context, client *kubernetes.Clientset)
 	return events, nil
 }
 
-func listMonitorEvents(ctx context.Context, client *kubernetes.Clientset, namespace string, limit int) ([]corev1.Event, error) {
+func listMonitorEvents(ctx context.Context, client kubernetes.Interface, namespace string, limit int) ([]corev1.Event, error) {
 	ns := namespace
 	if ns == "" {
 		ns = metav1.NamespaceAll
@@ -274,6 +382,27 @@ func listMonitorEvents(ctx context.Context, client *kubernetes.Clientset, namesp
 	limit = normalizeMonitorEventLimit(limit)
 	list, err := client.CoreV1().Events(ns).List(ctx, metav1.ListOptions{
 		Limit: int64(limit),
+	})
+	if err != nil {
+		return nil, err
+	}
+	events := list.Items
+	sortEvents(events)
+	return events, nil
+}
+
+func listMonitorEventsForObject(ctx context.Context, client kubernetes.Interface, kind, namespace, name string, limit int) ([]corev1.Event, error) {
+	ns := namespace
+	if ns == "" {
+		ns = metav1.NamespaceAll
+	}
+	selector := fields.Set{
+		"involvedObject.kind": kind,
+		"involvedObject.name": name,
+	}.AsSelector().String()
+	list, err := client.CoreV1().Events(ns).List(ctx, metav1.ListOptions{
+		FieldSelector: selector,
+		Limit:         int64(normalizeMonitorEventLimit(limit)),
 	})
 	if err != nil {
 		return nil, err
@@ -304,6 +433,400 @@ func buildMonitorChecks(snapshot monitorSnapshot) []HealthCheckResult {
 		checkWarningEvents(snapshot),
 		checkCasOSService(snapshot),
 	}
+}
+
+func buildMonitorIssues(snapshot monitorSnapshot) []MonitorIssue {
+	issues := []MonitorIssue{}
+	index := map[string]int{}
+	addIssue := func(issue MonitorIssue) {
+		if issue.LastSeenAt == "" {
+			issue.LastSeenAt = snapshot.checkedAt
+		}
+		relatedEvents := relatedMonitorEvents(snapshot.events, issue.Kind, issue.Namespace, issue.Name)
+		if len(relatedEvents) > 0 {
+			issue.RelatedEventCount = len(relatedEvents)
+			issue.RelatedEvents = limitMonitorEvents(relatedEvents, 3)
+			issue.LastSeenAt = eventDisplayTime(relatedEvents[0])
+		}
+		if existingIndex, ok := index[issue.ID]; ok {
+			existing := issues[existingIndex]
+			if monitorSeverityRank(issue.Severity) > monitorSeverityRank(existing.Severity) {
+				issues[existingIndex] = issue
+			}
+			return
+		}
+		index[issue.ID] = len(issues)
+		issues = append(issues, issue)
+	}
+
+	if snapshot.apiErr != nil {
+		addIssue(newMonitorIssue(MonitorSeverityWarning, "Cluster", "", "Kubernetes API", "APIServerUnreachable",
+			fmt.Sprintf("Kubernetes API health probe failed: %v", snapshot.apiErr),
+			"Check the CasOS apiserver startup status, admin REST config, certificates, and local network connectivity.", snapshot.checkedAt))
+	}
+
+	if snapshot.nodesErr != nil {
+		addIssue(newMonitorIssue(MonitorSeverityWarning, "Node", "", "List", "ListFailed",
+			fmt.Sprintf("Unable to list nodes: %v", snapshot.nodesErr),
+			"Check Kubernetes API access and node list permissions.", snapshot.checkedAt))
+	} else {
+		for _, node := range snapshot.nodes {
+			if !isNodeReady(node) {
+				addIssue(newMonitorIssue(MonitorSeverityCritical, "Node", "", node.Name, "NotReady",
+					fmt.Sprintf("Node %s is not Ready.", node.Name),
+					"Check kubelet status, node network connectivity, container runtime, and disk pressure.", snapshot.checkedAt))
+			}
+			for _, cond := range node.Status.Conditions {
+				if cond.Status != corev1.ConditionTrue {
+					continue
+				}
+				switch cond.Type {
+				case corev1.NodeMemoryPressure, corev1.NodeDiskPressure, corev1.NodePIDPressure, corev1.NodeNetworkUnavailable:
+					addIssue(newMonitorIssue(MonitorSeverityWarning, "Node", "", node.Name, string(cond.Type),
+						fmt.Sprintf("Node %s reports %s.", node.Name, cond.Type),
+						"Check node disk, memory, PID usage, network plugin status, and recent kubelet events.", snapshot.checkedAt))
+				}
+			}
+		}
+	}
+
+	if snapshot.podsErr != nil {
+		addIssue(newMonitorIssue(MonitorSeverityWarning, "Pod", "", "List", "ListFailed",
+			fmt.Sprintf("Unable to list pods: %v", snapshot.podsErr),
+			"Check Kubernetes API access and pod list permissions.", snapshot.checkedAt))
+	} else {
+		for _, pod := range snapshot.pods {
+			abnormal, reason, critical := detectAbnormalPod(pod)
+			if !abnormal {
+				continue
+			}
+			severity := MonitorSeverityWarning
+			if critical {
+				severity = MonitorSeverityCritical
+			}
+			addIssue(newMonitorIssue(severity, "Pod", pod.Namespace, pod.Name, reason,
+				fmt.Sprintf("Pod %s is abnormal: %s.", monitorObjectName(pod.Namespace, pod.Name), reason),
+				podSuggestion(reason), snapshot.checkedAt))
+		}
+	}
+
+	if snapshot.systemErr != nil {
+		addIssue(newMonitorIssue(MonitorSeverityWarning, "Pod", metav1.NamespaceSystem, "List", "SystemComponentListFailed",
+			fmt.Sprintf("Unable to list kube-system pods: %v", snapshot.systemErr),
+			"Check Kubernetes API access and kube-system pod permissions.", snapshot.checkedAt))
+	} else {
+		for _, pod := range snapshot.systemPods {
+			if systemComponentName(pod.Name) != "coredns" || isPodAvailable(pod) {
+				continue
+			}
+			addIssue(newMonitorIssue(MonitorSeverityCritical, "Pod", pod.Namespace, pod.Name, "CoreDNSUnavailable",
+				fmt.Sprintf("CoreDNS pod %s is not available.", monitorObjectName(pod.Namespace, pod.Name)),
+				"Check coredns pods, kube-system events, and the cluster DNS service.", snapshot.checkedAt))
+		}
+	}
+
+	if snapshot.pvcsErr != nil {
+		addIssue(newMonitorIssue(MonitorSeverityWarning, "PersistentVolumeClaim", "", "List", "ListFailed",
+			fmt.Sprintf("Unable to list PVCs: %v", snapshot.pvcsErr),
+			"Check Kubernetes API access and PVC list permissions.", snapshot.checkedAt))
+	} else {
+		for _, pvc := range snapshot.pvcs {
+			if pvc.Status.Phase == corev1.ClaimBound {
+				continue
+			}
+			severity := MonitorSeverityWarning
+			if pvc.Status.Phase == corev1.ClaimLost {
+				severity = MonitorSeverityCritical
+			}
+			addIssue(newMonitorIssue(severity, "PersistentVolumeClaim", pvc.Namespace, pvc.Name, string(pvc.Status.Phase),
+				fmt.Sprintf("PVC %s is %s.", monitorObjectName(pvc.Namespace, pvc.Name), pvc.Status.Phase),
+				"Check whether a default StorageClass exists and whether the requested storage can be provisioned.", snapshot.checkedAt))
+		}
+	}
+
+	for _, event := range snapshot.events {
+		if event.Type != corev1.EventTypeWarning || event.InvolvedObject.Name == "" {
+			continue
+		}
+		if hasMonitorIssueForObject(issues, event.InvolvedObject.Kind, event.InvolvedObject.Namespace, event.InvolvedObject.Name) {
+			continue
+		}
+		addIssue(newMonitorIssue(eventIssueSeverity(event.Reason), event.InvolvedObject.Kind, event.InvolvedObject.Namespace, event.InvolvedObject.Name, event.Reason,
+			fmt.Sprintf("Warning event on %s %s: %s.", event.InvolvedObject.Kind, monitorObjectName(event.InvolvedObject.Namespace, event.InvolvedObject.Name), event.Message),
+			eventSuggestion(event.Reason), formatMetaTime(event.LastTimestamp)))
+		if len(issues) >= 50 {
+			break
+		}
+	}
+
+	sortMonitorIssues(issues)
+	return issues
+}
+
+func newMonitorIssue(severity, kind, namespace, name, reason, message, suggestion, lastSeenAt string) MonitorIssue {
+	if severity == "" {
+		severity = MonitorSeverityWarning
+	}
+	return MonitorIssue{
+		ID:         monitorIssueID(kind, namespace, name, reason),
+		Severity:   severity,
+		Kind:       kind,
+		Namespace:  namespace,
+		Name:       name,
+		Reason:     reason,
+		Message:    message,
+		Suggestion: suggestion,
+		LastSeenAt: lastSeenAt,
+	}
+}
+
+func monitorIssueID(kind, namespace, name, reason string) string {
+	parts := []string{strings.ToLower(kind), strings.ToLower(namespace), strings.ToLower(name), strings.ToLower(reason)}
+	return strings.ReplaceAll(strings.Join(parts, ":"), " ", "-")
+}
+
+func monitorObjectName(namespace, name string) string {
+	if namespace == "" {
+		return name
+	}
+	return namespace + "/" + name
+}
+
+func findMonitorIssue(issues []MonitorIssue, kind, namespace, name string) MonitorIssue {
+	var selected MonitorIssue
+	for _, issue := range issues {
+		if !strings.EqualFold(issue.Kind, kind) || issue.Name != name {
+			continue
+		}
+		if namespace != "" && issue.Namespace != namespace {
+			continue
+		}
+		if selected.ID == "" || monitorSeverityRank(issue.Severity) > monitorSeverityRank(selected.Severity) {
+			selected = issue
+		}
+	}
+	return selected
+}
+
+func hasMonitorIssueForObject(issues []MonitorIssue, kind, namespace, name string) bool {
+	return findMonitorIssue(issues, kind, namespace, name).ID != ""
+}
+
+func relatedMonitorEvents(events []corev1.Event, kind, namespace, name string) []MonitorEvent {
+	result := []MonitorEvent{}
+	for _, event := range events {
+		if !strings.EqualFold(event.InvolvedObject.Kind, kind) || event.InvolvedObject.Name != name {
+			continue
+		}
+		if namespace != "" && event.InvolvedObject.Namespace != namespace {
+			continue
+		}
+		result = append(result, toMonitorEvent(event))
+	}
+	return result
+}
+
+func toMonitorEvents(events []corev1.Event) []MonitorEvent {
+	result := make([]MonitorEvent, 0, len(events))
+	for _, event := range events {
+		result = append(result, toMonitorEvent(event))
+	}
+	return result
+}
+
+func limitMonitorEvents(events []MonitorEvent, limit int) []MonitorEvent {
+	if limit <= 0 || len(events) <= limit {
+		return events
+	}
+	return events[:limit]
+}
+
+func eventDisplayTime(event MonitorEvent) string {
+	if event.LastTimestamp != "" {
+		return event.LastTimestamp
+	}
+	if event.EventTime != "" {
+		return event.EventTime
+	}
+	return event.FirstTimestamp
+}
+
+func monitorSeverityRank(severity string) int {
+	switch severity {
+	case MonitorSeverityCritical:
+		return 3
+	case MonitorSeverityWarning:
+		return 2
+	case MonitorSeverityInfo:
+		return 1
+	default:
+		return 0
+	}
+}
+
+func sortMonitorIssues(issues []MonitorIssue) {
+	sort.Slice(issues, func(i, j int) bool {
+		if monitorSeverityRank(issues[i].Severity) != monitorSeverityRank(issues[j].Severity) {
+			return monitorSeverityRank(issues[i].Severity) > monitorSeverityRank(issues[j].Severity)
+		}
+		ti, _ := time.Parse(time.RFC3339, issues[i].LastSeenAt)
+		tj, _ := time.Parse(time.RFC3339, issues[j].LastSeenAt)
+		if !ti.Equal(tj) {
+			return ti.After(tj)
+		}
+		return issues[i].ID < issues[j].ID
+	})
+}
+
+func eventIssueSeverity(reason string) string {
+	switch reason {
+	case "BackOff", "Failed", "FailedMount", "FailedScheduling", "Unhealthy":
+		return MonitorSeverityWarning
+	default:
+		return MonitorSeverityWarning
+	}
+}
+
+func eventSuggestion(reason string) string {
+	switch reason {
+	case "FailedScheduling":
+		return "Check node capacity, taints and tolerations, affinity rules, and pending PVCs."
+	case "FailedMount":
+		return "Check referenced Secrets, ConfigMaps, PVCs, volume permissions, and storage plugin events."
+	case "BackOff":
+		return "Check container logs, image pull status, command args, and recent pod restarts."
+	case "Unhealthy":
+		return "Check readiness and liveness probes, container ports, and application startup logs."
+	default:
+		return "Inspect the related object events, configuration, and logs."
+	}
+}
+
+func normalizeMonitorTailLines(tailLines int64) int64 {
+	if tailLines <= 0 {
+		return 100
+	}
+	if tailLines > 100 {
+		return 100
+	}
+	return tailLines
+}
+
+func buildPodLogPreview(ctx context.Context, client kubernetes.Interface, namespace, name, container string, tailLines int64, includePrevious bool) []MonitorLogPreview {
+	if namespace == "" {
+		namespace = "default"
+	}
+	pod, err := client.CoreV1().Pods(namespace).Get(ctx, name, metav1.GetOptions{})
+	if err != nil {
+		return []MonitorLogPreview{{
+			Container: container,
+			TailLines: tailLines,
+			Error:     err.Error(),
+		}}
+	}
+
+	selectedContainer := monitorLogContainerName(*pod, container)
+	if selectedContainer == "" {
+		return []MonitorLogPreview{{
+			TailLines: tailLines,
+			Error:     "pod has no containers",
+		}}
+	}
+
+	previews := []MonitorLogPreview{
+		readMonitorPodLog(ctx, client, namespace, name, selectedContainer, tailLines, false),
+	}
+	if includePrevious {
+		previews = append(previews, readMonitorPodLog(ctx, client, namespace, name, selectedContainer, tailLines, true))
+	}
+	return previews
+}
+
+func monitorLogContainerName(pod corev1.Pod, preferred string) string {
+	if preferred != "" {
+		return preferred
+	}
+	statuses := append([]corev1.ContainerStatus{}, pod.Status.InitContainerStatuses...)
+	statuses = append(statuses, pod.Status.ContainerStatuses...)
+	for _, status := range statuses {
+		if status.State.Waiting != nil || status.State.Terminated != nil {
+			return status.Name
+		}
+	}
+	if len(pod.Spec.Containers) > 0 {
+		return pod.Spec.Containers[0].Name
+	}
+	return ""
+}
+
+func readMonitorPodLog(ctx context.Context, client kubernetes.Interface, namespace, name, container string, tailLines int64, previous bool) MonitorLogPreview {
+	preview := MonitorLogPreview{
+		Container: container,
+		Previous:  previous,
+		TailLines: tailLines,
+	}
+	opts := &corev1.PodLogOptions{
+		Container: container,
+		TailLines: &tailLines,
+		Previous:  previous,
+	}
+	rc, err := client.CoreV1().Pods(namespace).GetLogs(name, opts).Stream(ctx)
+	if err != nil {
+		preview.Error = err.Error()
+		return preview
+	}
+	defer rc.Close()
+
+	content, err := io.ReadAll(rc)
+	if err != nil {
+		preview.Error = err.Error()
+		return preview
+	}
+	preview.Content = string(content)
+	return preview
+}
+
+func buildMonitorAIContext(issue MonitorIssue, events []MonitorEvent, logs []MonitorLogPreview) MonitorAIContext {
+	context := MonitorAIContext{
+		Issue: issue.Message,
+		Object: map[string]string{
+			"kind":      issue.Kind,
+			"namespace": issue.Namespace,
+			"name":      issue.Name,
+			"reason":    issue.Reason,
+			"severity":  issue.Severity,
+		},
+		Signals:          []string{issue.Message},
+		SuggestedActions: splitMonitorSuggestion(issue.Suggestion),
+	}
+	if issue.RelatedEventCount > 0 {
+		context.Signals = append(context.Signals, fmt.Sprintf("%d related Kubernetes events found.", issue.RelatedEventCount))
+	}
+	for _, event := range limitMonitorEvents(events, 5) {
+		context.Evidence = append(context.Evidence, fmt.Sprintf("Event %s/%s: %s", event.Type, event.Reason, event.Message))
+	}
+	for _, log := range logs {
+		if log.Error != "" {
+			context.Evidence = append(context.Evidence, fmt.Sprintf("Log preview %s previous=%t failed: %s", log.Container, log.Previous, log.Error))
+			continue
+		}
+		context.Evidence = append(context.Evidence, fmt.Sprintf("Log preview %s previous=%t contains %d bytes.", log.Container, log.Previous, len(log.Content)))
+	}
+	return context
+}
+
+func splitMonitorSuggestion(suggestion string) []string {
+	parts := []string{}
+	for _, part := range strings.Split(suggestion, ".") {
+		part = strings.TrimSpace(part)
+		if part != "" {
+			parts = append(parts, part+".")
+		}
+	}
+	if len(parts) == 0 && suggestion != "" {
+		parts = append(parts, suggestion)
+	}
+	return parts
 }
 
 func checkKubernetesAPI(snapshot monitorSnapshot) HealthCheckResult {
