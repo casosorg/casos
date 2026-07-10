@@ -1,5 +1,5 @@
 import React, {useEffect, useMemo, useState} from "react";
-import {Alert, Button, Card, Col, Descriptions, Input, Modal, Row, Space, Spin, Statistic, Table, Tag, Tooltip, Typography} from "antd";
+import {Alert, Button, Card, Col, Descriptions, Input, Modal, Row, Space, Spin, Statistic, Table, Tag, Typography} from "antd";
 import {
   AppstoreOutlined,
   BellOutlined,
@@ -17,7 +17,7 @@ import i18next from "i18next";
 import * as MonitorBackend from "./backend/MonitorBackend";
 import * as Setting from "./Setting";
 
-const {Paragraph, Text} = Typography;
+const {Paragraph} = Typography;
 
 const statusMeta = {
   healthy: {color: "green", icon: <CheckCircleOutlined />},
@@ -36,11 +36,6 @@ const eventTypeColor = {
   Normal: "blue",
   Warning: "gold",
 };
-
-const nowrapStyle = {whiteSpace: "nowrap"};
-const ellipsisTextStyle = {display: "block", minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap"};
-const checkNameCellStyle = {minWidth: 280, maxWidth: 280};
-const checkTableScrollX = 1560;
 
 function registerMonitorI18nKeys() {
   // The existing i18n generator only scans literal i18next.t(...) calls.
@@ -93,36 +88,6 @@ function renderStatusTag(status, t) {
     <Tag color={meta.color} icon={meta.icon}>
       {t(`monitor:status ${status || "unknown"}`)}
     </Tag>
-  );
-}
-
-function compactText(value, maxWidth = 460) {
-  return (
-    <Tooltip title={value}>
-      <div style={{maxWidth, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap"}}>
-        {value || "-"}
-      </div>
-    </Tooltip>
-  );
-}
-
-function nowrapTitle(value) {
-  return <span style={nowrapStyle}>{value}</span>;
-}
-
-function renderCheckName(value, record) {
-  const name = value || "-";
-  const id = record.id || "-";
-
-  return (
-    <Space direction="vertical" size={0} style={{display: "flex", minWidth: 0}}>
-      <Tooltip title={name}>
-        <Text strong style={ellipsisTextStyle}>{name}</Text>
-      </Tooltip>
-      <Tooltip title={id}>
-        <Text type="secondary" style={{...ellipsisTextStyle, fontSize: 12}}>{id}</Text>
-      </Tooltip>
-    </Space>
   );
 }
 
@@ -179,57 +144,52 @@ function MonitorPage() {
 
   const checkColumns = useMemo(() => [
     {
-      title: nowrapTitle(t("monitor:Check")),
+      title: t("monitor:Check"),
       dataIndex: "name",
       key: "name",
       width: 280,
-      onCell: () => ({style: checkNameCellStyle}),
-      render: renderCheckName,
+      ellipsis: true,
     },
     {
-      title: nowrapTitle(t("monitor:Category")),
+      title: t("monitor:Category"),
       dataIndex: "category",
       key: "category",
       width: 130,
-      onCell: () => ({style: nowrapStyle}),
       render: value => <Tag>{value}</Tag>,
     },
     {
-      title: nowrapTitle(t("general:Status")),
+      title: t("general:Status"),
       dataIndex: "status",
       key: "status",
       width: 130,
-      onCell: () => ({style: nowrapStyle}),
       render: value => renderStatusTag(value, t),
     },
     {
-      title: nowrapTitle(t("trivy:Severity")),
+      title: t("trivy:Severity"),
       dataIndex: "severity",
       key: "severity",
       width: 130,
-      onCell: () => ({style: nowrapStyle}),
       render: value => <Tag color={severityColor[value] || "default"}>{t(`monitor:severity ${value || "info"}`)}</Tag>,
     },
     {
-      title: nowrapTitle(t("monitor:Message")),
+      title: t("monitor:Message"),
       dataIndex: "message",
       key: "message",
       width: 340,
-      render: value => compactText(value, 320),
+      ellipsis: true,
     },
     {
-      title: nowrapTitle(t("monitor:Suggestion")),
+      title: t("monitor:Suggestion"),
       dataIndex: "suggestion",
       key: "suggestion",
       width: 360,
-      render: value => compactText(value, 340),
+      ellipsis: true,
     },
     {
-      title: nowrapTitle(t("monitor:Last Checked")),
+      title: t("monitor:Last Checked"),
       dataIndex: "lastCheckedAt",
       key: "lastCheckedAt",
       width: 190,
-      onCell: () => ({style: nowrapStyle}),
       render: formatTime,
     },
   ], [t]);
@@ -253,14 +213,16 @@ function MonitorPage() {
       title: t("monitor:Object"),
       key: "object",
       width: 260,
-      render: (_, record) => compactText(`${record.involvedObjectKind || "-"} / ${record.involvedObjectName || "-"}`, 240),
+      ellipsis: true,
+      render: (_, record) => `${record.involvedObjectKind || "-"} / ${record.involvedObjectName || "-"}`,
     },
     {title: t("monitor:Reason"), dataIndex: "reason", key: "reason", width: 180},
     {
       title: t("monitor:Message"),
       dataIndex: "message",
       key: "message",
-      render: value => compactText(value, 520),
+      width: 420,
+      ellipsis: true,
     },
     {title: t("monitor:Count"), dataIndex: "count", key: "count", width: 90},
     {
@@ -400,8 +362,9 @@ function MonitorPage() {
           columns={checkColumns}
           dataSource={checks}
           loading={loading}
+          size="middle"
           pagination={false}
-          scroll={{x: checkTableScrollX}}
+          scroll={{x: 1560}}
         />
       </Card>
 
@@ -439,8 +402,9 @@ function MonitorPage() {
           columns={eventColumns}
           dataSource={events}
           loading={eventsLoading}
-          pagination={{pageSize: 20, showSizeChanger: true}}
-          scroll={{x: 1280}}
+          size="middle"
+          pagination={{pageSize: 20}}
+          scroll={{x: 1510}}
           onRow={(record) => ({
             onDoubleClick: () => setSelectedEvent(record),
           })}
