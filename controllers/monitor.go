@@ -12,6 +12,31 @@ func (c *ApiController) GetMonitorOverview() {
 	c.ResponseOk(object.GetMonitorOverview(getAdminRestConfig()))
 }
 
+// GetMonitorMetrics returns Prometheus-backed instant or range metric data.
+// @router /api/get-monitor-metrics [get]
+func (c *ApiController) GetMonitorMetrics() {
+	query, err := object.ParseMonitorMetricQuery(object.MonitorMetricQueryParams{
+		Scope:     c.GetString("scope"),
+		Metric:    c.GetString("metric"),
+		Namespace: c.GetString("namespace"),
+		Name:      c.GetString("name"),
+		Start:     c.GetString("start"),
+		End:       c.GetString("end"),
+		Step:      c.GetString("step"),
+	})
+	if err != nil {
+		c.ResponseError(err.Error())
+		return
+	}
+
+	metrics, err := object.GetMonitorMetrics(c.Ctx.Request.Context(), query)
+	if err != nil {
+		c.ResponseError(err.Error())
+		return
+	}
+	c.ResponseOk(metrics)
+}
+
 // GetMonitorSummary returns a lightweight observability overview.
 // @router /api/get-monitor-summary [get]
 func (c *ApiController) GetMonitorSummary() {

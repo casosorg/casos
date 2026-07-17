@@ -28,6 +28,7 @@ CasOS is a cloud operating system built on Kubernetes. It embeds the Kubernetes 
 - Embedded Kubernetes stack (API server, controller manager, scheduler) — no external cluster needed
 - Cluster resource management: Nodes, Namespaces, Pods, Services, ConfigMaps, ServiceAccounts, ClusterRoleBindings
 - Dashboard with cluster overview
+- Monitor Center with Kubernetes health checks, Events, diagnosis, and optional Prometheus resource trends
 - DockerHub image browser
 - Multi-language support (i18n)
 - Authentication via [Casdoor](https://casdoor.org)
@@ -95,11 +96,18 @@ clientSecret        = <your-client-secret>
 casdoorOrganization = <your-org>
 casdoorApplication  = <your-app>
 
+; Optional Prometheus integration
+prometheusAddress      = http://prometheus.monitoring.svc:9090
+prometheusQueryTimeout = 10s
+
 ; Kubernetes control plane
 apiserverPort = 6443
 apiserverBind = 127.0.0.1
 dataDir       = /var/lib/casos
 ```
+
+See [Prometheus metrics monitoring](docs/monitoring.md) for exporter
+requirements, supported metrics, and API examples.
 
 ## Development
 
