@@ -3,8 +3,10 @@ package store
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/url"
 	"sort"
@@ -38,6 +40,7 @@ import (
 	clientcmdapi "k8s.io/client-go/tools/clientcmd/api"
 
 	"gopkg.in/yaml.v3"
+	"oras.land/oras-go/v2/registry/remote/errcode"
 	sigsyaml "sigs.k8s.io/yaml"
 
 	proxypkg "github.com/casosorg/casos/proxy"
@@ -248,20 +251,27 @@ func shouldKeepHelmKubePrerelease(preRelease string) bool {
 
 // ---------- HTTP helper ----------
 
-func helmGet(url string) (*http.Response, error) {
-	req, err := http.NewRequest(http.MethodGet, url, nil)
+func helmGet(ctx context.Context, url string) (*http.Response, error) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
 		return nil, err
 	}
 	req.Header.Set("User-Agent", "Helm/3.21.2")
-	return proxypkg.ProxyHttpClient.Do(req)
+	client := proxypkg.ProxyHttpClient
+	if client == nil {
+		client = http.DefaultClient
+	}
+	return client.Do(req)
 }
 
 // ---------- Repo index ----------
 
-func fetchIndexFile(repoURL string) (*repo.IndexFile, error) {
+func fetchIndexFile(ctx context.Context, repoURL string) (*repo.IndexFile, error) {
 	indexURL := strings.TrimRight(repoURL, "/") + "/index.yaml"
-	resp, err := helmGet(indexURL)
+	resp, err := helmGet(ctx, indexURL)
 	if err != nil {
 		return nil, fmt.Errorf(
 			"fetch index %q: %w",
@@ -304,11 +314,15 @@ func fetchIndexFile(repoURL string) (*repo.IndexFile, error) {
 // FetchRepoIndex returns all charts listed in a Helm repo's index.yaml, or, for an
 // "oci://" repoURL, the single chart hosted at that OCI reference.
 func FetchRepoIndex(repoURL string) ([]HelmChartSummary, error) {
+	return FetchRepoIndexWithContext(context.Background(), repoURL)
+}
+
+func FetchRepoIndexWithContext(ctx context.Context, repoURL string) ([]HelmChartSummary, error) {
 	if isOCIRepo(repoURL) {
-		return fetchOCIChartSummary(repoURL)
+		return fetchOCIChartSummary(ctx, repoURL)
 	}
 
-	idx, err := fetchIndexFile(repoURL)
+	idx, err := fetchIndexFile(ctx, repoURL)
 	if err != nil {
 		return nil, err
 	}
@@ -318,7 +332,7 @@ func FetchRepoIndex(repoURL string) ([]HelmChartSummary, error) {
 			continue
 		}
 		v := versions[0]
-		if !isInstallableHelmChartMetadata(v.Metadata) {
+		if !isVisibleAppStoreChartMetadata(v.Metadata) {
 			continue
 		}
 		charts = append(charts, HelmChartSummary{
@@ -392,9 +406,70 @@ func newOCIRegistryClient() (*registry.Client, error) {
 	return registry.NewClient(registry.ClientOptHTTPClient(proxypkg.ProxyHttpClient))
 }
 
+func retryOCIRegistryOperation(ctx context.Context, operation func() error) error {
+	return retryOCIRegistryOperationWithDelays(ctx, operation, []time.Duration{
+		500 * time.Millisecond,
+		1500 * time.Millisecond,
+	})
+}
+
+func retryOCIRegistryOperationWithDelays(ctx context.Context, operation func() error, delays []time.Duration) error {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	for attempt := 0; ; attempt++ {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		default:
+		}
+		err := operation()
+		if err == nil {
+			return nil
+		}
+		if attempt >= len(delays) || !isRetryableOCIRegistryError(err) {
+			return err
+		}
+		timer := time.NewTimer(delays[attempt])
+		select {
+		case <-ctx.Done():
+			if !timer.Stop() {
+				<-timer.C
+			}
+			return ctx.Err()
+		case <-timer.C:
+		}
+	}
+}
+
+func isRetryableOCIRegistryError(err error) bool {
+	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+		return false
+	}
+	if errors.Is(err, io.EOF) || errors.Is(err, io.ErrUnexpectedEOF) {
+		return true
+	}
+	var networkError net.Error
+	if errors.As(err, &networkError) && networkError.Timeout() {
+		return true
+	}
+	var operationError *net.OpError
+	if errors.As(err, &operationError) {
+		return true
+	}
+	var responseError *errcode.ErrorResponse
+	if errors.As(err, &responseError) {
+		return responseError.StatusCode == http.StatusRequestTimeout ||
+			responseError.StatusCode == http.StatusTooManyRequests ||
+			(responseError.StatusCode >= http.StatusInternalServerError &&
+				responseError.StatusCode < 600)
+	}
+	return false
+}
+
 // pullOCIChart pulls the chart hosted at repoURL, resolving to the newest published
 // semver tag when version is empty.
-func pullOCIChart(repoURL, version string) (*registry.PullResult, error) {
+func pullOCIChartWithContext(ctx context.Context, repoURL, version string) (*registry.PullResult, error) {
 	ref, resolvedVersion := resolveOCIChartRef(repoURL, version)
 
 	rc, err := newOCIRegistryClient()
@@ -404,7 +479,12 @@ func pullOCIChart(repoURL, version string) (*registry.PullResult, error) {
 
 	if resolvedVersion == "" {
 		if !strings.Contains(ref, "@") {
-			tags, err := rc.Tags(ref)
+			var tags []string
+			err = retryOCIRegistryOperation(ctx, func() error {
+				var tagsErr error
+				tags, tagsErr = rc.Tags(ref)
+				return tagsErr
+			})
 			if err != nil {
 				return nil, fmt.Errorf(
 					"list oci tags for %q: %w",
@@ -430,7 +510,12 @@ func pullOCIChart(repoURL, version string) (*registry.PullResult, error) {
 		pullRef = fmt.Sprintf("%s:%s", ref, resolvedVersion)
 	}
 
-	pull, err := rc.Pull(pullRef, registry.PullOptWithChart(true))
+	var pull *registry.PullResult
+	err = retryOCIRegistryOperation(ctx, func() error {
+		var pullErr error
+		pull, pullErr = rc.Pull(pullRef, registry.PullOptWithChart(true))
+		return pullErr
+	})
 	if err != nil {
 		return nil, fmt.Errorf(
 			"pull oci chart %q: %w",
@@ -465,16 +550,16 @@ func latestOCISemverTag(tags []string) string {
 	return versionedTags[0].tag
 }
 
-func loadOCIChart(repoURL, version string) (*chart.Chart, error) {
-	pull, err := pullOCIChart(repoURL, version)
+func loadOCIChartWithContext(ctx context.Context, repoURL, version string) (*chart.Chart, error) {
+	pull, err := pullOCIChartWithContext(ctx, repoURL, version)
 	if err != nil {
 		return nil, err
 	}
 	return loader.LoadArchive(bytes.NewReader(pull.Chart.Data))
 }
 
-func fetchOCIChartSummary(repoURL string) ([]HelmChartSummary, error) {
-	pull, err := pullOCIChart(repoURL, "")
+func fetchOCIChartSummary(ctx context.Context, repoURL string) ([]HelmChartSummary, error) {
+	pull, err := pullOCIChartWithContext(ctx, repoURL, "")
 	if err != nil {
 		return nil, err
 	}
@@ -482,7 +567,7 @@ func fetchOCIChartSummary(repoURL string) ([]HelmChartSummary, error) {
 	if meta == nil {
 		return nil, fmt.Errorf("chart metadata not found for %s", redactURLForError(repoURL))
 	}
-	if !isInstallableHelmChartMetadata(meta) {
+	if !isVisibleAppStoreChartMetadata(meta) {
 		return []HelmChartSummary{}, nil
 	}
 	return []HelmChartSummary{
@@ -499,6 +584,10 @@ func fetchOCIChartSummary(repoURL string) ([]HelmChartSummary, error) {
 
 func isInstallableHelmChartMetadata(metadata *chart.Metadata) bool {
 	return metadata != nil && !strings.EqualFold(strings.TrimSpace(metadata.Type), "library")
+}
+
+func isVisibleAppStoreChartMetadata(metadata *chart.Metadata) bool {
+	return isInstallableHelmChartMetadata(metadata) && !metadata.Deprecated
 }
 
 // ---------- Chart loader ----------
@@ -682,8 +771,12 @@ func redactionCandidates(raw string) []string {
 }
 
 func loadChart(chartName, repoURL, version string) (*chart.Chart, error) {
+	return loadChartWithContext(context.Background(), chartName, repoURL, version)
+}
+
+func loadChartWithContext(ctx context.Context, chartName, repoURL, version string) (*chart.Chart, error) {
 	if isOCIRepo(repoURL) {
-		ch, err := loadOCIChart(repoURL, version)
+		ch, err := loadOCIChartWithContext(ctx, repoURL, version)
 		if err != nil {
 			return nil, fmt.Errorf(
 				"load chart %q from OCI repo %q version %q: %w",
@@ -696,7 +789,7 @@ func loadChart(chartName, repoURL, version string) (*chart.Chart, error) {
 		return ch, nil
 	}
 
-	idx, err := fetchIndexFile(repoURL)
+	idx, err := fetchIndexFile(ctx, repoURL)
 	if err != nil {
 		return nil, fmt.Errorf("load chart %q from repo %q version %q: fetch index.yaml failed: %w", chartName, redactURLForError(repoURL), version, err)
 	}
@@ -726,7 +819,7 @@ func loadChart(chartName, repoURL, version string) (*chart.Chart, error) {
 		if ociVersion == "" {
 			ociVersion = entry.Version
 		}
-		ch, err := loadOCIChart(chartURL, ociVersion)
+		ch, err := loadOCIChartWithContext(ctx, chartURL, ociVersion)
 		if err != nil {
 			return nil, fmt.Errorf(
 				"load chart %q from repo %q version %q: index.yaml resolved to OCI chart URL %q: %w",
@@ -743,7 +836,7 @@ func loadChart(chartName, repoURL, version string) (*chart.Chart, error) {
 		chartURL = strings.TrimRight(repoURL, "/") + "/" + strings.TrimLeft(chartURL, "/")
 	}
 
-	resp, err := helmGet(chartURL)
+	resp, err := helmGet(ctx, chartURL)
 	if err != nil {
 		return nil, fmt.Errorf(
 			"load chart %q from repo %q version %q: download chart archive %q failed: %w",
@@ -1289,7 +1382,7 @@ func InstallHelmChartStream(ctx context.Context, lifecycle HelmInstallLifecycle,
 			_ = lifecycle.Finish(err)
 			return
 		}
-		helmChart, err := loadChart(chartName, repoURL, version)
+		helmChart, err := loadChartWithContext(installCtx, chartName, repoURL, version)
 		if err != nil {
 			send("ERROR: " + err.Error())
 			_ = lifecycle.Finish(err)

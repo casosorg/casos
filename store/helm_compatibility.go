@@ -12,6 +12,9 @@ func validateHelmChartCompatibility(ctx context.Context, actionConfig *action.Co
 	if chartToInstall == nil || chartToInstall.Metadata == nil {
 		return fmt.Errorf("chart metadata is missing")
 	}
+	if chartToInstall.Metadata.Deprecated {
+		return fmt.Errorf("chart %s is deprecated and cannot be installed as a supported application", chartToInstall.Name())
+	}
 	if !isInstallableHelmChartMetadata(chartToInstall.Metadata) {
 		return fmt.Errorf("chart %s is a library chart and cannot be installed as an application", chartToInstall.Name())
 	}

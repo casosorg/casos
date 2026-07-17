@@ -29,6 +29,16 @@ func TestInstallableHelmChartMetadata(t *testing.T) {
 	}
 }
 
+func TestDeprecatedChartsAreHiddenButClassifiedSeparately(t *testing.T) {
+	metadata := &chart.Metadata{Name: "old-app", Type: "application", Deprecated: true}
+	if !isInstallableHelmChartMetadata(metadata) {
+		t.Fatal("deprecated application was misclassified as a library chart")
+	}
+	if isVisibleAppStoreChartMetadata(metadata) {
+		t.Fatal("deprecated chart remained visible in the App Store")
+	}
+}
+
 func TestCompatibilityDryRunMirrorsInstallSettings(t *testing.T) {
 	dryRun := newHelmCompatibilityDryRun(new(action.Configuration), "demo", "new-namespace")
 	if !dryRun.DryRun || dryRun.DryRunOption != "server" {
@@ -50,6 +60,7 @@ func TestValidateHelmChartCompatibilityRejectsInvalidMetadata(t *testing.T) {
 	}{
 		{name: "nil chart", want: "chart metadata is missing"},
 		{name: "nil metadata", chart: &chart.Chart{}, want: "chart metadata is missing"},
+		{name: "deprecated", chart: &chart.Chart{Metadata: &chart.Metadata{Name: "old", Deprecated: true}}, want: "deprecated"},
 		{name: "library", chart: &chart.Chart{Metadata: &chart.Metadata{Name: "lib", Type: "library"}}, want: "library chart"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
