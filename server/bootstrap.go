@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -22,18 +23,18 @@ func Bootstrap(ctx context.Context, cfg *rest.Config, srvCfg Config) error {
 	if err != nil {
 		return fmt.Errorf("bootstrap client: %w", err)
 	}
-	if err := ensureNodeProxierBinding(ctx, client); err != nil {
-		return err
-	}
-	if err := ensureClusterDNS(ctx, client, srvCfg); err != nil {
-		return err
-	}
+	// The webhook config carries the CA bundle the apiserver uses to trust the
+	// admission server. It must be refreshed first: if it lags behind the CA on
+	// disk every admission call fails TLS verification, so it cannot be gated
+	// behind the workload steps below. Those steps run independently — a failure
+	// in one must not skip the others.
+	errs := []error{ensureCasbinWebhook(ctx, client, srvCfg)}
+	errs = append(errs, ensureNodeProxierBinding(ctx, client))
+	errs = append(errs, ensureClusterDNS(ctx, client, srvCfg))
 	if srvCfg.StorageProvisionerEnabled {
-		if err := ensureDefaultStorageProvisioner(ctx, client, srvCfg); err != nil {
-			return err
-		}
+		errs = append(errs, ensureDefaultStorageProvisioner(ctx, client, srvCfg))
 	}
-	return ensureCasbinWebhook(ctx, client, srvCfg)
+	return errors.Join(errs...)
 }
 
 // ensureCasbinWebhook registers the ValidatingWebhookConfiguration that routes
