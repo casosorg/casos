@@ -5,6 +5,8 @@ import (
 	"fmt"
 )
 
+const nodeDeployResolverPath = "/etc/casos-resolv.conf"
+
 func (d *NodeDeployer) installNodeBinaries(ctx context.Context, runner *NodeDeploySSHRunner, arch, k8sVersion string) error {
 	version := k8sVersion
 	cniVersion := defaultNodeDeployCNIVersion
@@ -27,6 +29,21 @@ EOF
 sysctl --system >/dev/null
 test -e /proc/sys/net/bridge/bridge-nf-call-iptables`); err != nil {
 		return fmt.Errorf("configure Kubernetes kernel networking: %w", err)
+	}
+	if _, err := runner.RunRootContext(ctx, fmt.Sprintf(`set -e
+if systemctl is-active --quiet systemd-resolved 2>/dev/null; then
+  for i in $(seq 1 30); do
+    [ -f /run/systemd/resolve/resolv.conf ] && break
+    sleep 1
+  done
+  test -f /run/systemd/resolve/resolv.conf
+  resolver=/run/systemd/resolve/resolv.conf
+else
+  resolver=/etc/resolv.conf
+fi
+ln -sfn "$resolver" %[1]s
+test -f %[1]s`, nodeDeployResolverPath)); err != nil {
+		return fmt.Errorf("configure node resolver: %w", err)
 	}
 
 	d.logStep(nodeDeployPhaseConfiguring, "Configuring containerd")

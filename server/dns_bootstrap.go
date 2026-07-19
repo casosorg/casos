@@ -3,21 +3,26 @@ package server
 import (
 	"context"
 	"fmt"
+	"strconv"
+	"time"
 
 	"github.com/sirupsen/logrus"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
+	apiequality "k8s.io/apimachinery/pkg/api/equality"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
+	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/client-go/kubernetes"
 )
 
 const (
 	clusterDNSNamespace = "kube-system"
 	clusterDNSName      = "coredns"
+	clusterDNSServiceIP = "10.43.0.10"
 	// coreDNSRolloutRev forces a rollout when the managed CoreDNS pod template changes.
 	coreDNSRolloutRev = "4"
 )
@@ -144,7 +149,8 @@ func ensureCoreDNSService(ctx context.Context, client kubernetes.Interface) erro
 			Labels:    coreDNSLabels(),
 		},
 		Spec: corev1.ServiceSpec{
-			Selector: coreDNSSelectorLabels(),
+			ClusterIP: clusterDNSServiceIP,
+			Selector:  coreDNSSelectorLabels(),
 			Ports: []corev1.ServicePort{
 				{Name: "dns", Port: 53, Protocol: corev1.ProtocolUDP, TargetPort: intstr.FromInt(53)},
 				{Name: "dns-tcp", Port: 53, Protocol: corev1.ProtocolTCP, TargetPort: intstr.FromInt(53)},
@@ -152,7 +158,28 @@ func ensureCoreDNSService(ctx context.Context, client kubernetes.Interface) erro
 			},
 		},
 	}
+	current, err := client.CoreV1().Services(clusterDNSNamespace).Get(ctx, svc.Name, metav1.GetOptions{})
+	if err == nil && current.Spec.ClusterIP != "" && current.Spec.ClusterIP != clusterDNSServiceIP {
+		if err := client.CoreV1().Services(clusterDNSNamespace).Delete(ctx, svc.Name, metav1.DeleteOptions{}); err != nil && !apierrors.IsNotFound(err) {
+			return fmt.Errorf("replace CoreDNS service %s/%s: %w", clusterDNSNamespace, svc.Name, err)
+		}
+		if err := waitForServiceDeleted(ctx, client, clusterDNSNamespace, svc.Name); err != nil {
+			return fmt.Errorf("wait to replace CoreDNS service %s/%s: %w", clusterDNSNamespace, svc.Name, err)
+		}
+	} else if err != nil && !apierrors.IsNotFound(err) {
+		return fmt.Errorf("get CoreDNS service %s/%s: %w", clusterDNSNamespace, svc.Name, err)
+	}
 	return createOrUpdateService(ctx, client, svc)
+}
+
+func waitForServiceDeleted(ctx context.Context, client kubernetes.Interface, namespace, name string) error {
+	return wait.PollUntilContextTimeout(ctx, 100*time.Millisecond, 30*time.Second, true, func(ctx context.Context) (bool, error) {
+		_, err := client.CoreV1().Services(namespace).Get(ctx, name, metav1.GetOptions{})
+		if apierrors.IsNotFound(err) {
+			return true, nil
+		}
+		return false, err
+	})
 }
 
 func ensureCoreDNSDeployment(ctx context.Context, client kubernetes.Interface, cfg Config) error {
@@ -191,6 +218,7 @@ func ensureCoreDNSDeployment(ctx context.Context, client kubernetes.Interface, c
 						{Key: "CriticalAddonsOnly", Operator: corev1.TolerationOpExists},
 						{Key: "node-role.kubernetes.io/control-plane", Operator: corev1.TolerationOpExists, Effect: corev1.TaintEffectNoSchedule},
 						{Key: "node-role.kubernetes.io/master", Operator: corev1.TolerationOpExists, Effect: corev1.TaintEffectNoSchedule},
+						{Key: "casos.io/bootstrap", Operator: corev1.TolerationOpExists, Effect: corev1.TaintEffectNoSchedule},
 					},
 					Containers: []corev1.Container{
 						{
@@ -198,6 +226,7 @@ func ensureCoreDNSDeployment(ctx context.Context, client kubernetes.Interface, c
 							Image:           cfg.CoreDNSImage,
 							ImagePullPolicy: corev1.PullIfNotPresent,
 							Args:            []string{"-conf", "/etc/coredns/Corefile"},
+							Env:             coreDNSEnv(cfg),
 							Ports: []corev1.ContainerPort{
 								{Name: "dns", ContainerPort: 53, Protocol: corev1.ProtocolUDP},
 								{Name: "dns-tcp", ContainerPort: 53, Protocol: corev1.ProtocolTCP},
@@ -283,6 +312,17 @@ func ensureCoreDNSDeployment(ctx context.Context, client kubernetes.Interface, c
 	return createOrUpdateDeployment(ctx, client, deployment)
 }
 
+func coreDNSEnv(cfg Config) []corev1.EnvVar {
+	if cfg.AdvertiseAddress == "" || cfg.ApiserverPort <= 0 {
+		return nil
+	}
+	return []corev1.EnvVar{
+		{Name: "KUBERNETES_SERVICE_HOST", Value: cfg.AdvertiseAddress},
+		{Name: "KUBERNETES_SERVICE_PORT", Value: strconv.Itoa(cfg.ApiserverPort)},
+		{Name: "KUBERNETES_SERVICE_PORT_HTTPS", Value: strconv.Itoa(cfg.ApiserverPort)},
+	}
+}
+
 func coreDNSLabels() map[string]string {
 	labels := coreDNSSelectorLabels()
 	labels["k8s-app"] = "kube-dns"
@@ -357,6 +397,11 @@ func createOrUpdateService(ctx context.Context, client kubernetes.Interface, svc
 	svc.Spec.LoadBalancerClass = current.Spec.LoadBalancerClass
 	svc.Spec.LoadBalancerSourceRanges = current.Spec.LoadBalancerSourceRanges
 	svc.Spec.AllocateLoadBalancerNodePorts = current.Spec.AllocateLoadBalancerNodePorts
+	if apiequality.Semantic.DeepEqual(current.Labels, svc.Labels) &&
+		apiequality.Semantic.DeepEqual(current.Annotations, svc.Annotations) &&
+		apiequality.Semantic.DeepEqual(current.Spec, svc.Spec) {
+		return nil
+	}
 	if _, err := client.CoreV1().Services(svc.Namespace).Update(ctx, svc, metav1.UpdateOptions{}); err != nil {
 		return fmt.Errorf("update service %s/%s: %w", svc.Namespace, svc.Name, err)
 	}
