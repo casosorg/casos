@@ -7,8 +7,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/beego/beego"
 	"github.com/beego/beego/logs"
+	"github.com/casosorg/casos/conf"
 	"golang.org/x/net/proxy"
 )
 
@@ -43,7 +43,7 @@ func isAddressOpen(address string) bool {
 }
 
 func getProxyHttpClient() *http.Client {
-	socks5Proxy := beego.AppConfig.String("socks5Proxy")
+	socks5Proxy := conf.GetConfigString("socks5Proxy")
 	if socks5Proxy == "" {
 		return &http.Client{}
 	}
@@ -65,7 +65,7 @@ func getProxyHttpClient() *http.Client {
 }
 
 func GetSocks5ProxyAddress() string {
-	return beego.AppConfig.String("socks5Proxy")
+	return conf.GetConfigString("socks5Proxy")
 }
 
 func GetActiveSocks5ProxyAddress() string {
