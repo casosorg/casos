@@ -21,6 +21,11 @@ const WORKER_NODE_PATTERNS = [
   /^web\/tests\/ui\/worker-node-helpers\.js$/,
 ];
 
+const PLATFORM_READINESS_PATTERNS = [
+  /^deploy\//,
+  /^server\/(bootstrap|.*_bootstrap|apiserver|controllermanager|scheduler)\.go$/,
+];
+
 const SMOKE_COVERED_PATTERNS = [
   /^web\/src\/SiteEditPage\.js$/,
 ];
@@ -115,6 +120,11 @@ function selectRegressionTestsFromNormalized(normalizedFiles) {
     }
     if (matchesAny(filePath, FULL_REGRESSION_PATTERNS)) {
       runAllRegression = true;
+      continue;
+    }
+    if (matchesAny(filePath, PLATFORM_READINESS_PATTERNS)) {
+      selectedTests.add("tests/ui/worker-node.spec.js");
+      selectedTests.add("tests/ui/worker-node-ready.spec.js");
       continue;
     }
     if (matchesAny(filePath, WORKER_NODE_PATTERNS)) {

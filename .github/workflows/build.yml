@@ -286,10 +286,12 @@ jobs:
       - name: Validate worker node is ready for worker VM UI tests
         if: steps.ui-regression-tests.outputs.needs_worker_vm == 'true' && steps.prepare-worker-vm.outcome == 'success'
         working-directory: ./web
-        timeout-minutes: 20
+        timeout-minutes: 25
         shell: bash
         env:
           E2E_DATA_DIR: ${{ runner.temp }}/casos-e2e-${{ github.run_id }}-${{ github.run_attempt }}-worker
+          dbName: casos_worker
+          E2E_WORKER_DEPLOY_TIMEOUT_MS: 1320000
         run: |
           set -o pipefail
           yarn playwright test --workers=1 tests/ui/worker-node-ready.spec.js 2>&1 | tee ui-worker-node-ready-test.log
@@ -300,6 +302,7 @@ jobs:
         shell: bash
         env:
           E2E_DATA_DIR: ${{ runner.temp }}/casos-e2e-${{ github.run_id }}-${{ github.run_attempt }}-worker
+          dbName: casos_worker
         run: |
           set -o pipefail
           mapfile -t ui_test_files < ui-app-store-tests.txt

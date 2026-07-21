@@ -23,6 +23,8 @@ type Config struct {
 	CoreDNSImage              string // CoreDNS image used by the built-in DNS bootstrap
 	LocalPathProvisionerImage string // local-path-provisioner controller image
 	LocalPathHelperImage      string // helper pod image used by local-path-provisioner
+	FlannelImage              string // Flannel daemon image used by the built-in network bootstrap
+	FlannelCNIPluginImage     string // Flannel CNI plugin image installed on worker hosts
 	StorageProvisionerEnabled bool   // install the built-in local-path provisioner for local clusters
 }
 
@@ -75,6 +77,8 @@ func ConfigFromAppConf() (Config, error) {
 	coreDNSImage := configStringDefault("coreDNSImage", "docker.1ms.run/coredns/coredns:1.12.4")
 	localPathProvisionerImage := configStringDefault("localPathProvisionerImage", "docker.1ms.run/rancher/local-path-provisioner:v0.0.32")
 	localPathHelperImage := configStringDefault("localPathHelperImage", "docker.1ms.run/library/busybox:1.37.0")
+	flannelImage := configStringDefault("flannelImage", defaultFlannelImage)
+	flannelCNIPluginImage := configStringDefault("flannelCNIPluginImage", defaultFlannelCNIPluginImage)
 
 	return Config{
 		DataDir:                   dataDir,
@@ -88,6 +92,8 @@ func ConfigFromAppConf() (Config, error) {
 		CoreDNSImage:              coreDNSImage,
 		LocalPathProvisionerImage: localPathProvisionerImage,
 		LocalPathHelperImage:      localPathHelperImage,
+		FlannelImage:              flannelImage,
+		FlannelCNIPluginImage:     flannelCNIPluginImage,
 		StorageProvisionerEnabled: storageProvisionerEnabled,
 	}, nil
 }

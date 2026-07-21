@@ -39,12 +39,7 @@ func Start(ctx context.Context, cfg Config) (<-chan struct{}, error) {
 	if err := util.StopOldInstance(2379); err != nil {
 		logrus.Warnf("failed to stop old instance on port 2379: %v", err)
 	}
-	etcdCfg, err := endpoint.Listen(ctx, endpoint.Config{
-		Endpoint:         "mysql://" + cfg.DSN,
-		Listener:         "tcp://127.0.0.1:2379",
-		CompactBatchSize: 100,
-		NotifyInterval:   time.Second,
-	})
+	etcdCfg, err := endpoint.Listen(ctx, kineEndpointConfig(cfg.DSN))
 	if err != nil {
 		return nil, fmt.Errorf("kine listen: %w", err)
 	}
@@ -93,6 +88,16 @@ func Start(ctx context.Context, cfg Config) (<-chan struct{}, error) {
 	}()
 
 	return readyCh, nil
+}
+
+func kineEndpointConfig(dsn string) endpoint.Config {
+	return endpoint.Config{
+		Endpoint:            "mysql://" + dsn,
+		Listener:            "tcp://127.0.0.1:2379",
+		EmulatedETCDVersion: "3.6.11",
+		CompactBatchSize:    100,
+		NotifyInterval:      time.Second,
+	}
 }
 
 // waitForAPIServer polls /readyz every 2 s until it gets HTTP 200 or ctx is done.
@@ -155,6 +160,7 @@ func buildApiserverArgs(cfg Config, certDir, etcdEndpoint, authzKubeconfig strin
 	if authzKubeconfig != "" {
 		args = append(args,
 			"--authorization-webhook-config-file="+authzKubeconfig,
+			"--authorization-webhook-version=v1",
 			"--authorization-webhook-cache-authorized-ttl=30s",
 			"--authorization-webhook-cache-unauthorized-ttl=10s",
 		)

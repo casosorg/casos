@@ -30,6 +30,7 @@ func Bootstrap(ctx context.Context, cfg *rest.Config, srvCfg Config) error {
 	// in one must not skip the others.
 	errs := []error{ensureCasbinWebhook(ctx, client, srvCfg)}
 	errs = append(errs, ensureNodeProxierBinding(ctx, client))
+	errs = append(errs, ensureFlannel(ctx, client, srvCfg))
 	errs = append(errs, ensureClusterDNS(ctx, client, srvCfg))
 	if srvCfg.StorageProvisionerEnabled {
 		errs = append(errs, ensureDefaultStorageProvisioner(ctx, client, srvCfg))

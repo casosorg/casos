@@ -21,6 +21,12 @@ expectSelection(
 );
 
 expectSelection(
+  "platform bootstrap changes select worker readiness regression",
+  ["server/storage_bootstrap.go", "server/flannel_bootstrap.go", "deploy/node_bootstrap.go"],
+  ["tests/ui/worker-node.spec.js", "tests/ui/worker-node-ready.spec.js"]
+);
+
+expectSelection(
   "site changes rely on fixed smoke coverage",
   ["web/src/SiteEditPage.js"],
   []

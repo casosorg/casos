@@ -139,9 +139,9 @@ sudo sed -i "s|https://127.0.0.1:6443|https://$WINDOWS_IP:6443|g" /etc/kubernete
 grep server /etc/kubernetes/worker.kubeconfig
 ```
 
-## 6. Install CNI plugins
+## 6. Install the base CNI plugins
 
-The kubelet requires CNI (Container Network Interface) plugins to set the node `NetworkReady` condition. Without them the node stays `NotReady`.
+The kubelet requires the standard CNI (Container Network Interface) plugins. CasOS manages the Flannel plugin and network configuration separately through the `kube-flannel-ds` DaemonSet.
 
 ```bash
 sudo mkdir -p /opt/cni/bin /etc/cni/net.d
@@ -151,31 +151,7 @@ curl -Lo /tmp/cni-plugins.tgz \
 sudo tar -xzf /tmp/cni-plugins.tgz -C /opt/cni/bin
 ```
 
-Create a minimal bridge network config so the node becomes Ready:
-
-```bash
-sudo tee /etc/cni/net.d/10-bridge.conflist > /dev/null << 'EOF'
-{
-  "cniVersion": "1.0.0",
-  "name": "bridge",
-  "plugins": [
-    {
-      "type": "bridge",
-      "bridge": "cni0",
-      "isGateway": true,
-      "ipMasq": true,
-      "ipam": {
-        "type": "host-local",
-        "ranges": [[{"subnet": "10.244.0.0/24"}]],
-        "routes": [{"dst": "0.0.0.0/0"}]
-      }
-    },
-    {"type": "portmap", "capabilities": {"portMappings": true}},
-    {"type": "loopback"}
-  ]
-}
-EOF
-```
+Do not create a temporary bridge conflist. After kubelet registers the node, the controller-manager assigns its PodCIDR and the host-networked Flannel DaemonSet installs `/opt/cni/bin/flannel` plus `/etc/cni/net.d/10-flannel.conflist`. This keeps one IPAM owner and one CNI configuration across all nodes.
 
 ## 7. Create kubelet config
 
@@ -266,7 +242,7 @@ kind: KubeProxyConfiguration
 clientConnection:
   kubeconfig: /etc/kubernetes/worker.kubeconfig
 mode: iptables
-clusterCIDR: 10.42.0.0/16
+clusterCIDR: 10.244.0.0/16
 EOF
 ```
 
@@ -315,7 +291,7 @@ WINDOWS_IP=$(ip route | grep default | awk '{print $3}')
 curl -s "http://$WINDOWS_IP:9000/api/get-nodes" | python3 -m json.tool
 ```
 
-The node should appear with `"status": "Ready"` within 30 seconds.
+The node should appear with `"status": "Ready"` after the Flannel pod on that node becomes Ready.
 
 ---
 
@@ -328,6 +304,7 @@ The node should appear with `"status": "Ready"` within 30 seconds.
 | `connection refused` to apiserver                                        | Wrong IP in kubeconfig                                                           | Re-run the `sed` command in step 5 with current `$WINDOWS_IP`                                                                                              |
 | `x509: certificate is valid for 127.0.0.1, not <WSL2 gateway IP>`        | API server cert was generated before casos included all interface IPs in the SAN | On Windows: delete `<dataDir>/tls/apiserver.crt` and `apiserver.key`, then restart casos — it will regenerate the cert with all interface IPs              |
 | Node stuck in `NotReady`                                                 | containerd not running                                                           | `sudo systemctl status containerd`                                                                                                                         |
+| Node stuck in `NotReady` with `NetworkPluginNotReady`                    | Flannel plugin or conflist was not installed                                     | Check `ls /opt/cni/bin/flannel`, `cat /etc/cni/net.d/10-flannel.conflist`, and the `kube-flannel-ds` pod logs                                              |
 | Pod stuck in `ImagePullBackOff` / i/o timeout pulling images             | Docker Hub / registry.k8s.io unreachable in restricted areas                     | Follow the registry mirror steps in section 2; verify with `sudo ctr images pull --hosts-dir /etc/containerd/certs.d docker.io/library/hello-world:latest` |
 | `the server has asked for the client to provide credentials` on pod logs | kubelet missing `--client-ca-file`, can't verify API server client cert          | Extract CA from worker kubeconfig (step 8) and add `--client-ca-file=/etc/kubernetes/ca.crt` to kubelet service                                            |
 | NodePort `ERR_CONNECTION_REFUSED` / port not listening                   | kube-proxy not installed or not running                                          | Follow step 10 to install kube-proxy; check `sudo systemctl status kube-proxy`                                                                             |

@@ -338,7 +338,6 @@ func isAllowedNodeDeployPath(path string) bool {
 		return false
 	}
 	allowedExactPaths := []string{
-		"/etc/cni/net.d/10-casos-bridge.conflist",
 		"/etc/containerd/config.toml",
 		"/etc/containerd/certs.d/docker.io/hosts.toml",
 		"/etc/containerd/certs.d/registry.k8s.io/hosts.toml",
