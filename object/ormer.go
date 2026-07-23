@@ -174,12 +174,18 @@ func (a *Ormer) close() {
 func (a *Ormer) createTable() {
 	showSql := conf.GetConfigBool("showSql")
 	a.Engine.ShowSQL(showSql)
-	_ = a.Engine.Sync2(new(Site))
-	_ = a.Engine.Sync2(new(Machine))
-	_ = a.Engine.Sync2(new(MachineNodeDeployTask))
-	_ = a.Engine.Sync2(new(MachineNodeDeployLog))
-	_ = a.Engine.Sync2(new(MachineNodeDeployCredential))
-	_ = a.Engine.Sync2(new(CasbinRule))
-	_ = a.Engine.Sync2(new(TrivyScanResult))
-	_ = a.Engine.Sync2(new(HelmRepo))
+	if err := a.Engine.Sync2(
+		new(Site),
+		new(Machine),
+		new(MachineNodeDeployTask),
+		new(MachineNodeDeployLog),
+		new(MachineNodeDeployCredential),
+		new(HelmOperationTask),
+		new(HelmOperationLog),
+		new(CasbinRule),
+		new(TrivyScanResult),
+		new(HelmRepo),
+	); err != nil {
+		panic(fmt.Errorf("sync database schema: %w", err))
+	}
 }

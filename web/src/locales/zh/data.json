@@ -101,8 +101,15 @@
     "Version": "版本",
     "Values (YAML)": "Values (YAML)",
     "Loading values": "加载默认配置中",
-    "Abort": "中止",
-    "Install aborted": "安装已中止 — 部分资源可能已创建"
+    "Close and continue in background": "关闭并在后台继续",
+    "Closing this window does not cancel the installation": "关闭此窗口不会取消安装",
+    "Retry status check": "重试状态检查",
+    "Status check paused": "状态检查已暂停",
+    "This browser cannot save the installation task for later recovery": "此浏览器无法保存安装任务以供稍后恢复",
+    "Unable to refresh installation status": "无法刷新安装状态：{{error}}",
+    "Unable to refresh installation status: invalid response": "无法刷新安装状态：响应无效",
+    "The saved installation task no longer matches this chart and was discarded": "已保存的安装任务与当前 chart 不再匹配，已丢弃。",
+    "Helm operation failed": "Helm 操作失败"
   },
   "monitor": {
     "Abnormal Pods": "异常 Pod",
