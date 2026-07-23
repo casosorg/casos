@@ -101,8 +101,15 @@
     "Version": "Version",
     "Values (YAML)": "Values (YAML)",
     "Loading values": "Loading default values",
-    "Abort": "Abort",
-    "Install aborted": "Install aborted — resources may have been partially created"
+    "Close and continue in background": "Close and continue in background",
+    "Closing this window does not cancel the installation": "Closing this window does not cancel the installation",
+    "Retry status check": "Retry status check",
+    "Status check paused": "Status check paused",
+    "This browser cannot save the installation task for later recovery": "This browser cannot save the installation task for later recovery",
+    "Unable to refresh installation status": "Unable to refresh installation status: {{error}}",
+    "Unable to refresh installation status: invalid response": "Unable to refresh installation status: invalid response",
+    "The saved installation task no longer matches this chart and was discarded": "The saved installation task no longer matches this chart and was discarded.",
+    "Helm operation failed": "Helm operation failed"
   },
   "monitor": {
     "Abnormal Pods": "Abnormal Pods",
