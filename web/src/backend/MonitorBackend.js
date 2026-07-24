@@ -28,6 +28,21 @@ export function getMonitorOverview() {
   }).then(res => res.json());
 }
 
+export function getMonitorMetrics(query, signal) {
+  const params = new URLSearchParams();
+  ["scope", "metric", "namespace", "name", "start", "end", "step"].forEach(key => {
+    if (query[key] !== undefined && query[key] !== null && query[key] !== "") {
+      params.set(key, query[key]);
+    }
+  });
+  return fetch(`${Setting.ServerUrl}/api/get-monitor-metrics?${params}`, {
+    method: "GET",
+    credentials: "include",
+    headers: getHeaders(),
+    ...(signal ? {signal} : {}),
+  }).then(res => res.json());
+}
+
 export function getMonitorEvents(namespace = "", limit = 100) {
   const params = new URLSearchParams({limit});
   if (namespace) {params.set("namespace", namespace);}

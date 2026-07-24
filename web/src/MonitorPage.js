@@ -1,5 +1,5 @@
-import React, {useCallback, useEffect, useMemo, useState} from "react";
-import {Alert, Button, Card, Col, Descriptions, Drawer, Input, Modal, Row, Space, Spin, Statistic, Table, Tag, Typography} from "antd";
+import React, {useCallback, useEffect, useMemo, useRef, useState} from "react";
+import {Alert, Button, Card, Col, DatePicker, Descriptions, Drawer, Input, Modal, Row, Segmented, Space, Spin, Statistic, Switch, Table, Tag, Typography} from "antd";
 import {
   AppstoreOutlined,
   BellOutlined,
@@ -16,8 +16,15 @@ import {useTranslation} from "react-i18next";
 import i18next from "i18next";
 import * as MonitorBackend from "./backend/MonitorBackend";
 import * as Setting from "./Setting";
+import MonitorMetricChart from "./MonitorMetricChart";
+import {
+  MONITOR_AUTO_REFRESH_INTERVAL_MS,
+  MONITOR_METRIC_REQUESTS,
+  buildMonitorTimeRange
+} from "./monitorMetrics";
 
 const {Paragraph, Text} = Typography;
+const {RangePicker} = DatePicker;
 
 const statusMeta = {
   healthy: {color: "green", icon: <CheckCircleOutlined />},
@@ -37,14 +44,26 @@ const eventTypeColor = {
   Warning: "gold",
 };
 
+const metricChartDefinitions = [
+  {key: "cpu", title: "CPU Usage", unit: "percent"},
+  {key: "memory", title: "Memory Usage", unit: "percent"},
+  {key: "networkReceive", title: "Network Receive", unit: "bytes_per_second"},
+  {key: "networkTransmit", title: "Network Transmit", unit: "bytes_per_second"},
+  {key: "disk", title: "Node Disk Usage", unit: "percent"},
+  {key: "storage", title: "PVC Storage Usage", unit: "percent"},
+];
+
 function registerMonitorI18nKeys() {
   // The existing i18n generator only scans literal i18next.t(...) calls.
   i18next.t("monitor:Abnormal Pods");
+  i18next.t("monitor:Auto Refresh");
   i18next.t("monitor:Category");
   i18next.t("monitor:Check");
   i18next.t("monitor:Count");
+  i18next.t("monitor:CPU Usage");
   i18next.t("monitor:Critical Checks");
   i18next.t("monitor:Current");
+  i18next.t("monitor:Custom Range");
   i18next.t("monitor:Details");
   i18next.t("monitor:Diagnosis");
   i18next.t("monitor:Diagnosis Context");
@@ -55,20 +74,33 @@ function registerMonitorI18nKeys() {
   i18next.t("monitor:Failed to load health checks");
   i18next.t("monitor:Failed to load monitor issues");
   i18next.t("monitor:Failed to load monitor data");
+  i18next.t("monitor:Failed to load resource trends");
   i18next.t("monitor:Failed to load monitor summary");
   i18next.t("monitor:Health Checks");
+  i18next.t("monitor:Last 1 Hour");
+  i18next.t("monitor:Last 6 Hours");
+  i18next.t("monitor:Last 24 Hours");
+  i18next.t("monitor:Last 7 Days");
   i18next.t("monitor:Last Seen");
   i18next.t("monitor:Log Preview");
   i18next.t("monitor:Last Checked");
   i18next.t("monitor:Message");
+  i18next.t("monitor:Memory Usage");
   i18next.t("monitor:Monitor Issues");
+  i18next.t("monitor:Network Receive");
+  i18next.t("monitor:Network Transmit");
+  i18next.t("monitor:No metric data");
+  i18next.t("monitor:Node Disk Usage");
   i18next.t("monitor:Object");
   i18next.t("monitor:Overall Status");
+  i18next.t("monitor:PVC Storage Usage");
   i18next.t("monitor:Previous");
   i18next.t("monitor:Ready Nodes");
   i18next.t("monitor:Reason");
   i18next.t("monitor:Related Events");
+  i18next.t("monitor:Resource Trends");
   i18next.t("monitor:Running Pods");
+  i18next.t("monitor:Select a custom time range");
   i18next.t("monitor:Source");
   i18next.t("monitor:Suggestion");
   i18next.t("monitor:Time");
@@ -129,6 +161,14 @@ function MonitorPage() {
   const [diagnosis, setDiagnosis] = useState(null);
   const [diagnosisLoading, setDiagnosisLoading] = useState(false);
   const [diagnosisError, setDiagnosisError] = useState(null);
+  const [metricData, setMetricData] = useState({});
+  const [metricErrors, setMetricErrors] = useState({});
+  const [metricsLoading, setMetricsLoading] = useState(false);
+  const [timePreset, setTimePreset] = useState("1h");
+  const [customTimeRange, setCustomTimeRange] = useState(null);
+  const [autoRefresh, setAutoRefresh] = useState(true);
+  const metricRequestRef = useRef(0);
+  const metricAbortRef = useRef(null);
 
   function fetchOverview() {
     setLoading(true);
@@ -174,6 +214,50 @@ function MonitorPage() {
     }).finally(() => setIssuesLoading(false));
   }
 
+  const fetchMetricTrends = useCallback(() => {
+    const timeRange = buildMonitorTimeRange(timePreset, customTimeRange);
+    if (!timeRange) {
+      metricAbortRef.current?.abort();
+      setMetricData({});
+      setMetricErrors({});
+      setMetricsLoading(false);
+      return;
+    }
+
+    metricAbortRef.current?.abort();
+    const controller = new AbortController();
+    metricAbortRef.current = controller;
+    const requestID = ++metricRequestRef.current;
+    setMetricsLoading(true);
+    setMetricErrors({});
+
+    Promise.all(MONITOR_METRIC_REQUESTS.map(async request => {
+      try {
+        const response = await MonitorBackend.getMonitorMetrics({...request, ...timeRange}, controller.signal);
+        return {request, response};
+      } catch (requestError) {
+        return {request, error: requestError};
+      }
+    })).then(results => {
+      if (controller.signal.aborted || requestID !== metricRequestRef.current) {return;}
+      const nextData = {};
+      const nextErrors = {};
+      results.forEach(result => {
+        if (result.response?.status === "ok") {
+          nextData[result.request.key] = result.response.data;
+        } else {
+          nextErrors[result.request.key] = result.response?.msg || result.error?.message || t("monitor:Failed to load resource trends");
+        }
+      });
+      setMetricData(nextData);
+      setMetricErrors(nextErrors);
+    }).finally(() => {
+      if (!controller.signal.aborted && requestID === metricRequestRef.current) {
+        setMetricsLoading(false);
+      }
+    });
+  }, [customTimeRange, t, timePreset]);
+
   const openDiagnosis = useCallback((issue) => {
     setSelectedIssue(issue);
     setDiagnosis(null);
@@ -195,6 +279,20 @@ function MonitorPage() {
     fetchIssues();
     fetchEvents("");
   }, []);
+
+  useEffect(() => {
+    fetchMetricTrends();
+    return () => {
+      metricRequestRef.current++;
+      metricAbortRef.current?.abort();
+    };
+  }, [fetchMetricTrends]);
+
+  useEffect(() => {
+    if (!autoRefresh) {return undefined;}
+    const timer = window.setInterval(fetchMetricTrends, MONITOR_AUTO_REFRESH_INTERVAL_MS);
+    return () => window.clearInterval(timer);
+  }, [autoRefresh, fetchMetricTrends]);
 
   const checkColumns = useMemo(() => [
     {title: t("monitor:Check"), dataIndex: "name", key: "name", width: 280, ellipsis: true},
@@ -333,6 +431,15 @@ function MonitorPage() {
   const statusColor = statusMeta[overallStatus]?.color || "default";
   const statusIcon = statusMeta[overallStatus]?.icon || statusMeta.unknown.icon;
   const statusValueColor = statusColor === "green" ? "#16a34a" : statusColor === "gold" ? "#d48806" : statusColor === "red" ? "#cf1322" : undefined;
+  const timeRangeOptions = [
+    {label: t("monitor:Last 1 Hour"), value: "1h"},
+    {label: t("monitor:Last 6 Hours"), value: "6h"},
+    {label: t("monitor:Last 24 Hours"), value: "24h"},
+    {label: t("monitor:Last 7 Days"), value: "7d"},
+    {label: t("monitor:Custom Range"), value: "custom"},
+  ];
+  const waitingForCustomRange = timePreset === "custom" && !customTimeRange;
+  const metricsUnavailableError = Object.keys(metricErrors).length === MONITOR_METRIC_REQUESTS.length ? Object.values(metricErrors)[0] : null;
 
   if (loading && !summary) {
     return (
@@ -438,6 +545,81 @@ function MonitorPage() {
           </Card>
         </Col>
       </Row>
+
+      <Card
+        title={t("monitor:Resource Trends")}
+        variant="borderless"
+        style={{borderRadius: 8, border: "1px solid #e8e8e8", marginTop: 16}}
+      >
+        <Space wrap size={[12, 12]} style={{marginBottom: 16}}>
+          <Segmented
+            options={timeRangeOptions}
+            value={timePreset}
+            onChange={setTimePreset}
+          />
+          {timePreset === "custom" && (
+            <RangePicker
+              showTime={{format: "HH:mm"}}
+              format="YYYY-MM-DD HH:mm"
+              onChange={dates => {
+                const validDates = dates?.length === 2 && dates.every(Boolean);
+                setCustomTimeRange(validDates ? dates.map(date => date.valueOf()) : null);
+              }}
+            />
+          )}
+          <Space size={8}>
+            <Text>{t("monitor:Auto Refresh")}</Text>
+            <Switch checked={autoRefresh} onChange={setAutoRefresh} />
+          </Space>
+          <Button
+            icon={<ReloadOutlined />}
+            loading={metricsLoading}
+            disabled={waitingForCustomRange}
+            onClick={fetchMetricTrends}
+          >
+            {t("general:Refresh")}
+          </Button>
+        </Space>
+
+        {waitingForCustomRange ? (
+          <Alert
+            type="info"
+            showIcon
+            message={t("monitor:Select a custom time range")}
+          />
+        ) : (
+          <>
+            {metricsUnavailableError && (
+              <Alert
+                type="warning"
+                showIcon
+                message={t("monitor:Failed to load resource trends")}
+                description={metricsUnavailableError}
+                style={{marginBottom: 16}}
+              />
+            )}
+            <Row gutter={[16, 16]}>
+              {metricChartDefinitions.map(chart => (
+                <Col xs={24} xl={12} key={chart.key}>
+                  <Card
+                    size="small"
+                    title={t(`monitor:${chart.title}`)}
+                    style={{height: "100%"}}
+                  >
+                    <MonitorMetricChart
+                      dataSources={[{data: metricData[chart.key], label: t(`monitor:${chart.title}`)}]}
+                      unit={chart.unit}
+                      loading={metricsLoading}
+                      error={metricsUnavailableError ? null : metricErrors[chart.key]}
+                      emptyDescription={t("monitor:No metric data")}
+                    />
+                  </Card>
+                </Col>
+              ))}
+            </Row>
+          </>
+        )}
+      </Card>
 
       <Card
         title={t("monitor:Health Checks")}
