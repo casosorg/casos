@@ -22,6 +22,11 @@ import (
 	"k8s.io/kubernetes/cmd/kube-apiserver/app/options"
 )
 
+const (
+	serviceClusterIPRange = "10.43.0.0/16"
+	kubernetesServiceIP   = "10.43.0.1"
+)
+
 // Start launches kine and the apiserver in-process.
 // The returned channel is closed once the apiserver /readyz endpoint responds 200.
 func Start(ctx context.Context, cfg Config) (<-chan struct{}, error) {
@@ -142,7 +147,7 @@ func buildApiserverArgs(cfg Config, certDir, etcdEndpoint, authzKubeconfig strin
 		"--bind-address=0.0.0.0",
 		fmt.Sprintf("--secure-port=%d", cfg.ApiserverPort),
 		"--etcd-servers=" + etcdEndpoint,
-		"--service-cluster-ip-range=10.43.0.0/16",
+		"--service-cluster-ip-range=" + serviceClusterIPRange,
 		"--allow-privileged=true",
 		"--authorization-mode=" + authzMode(authzKubeconfig),
 		"--enable-admission-plugins=NodeRestriction,ValidatingAdmissionWebhook",

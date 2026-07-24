@@ -496,7 +496,7 @@ func uniqueIPs(addrs ...string) []net.IP {
 }
 
 func desiredAPIServerIPs(ip, advertiseIP string) []net.IP {
-	return uniqueIPs(append([]string{"127.0.0.1", ip, advertiseIP}, allInterfaceIPs()...)...)
+	return uniqueIPs(append([]string{"127.0.0.1", kubernetesServiceIP, ip, advertiseIP}, allInterfaceIPs()...)...)
 }
 
 func apiServerServingCertUsable(certFile, keyFile string, desiredIPs []net.IP, caCert *x509.Certificate) bool {
