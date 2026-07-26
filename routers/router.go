@@ -125,6 +125,15 @@ func InitAPI() {
 	beego.Router("/api/deploy-app", &controllers.ApiController{}, "POST:DeployApp")
 	beego.Router("/api/get-app-templates", &controllers.ApiController{}, "GET:GetAppTemplates")
 
+	beego.Router("/api/search-helm-charts", &controllers.ApiController{}, "GET:SearchHelmCharts")
+	beego.Router("/api/get-helm-repo-charts", &controllers.ApiController{}, "GET:GetHelmRepoCharts")
+	beego.Router("/api/get-helm-chart-info", &controllers.ApiController{}, "GET:GetHelmChartInfo")
+	beego.Router("/api/get-helm-releases", &controllers.ApiController{}, "GET:GetHelmReleases")
+	beego.Router("/api/get-helm-task", &controllers.ApiController{}, "GET:GetHelmTask")
+	beego.Router("/api/install-helm-chart", &controllers.ApiController{}, "POST:InstallHelmChart")
+	beego.Router("/api/upgrade-helm-release", &controllers.ApiController{}, "POST:UpgradeHelmRelease")
+	beego.Router("/api/uninstall-helm-release", &controllers.ApiController{}, "POST:UninstallHelmRelease")
+
 	beego.Router("/api/get-networkpolicies", &controllers.ApiController{}, "GET:GetNetworkPolicies")
 	beego.Router("/api/get-networkpolicy", &controllers.ApiController{}, "GET:GetNetworkPolicy")
 	beego.Router("/api/add-networkpolicy", &controllers.ApiController{}, "POST:AddNetworkPolicy")

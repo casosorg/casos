@@ -1,6 +1,7 @@
 package controllers
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -15,9 +16,17 @@ import (
 )
 
 const (
-	githubTreeURL    = "https://api.github.com/repos/labring-actions/templates/git/trees/main?recursive=1"
-	rawContentBase   = "https://raw.githubusercontent.com/labring-actions/templates/main/"
-	templateCacheTTL = time.Hour
+	githubTreeURL        = "https://api.github.com/repos/labring-actions/templates/git/trees/main?recursive=1"
+	rawContentBase       = "https://raw.githubusercontent.com/labring-actions/templates/main/"
+	artifactHubSearchURL = "https://artifacthub.io/api/v1/packages/search?kind=0&limit=48&offset=0&sort=relevance"
+	templateCacheTTL     = time.Hour
+)
+
+const (
+	appSourceSealos      = "sealos"
+	appSourceArtifactHub = "artifacthub"
+	appPackageSealos     = "sealos-template"
+	appPackageHelm       = "helm"
 )
 
 type TemplateInput struct {
@@ -37,6 +46,12 @@ type AppTemplate struct {
 	Image       string          `json:"image"`
 	Ports       []int32         `json:"ports"`
 	Inputs      []TemplateInput `json:"inputs"`
+	Source      string          `json:"source"`
+	PackageType string          `json:"packageType"`
+	RepoName    string          `json:"repoName,omitempty"`
+	RepoURL     string          `json:"repoUrl,omitempty"`
+	ChartName   string          `json:"chartName,omitempty"`
+	Version     string          `json:"version,omitempty"`
 }
 
 var (
@@ -45,7 +60,7 @@ var (
 	templateCacheMu sync.RWMutex
 )
 
-// GetAppTemplates returns the Sealos app template catalog from GitHub.
+// GetAppTemplates returns app templates from the configured app store sources.
 // Results are cached in memory for 1 hour.
 // @router /api/get-app-templates [get]
 func (c *ApiController) GetAppTemplates() {
@@ -66,17 +81,99 @@ func getCachedTemplates() ([]AppTemplate, error) {
 	}
 	templateCacheMu.RUnlock()
 
-	templates, err := fetchAllTemplates()
+	templates, partial, err := fetchAllTemplateSources()
 	if err != nil {
 		return nil, err
 	}
 
-	templateCacheMu.Lock()
-	templateCache = templates
-	templateCacheAt = time.Now()
-	templateCacheMu.Unlock()
+	if !partial {
+		templateCacheMu.Lock()
+		templateCache = templates
+		templateCacheAt = time.Now()
+		templateCacheMu.Unlock()
+	}
 
 	return templates, nil
+}
+
+type templateSourceResult struct {
+	source    string
+	templates []AppTemplate
+	err       error
+}
+
+func fetchAllTemplateSources() ([]AppTemplate, bool, error) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	resultCh := make(chan templateSourceResult, 2)
+	sources := []struct {
+		name  string
+		fetch func() ([]AppTemplate, error)
+	}{
+		{name: appSourceSealos, fetch: fetchAllTemplates},
+		{name: appSourceArtifactHub, fetch: fetchArtifactHubTemplates},
+	}
+
+	for _, source := range sources {
+		source := source
+		go func() {
+			templates, err := source.fetch()
+			select {
+			case resultCh <- templateSourceResult{source: source.name, templates: templates, err: err}:
+			case <-ctx.Done():
+			}
+		}()
+	}
+
+	hardTimer := time.NewTimer(20 * time.Second)
+	defer hardTimer.Stop()
+	softTimer := time.NewTimer(5 * time.Second)
+	defer softTimer.Stop()
+	softTimeout := softTimer.C
+	hardTimeout := hardTimer.C
+
+	sourceTemplates := map[string][]AppTemplate{}
+	var errs []string
+	completed := 0
+	templateCount := 0
+	partial := false
+	for completed < len(sources) {
+		select {
+		case result := <-resultCh:
+			completed++
+			if result.err != nil {
+				errs = append(errs, fmt.Sprintf("%s: %s", result.source, result.err.Error()))
+				continue
+			}
+			sourceTemplates[result.source] = result.templates
+			templateCount += len(result.templates)
+		case <-softTimeout:
+			if templateCount > 0 {
+				partial = completed < len(sources)
+				completed = len(sources)
+			} else {
+				softTimeout = nil
+			}
+		case <-hardTimeout:
+			errs = append(errs, "app template source timeout")
+			partial = completed < len(sources)
+			completed = len(sources)
+		}
+	}
+
+	var templates []AppTemplate
+	for _, source := range sources {
+		templates = append(templates, sourceTemplates[source.name]...)
+	}
+
+	if len(templates) == 0 {
+		if len(errs) == 0 {
+			return nil, false, fmt.Errorf("no app templates found")
+		}
+		return nil, false, fmt.Errorf("fetch app templates: %s", strings.Join(errs, "; "))
+	}
+	return templates, partial || len(errs) > 0, nil
 }
 
 type githubTree struct {
@@ -279,5 +376,7 @@ func fetchAndParseTemplate(path string) (AppTemplate, error) {
 		Image:       image,
 		Ports:       ports,
 		Inputs:      inputs,
+		Source:      appSourceSealos,
+		PackageType: appPackageSealos,
 	}, nil
 }

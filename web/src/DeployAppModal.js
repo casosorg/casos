@@ -1,5 +1,5 @@
 import React from "react";
-import {Alert, Collapse, Divider, Form, Input, InputNumber, Modal, Select, Space, Tag, Tooltip, Typography} from "antd";
+import {Alert, Collapse, Divider, Form, Input, InputNumber, Modal, Select, Space, Spin, Tag, Tooltip, Typography} from "antd";
 import {InfoCircleOutlined, LockOutlined} from "@ant-design/icons";
 import i18next from "i18next";
 import * as AppBackend from "./backend/AppBackend";
@@ -7,7 +7,7 @@ import * as NamespaceBackend from "./backend/NamespaceBackend";
 import * as NodeBackend from "./backend/NodeBackend";
 import EnvVarEditor from "./EnvVarEditor";
 
-const {Text} = Typography;
+const {Text, Paragraph} = Typography;
 
 function t(key, opts) {
   return i18next.t(key, opts);
@@ -18,6 +18,17 @@ const SENSITIVE_RE = /key|secret|password|token|credential|auth/i;
 
 function isSensitive(name) {
   return SENSITIVE_RE.test(name);
+}
+
+function isHelmTemplate(template) {
+  return template?.packageType === "helm";
+}
+
+function getSourceLabel(template) {
+  if (template?.source === "artifacthub") {return "ArtifactHub";}
+  if (template?.source === "sealos") {return "Sealos";}
+  if (template?.source === "repository") {return t("appStore:Custom repository");}
+  return template?.source || "";
 }
 
 function editorRowsToPayload(rows = []) {
@@ -65,15 +76,44 @@ class DeployAppModal extends React.Component {
       submitting: false,
       result: null,
       error: null,
+      // Helm-specific state
+      chartInfoLoading: false,
+      chartInfo: null,
+      availableVersions: [],
+      selectedVersion: "",
+      helmTask: null,
+      taskId: null,
     };
     this.formRef = React.createRef();
+    this.pollTimer = null;
   }
 
   componentDidUpdate(prevProps) {
     if (this.props.open && !prevProps.open && this.props.template) {
-      this.setState({result: null, error: null, envVars: []});
+      this.setState({
+        result: null, error: null, envVars: [],
+        chartInfo: null, availableVersions: [], selectedVersion: this.props.template?.version ?? "",
+        helmTask: null, taskId: null,
+      });
       this.fetchNamespaces();
       this.fetchNodeIP();
+      if (isHelmTemplate(this.props.template)) {
+        this.fetchChartInfo(this.props.template.version);
+      }
+    }
+    if (!this.props.open && prevProps.open) {
+      this.stopPolling();
+    }
+  }
+
+  componentWillUnmount() {
+    this.stopPolling();
+  }
+
+  stopPolling() {
+    if (this.pollTimer) {
+      clearInterval(this.pollTimer);
+      this.pollTimer = null;
     }
   }
 
@@ -117,9 +157,90 @@ class DeployAppModal extends React.Component {
     }).catch(() => {});
   }
 
+  fetchChartInfo(version) {
+    const tpl = this.props.template;
+    if (!tpl) {return;}
+    this.setState({chartInfoLoading: true, error: null});
+    AppBackend.getHelmChartInfo({
+      repoUrl: tpl.repoUrl,
+      chart: tpl.chartName,
+      version: version ?? "",
+      source: tpl.source,
+      repoName: tpl.repoName,
+    }).then(res => {
+      if (res.status === "ok") {
+        const info = res.data?.info ?? null;
+        const versions = res.data?.availableVersions ?? [];
+        this.setState({
+          chartInfo: info,
+          availableVersions: versions,
+          selectedVersion: version || info?.version || "",
+        });
+        setTimeout(() => {
+          this.formRef.current?.setFieldsValue({helmValues: info?.defaultValues ?? ""});
+        }, 0);
+      } else {
+        this.setState({error: res.msg});
+      }
+    }).catch(e => this.setState({error: e.message}))
+      .finally(() => this.setState({chartInfoLoading: false}));
+  }
+
+  handleVersionChange(version) {
+    this.setState({selectedVersion: version});
+    this.fetchChartInfo(version);
+  }
+
+  startPolling(taskId) {
+    this.stopPolling();
+    this.pollTimer = setInterval(() => {
+      AppBackend.getHelmTask(taskId).then(res => {
+        if (res.status !== "ok") {
+          this.stopPolling();
+          this.setState({error: res.msg, submitting: false});
+          return;
+        }
+        const task = res.data;
+        this.setState({helmTask: task});
+        if (task.status === "succeeded" || task.status === "failed") {
+          this.stopPolling();
+          this.setState({
+            submitting: false,
+            result: task.status === "succeeded" ? {helm: task.result ?? {}} : null,
+            error: task.status === "failed" ? task.error : null,
+          });
+        }
+      }).catch(() => {});
+    }, 2000);
+  }
+
   handleSubmit() {
     this.formRef.current?.validateFields().then(values => {
       const tpl = this.props.template;
+
+      if (isHelmTemplate(tpl)) {
+        const payload = {
+          namespace: values.namespace,
+          release: values.name,
+          repoUrl: tpl?.repoUrl,
+          chart: tpl?.chartName,
+          version: this.state.selectedVersion || tpl?.version || "",
+          values: values.helmValues ?? "",
+        };
+        this.setState({submitting: true, error: null, helmTask: null});
+        AppBackend.installHelmChart(payload)
+          .then(res => {
+            if (res.status === "ok") {
+              const taskId = res.data?.taskId;
+              this.setState({taskId});
+              this.startPolling(taskId);
+            } else {
+              this.setState({error: res.msg, submitting: false});
+            }
+          })
+          .catch(e => this.setState({error: e.message, submitting: false}));
+        return;
+      }
 
       // Merge template inputs into env vars (inputs take precedence, empties are skipped)
       const inputEnvVars = Object.entries(values.inputs ?? {})
@@ -146,13 +267,63 @@ class DeployAppModal extends React.Component {
           }
         })
         .catch(e => this.setState({error: e.message}))
-        .finally(() => this.setState({submitting: false}));
+        .finally(() => {
+          if (!isHelmTemplate(tpl)) {
+            this.setState({submitting: false});
+          }
+        });
     });
   }
 
   handleClose() {
-    this.setState({result: null, error: null, envVars: []});
+    this.stopPolling();
+    this.setState({result: null, error: null, envVars: [], helmTask: null, taskId: null});
     this.props.onClose?.();
+  }
+
+  renderHelmInfo() {
+    const {template} = this.props;
+    if (!isHelmTemplate(template)) {return null;}
+    const sourceLabel = getSourceLabel(template);
+    return (
+      <Alert
+        type="info"
+        showIcon
+        style={{marginBottom: 16}}
+        message={t("appStore:Helm chart")}
+        description={(
+          <div style={{display: "grid", gap: 4}}>
+            {sourceLabel && <div>{t("appStore:Source")}: <Text code>{sourceLabel}</Text></div>}
+            {template.repoName && <div>{t("appStore:Repository")}: <Text code>{template.repoName}</Text></div>}
+            {template.repoUrl && <div>{t("appStore:Repository URL")}: <Text copyable>{template.repoUrl}</Text></div>}
+            {template.chartName && <div>{t("appStore:Chart")}: <Text code>{template.chartName}</Text></div>}
+          </div>
+        )}
+      />
+    );
+  }
+
+  renderHelmProgress() {
+    const {helmTask, submitting} = this.state;
+    if (!submitting || !helmTask) {return null;}
+    const logs = helmTask.logs ?? [];
+    return (
+      <div style={{marginTop: 16}}>
+        <Space>
+          <Spin size="small" />
+          <Text>{t("appStore:Installing chart")}</Text>
+          <Tag color="processing">{helmTask.status}</Tag>
+        </Space>
+        {logs.length > 0 && (
+          <pre style={{
+            marginTop: 8, maxHeight: 200, overflow: "auto", fontSize: 12,
+            background: "#f6f6f6", padding: 8, borderRadius: 6,
+          }}>
+            {logs.slice(-40).join("\n")}
+          </pre>
+        )}
+      </div>
+    );
   }
 
   renderInputs() {
@@ -197,6 +368,38 @@ class DeployAppModal extends React.Component {
   renderResult() {
     const {result, nodeIP} = this.state;
     if (!result) {return null;}
+    if (result.helm) {
+      const helm = result.helm;
+      return (
+        <Alert
+          type="success"
+          showIcon
+          message={t("appStore:Deploy success")}
+          description={(
+            <div style={{display: "grid", gap: 4}}>
+              <div>{t("appStore:Helm release")} <Text code>{helm.name}</Text> {t("appStore:Helm release installed")}</div>
+              <div>{t("general:Namespaces")}: <Text code>{helm.namespace}</Text></div>
+              {helm.chart && <div>{t("appStore:Chart")}: <Text code>{helm.chart}</Text></div>}
+              {helm.version && <div>{t("appStore:Chart version")}: <Text code>{helm.version}</Text></div>}
+              {helm.status && <div>{t("general:Status")}: <Tag color="green">{helm.status}</Tag></div>}
+              {helm.notes && (
+                <Collapse
+                  ghost
+                  size="small"
+                  items={[{
+                    key: "notes",
+                    label: <Text style={{fontSize: 13}}>{t("appStore:Release notes")}</Text>,
+                    children: <Paragraph style={{whiteSpace: "pre-wrap", fontSize: 12}}>{helm.notes}</Paragraph>,
+                  }]}
+                />
+              )}
+            </div>
+          )}
+          style={{marginTop: 16}}
+        />
+      );
+    }
+
     const svc = result.service;
     const accessUrls = svc && nodeIP
       ? (svc.ports ?? []).filter(p => p.nodePort).map(p => `http://${nodeIP}:${p.nodePort}`)
@@ -209,7 +412,7 @@ class DeployAppModal extends React.Component {
         description={
           <div>
             <div>
-              Deployment <Text code>{result.deployment.name}</Text> {t("appStore:Deployment started")}
+              Deployment <Text code>{result.deployment?.name}</Text> {t("appStore:Deployment started")}
             </div>
             {accessUrls.length > 0 && (
               <div style={{marginTop: 6}}>
@@ -238,11 +441,13 @@ class DeployAppModal extends React.Component {
 
   render() {
     const {open, template} = this.props;
-    const {namespaces, envVars, submitting, result, error} = this.state;
+    const {namespaces, envVars, submitting, result, error, chartInfoLoading, availableVersions, selectedVersion} = this.state;
     if (!template) {return null;}
 
     const nsOptions = namespaces.map(ns => ({label: ns.name, value: ns.name}));
     const isDone = !!result;
+    const helmTemplate = isHelmTemplate(template);
+    const versionOptions = availableVersions.map(v => ({label: v, value: v}));
 
     return (
       <Modal
@@ -258,10 +463,11 @@ class DeployAppModal extends React.Component {
         open={open}
         onOk={isDone ? () => this.handleClose() : () => this.handleSubmit()}
         onCancel={() => this.handleClose()}
-        okText={isDone ? t("appStore:Done") : t("appStore:Deploy")}
+        okText={isDone ? t("appStore:Done") : (helmTemplate ? t("appStore:Deploy Helm chart") : t("appStore:Deploy"))}
+        okButtonProps={submitting ? {disabled: true} : {}}
         cancelButtonProps={isDone ? {style: {display: "none"}} : {}}
         confirmLoading={submitting}
-        width={620}
+        width={680}
         destroyOnHidden
       >
         {error && (
@@ -270,6 +476,7 @@ class DeployAppModal extends React.Component {
 
         {!isDone && (
           <Form ref={this.formRef} layout="vertical">
+            {this.renderHelmInfo()}
             <Form.Item
               label={t("general:Namespaces")}
               name="namespace"
@@ -278,54 +485,85 @@ class DeployAppModal extends React.Component {
               <Select options={nsOptions} showSearch placeholder={t("general:Namespaces")} />
             </Form.Item>
             <Form.Item
-              label={t("appStore:App name")}
+              label={helmTemplate ? t("appStore:Release name") : t("appStore:App name")}
               name="name"
               rules={[
                 {required: true, message: t("appStore:App name required")},
                 {pattern: /^[a-z0-9][a-z0-9-]*$/, message: t("appStore:App name pattern")},
               ]}
             >
-              <Input placeholder={t("appStore:App name placeholder")} />
-            </Form.Item>
-            <Form.Item
-              label={t("general:Image")}
-              name="image"
-              rules={[{required: true, message: t("appStore:Image required")}]}
-            >
-              <Input />
-            </Form.Item>
-            <Form.Item label={t("appStore:Replicas")} name="replicas" rules={[{required: true}]}>
-              <InputNumber min={1} max={20} style={{width: "100%"}} />
-            </Form.Item>
-            <Form.Item label={t("appStore:Service type")} name="serviceType">
-              <Select options={[
-                {label: t("appStore:ClusterIP desc"), value: "ClusterIP"},
-                {label: t("appStore:NodePort desc"), value: "NodePort"},
-              ]} />
+              <Input placeholder={helmTemplate ? t("appStore:Release name placeholder") : t("appStore:App name placeholder")} />
             </Form.Item>
 
-            {template.ports?.length > 0 && (
-              <Form.Item label={t("appStore:Ports")}>
-                <Space wrap>
-                  {template.ports.map(p => <Tag key={p}>:{p}/TCP</Tag>)}
-                </Space>
-              </Form.Item>
+            {helmTemplate ? (
+              <Spin spinning={chartInfoLoading}>
+                {versionOptions.length > 0 && (
+                  <Form.Item label={t("appStore:Chart version")}>
+                    <Select
+                      showSearch
+                      value={selectedVersion || undefined}
+                      options={versionOptions}
+                      onChange={v => this.handleVersionChange(v)}
+                      placeholder={t("appStore:Latest version")}
+                    />
+                  </Form.Item>
+                )}
+                <Form.Item
+                  label={t("appStore:Helm values")}
+                  name="helmValues"
+                  extra={t("appStore:Helm values desc")}
+                >
+                  <Input.TextArea
+                    rows={12}
+                    spellCheck={false}
+                    style={{fontFamily: "monospace", fontSize: 12}}
+                  />
+                </Form.Item>
+              </Spin>
+            ) : (
+              <>
+                <Form.Item
+                  label={t("general:Image")}
+                  name="image"
+                  rules={[{required: true, message: t("appStore:Image required")}]}
+                >
+                  <Input />
+                </Form.Item>
+                <Form.Item label={t("appStore:Replicas")} name="replicas" rules={[{required: true}]}>
+                  <InputNumber min={1} max={20} style={{width: "100%"}} />
+                </Form.Item>
+                <Form.Item label={t("appStore:Service type")} name="serviceType">
+                  <Select options={[
+                    {label: t("appStore:ClusterIP desc"), value: "ClusterIP"},
+                    {label: t("appStore:NodePort desc"), value: "NodePort"},
+                  ]} />
+                </Form.Item>
+
+                {template.ports?.length > 0 && (
+                  <Form.Item label={t("appStore:Ports")}>
+                    <Space wrap>
+                      {template.ports.map(p => <Tag key={p}>:{p}/TCP</Tag>)}
+                    </Space>
+                  </Form.Item>
+                )}
+
+                {this.renderInputs()}
+
+                <Divider orientation="left" orientationMargin={0} style={{marginTop: 4, marginBottom: 12}}>
+                  <Text style={{fontSize: 13}}>{t("appStore:Env vars")}</Text>
+                </Divider>
+                <EnvVarEditor
+                  value={envVars}
+                  onChange={rows => this.setState({envVars: rows})}
+                  configMaps={[]}
+                  secrets={[]}
+                />
+              </>
             )}
-
-            {this.renderInputs()}
-
-            <Divider orientation="left" orientationMargin={0} style={{marginTop: 4, marginBottom: 12}}>
-              <Text style={{fontSize: 13}}>{t("appStore:Env vars")}</Text>
-            </Divider>
-            <EnvVarEditor
-              value={envVars}
-              onChange={rows => this.setState({envVars: rows})}
-              configMaps={[]}
-              secrets={[]}
-            />
           </Form>
         )}
 
+        {this.renderHelmProgress()}
         {this.renderResult()}
       </Modal>
     );

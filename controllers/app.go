@@ -27,13 +27,17 @@ type deployAppRequest struct {
 }
 
 type deployAppResult struct {
-	Deployment deploymentSummary `json:"deployment"`
-	Service    *serviceSummary   `json:"service,omitempty"`
+	Deployment *deploymentSummary `json:"deployment,omitempty"`
+	Service    *serviceSummary    `json:"service,omitempty"`
 }
 
 // DeployApp creates a Deployment and a matching ClusterIP/NodePort Service in one call.
+// Helm charts are installed through /api/install-helm-chart instead.
 // @router /api/deploy-app [post]
 func (c *ApiController) DeployApp() {
+	if c.RequireAdmin() {
+		return
+	}
 	cfg := getAdminRestConfig()
 	if cfg == nil {
 		c.ResponseError("apiserver not ready")
@@ -82,7 +86,8 @@ func (c *ApiController) DeployApp() {
 		return
 	}
 
-	result := deployAppResult{Deployment: toDeploymentSummary(*createdDepl)}
+	deplSummary := toDeploymentSummary(*createdDepl)
+	result := deployAppResult{Deployment: &deplSummary}
 
 	if len(req.Ports) > 0 {
 		svcPorts := make([]portRequest, 0, len(req.Ports))
