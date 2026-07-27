@@ -29,6 +29,7 @@ import ConfigMapListPage from "./ConfigMapListPage";
 import SecretListPage from "./SecretListPage";
 import NamespaceListPage from "./NamespaceListPage";
 import NodeListPage from "./NodeListPage";
+import NodeDetailPage from "./NodeDetailPage";
 import ServiceAccountListPage from "./ServiceAccountListPage";
 import ServiceListPage from "./ServiceListPage";
 import ClusterRoleBindingListPage from "./ClusterRoleBindingListPage";
@@ -56,6 +57,9 @@ import TrivyScanPage from "./TrivyScanPage";
 import LogSearchPage from "./LogSearchPage";
 import TopologyPage from "./TopologyPage";
 import MonitorPage from "./MonitorPage";
+import PodDetailPage from "./PodDetailPage";
+import PvcDetailPage from "./PvcDetailPage";
+import WorkloadDetailPage from "./WorkloadDetailPage";
 import i18next from "i18next";
 
 const {Header, Footer, Content, Sider} = Layout;
@@ -263,9 +267,13 @@ function ManagementPage(props) {
         <Route exact path="/app-store" render={(props) => <AppStorePage {...props} />} />
         <Route exact path="/helm-releases" render={(props) => <HelmReleasePage {...props} />} />
         <Route exact path="/deployments" render={(props) => <DeploymentListPage {...props} />} />
+        <Route exact path="/deployments/:namespace/:name" render={(props) => <WorkloadDetailPage type="deployment" {...props} />} />
         <Route exact path="/statefulsets" render={(props) => <StatefulSetListPage {...props} />} />
+        <Route exact path="/statefulsets/:namespace/:name" render={(props) => <WorkloadDetailPage type="statefulset" {...props} />} />
         <Route exact path="/daemonsets" render={(props) => <DaemonSetListPage {...props} />} />
+        <Route exact path="/daemonsets/:namespace/:name" render={(props) => <WorkloadDetailPage type="daemonset" {...props} />} />
         <Route exact path="/pods" render={(props) => <PodListPage {...props} />} />
+        <Route exact path="/pods/:namespace/:name" render={(props) => <PodDetailPage {...props} />} />
         <Route exact path="/jobs" render={(props) => <JobListPage {...props} />} />
         <Route exact path="/cronjobs" render={(props) => <CronJobListPage {...props} />} />
         <Route exact path="/hpas" render={(props) => <HPAListPage {...props} />} />
@@ -273,11 +281,13 @@ function ManagementPage(props) {
         <Route exact path="/log-search" render={(props) => <LogSearchPage {...props} />} />
         <Route exact path="/topology" render={(props) => <TopologyPage {...props} />} />
         <Route exact path="/nodes" render={(props) => <NodeListPage {...props} />} />
+        <Route exact path="/nodes/:name" render={(props) => <NodeDetailPage {...props} />} />
         <Route exact path="/namespaces" render={(props) => <NamespaceListPage {...props} />} />
         <Route exact path="/serviceaccounts" render={(props) => <ServiceAccountListPage {...props} />} />
         <Route exact path="/configmaps" render={(props) => <ConfigMapListPage {...props} />} />
         <Route exact path="/secrets" render={(props) => <SecretListPage {...props} />} />
         <Route exact path="/pvcs" render={(props) => <PvcListPage {...props} />} />
+        <Route exact path="/pvcs/:namespace/:name" render={(props) => <PvcDetailPage {...props} />} />
         <Route exact path="/storageclasses" render={(props) => <StorageClassListPage {...props} />} />
         <Route exact path="/resourcequotas" render={(props) => <ResourceQuotaListPage {...props} />} />
         <Route exact path="/services" render={(props) => <ServiceListPage {...props} />} />

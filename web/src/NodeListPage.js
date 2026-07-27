@@ -1,4 +1,5 @@
 import React from "react";
+import {Link} from "react-router-dom";
 import {
   Alert, Button, Form, Input, Modal, Popconfirm, Space, Table, Tag, Tooltip, Typography
 } from "antd";
@@ -10,6 +11,7 @@ import {
 } from "@ant-design/icons";
 import * as NodeBackend from "./backend/NodeBackend";
 import * as Setting from "./Setting";
+import {resourcePath} from "./resourceRoutes";
 
 const statusColor = {
   Ready: "green",
@@ -173,7 +175,7 @@ class NodeListPage extends React.Component {
         key: "name",
         render: (name, record) => (
           <Space>
-            {name}
+            <Link to={resourcePath("node", "", name)}>{name}</Link>
             {record.unschedulable && <Tag color="orange">SchedulingDisabled</Tag>}
           </Space>
         ),

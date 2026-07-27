@@ -1,5 +1,28 @@
 export const MONITOR_AUTO_REFRESH_INTERVAL_MS = 60 * 1000;
 
+export const MONITOR_TIME_RANGE_OPTIONS = [
+  {labelKey: "monitor:Last 1 Hour", value: "1h"},
+  {labelKey: "monitor:Last 6 Hours", value: "6h"},
+  {labelKey: "monitor:Last 24 Hours", value: "24h"},
+  {labelKey: "monitor:Last 7 Days", value: "7d"},
+  {labelKey: "monitor:Custom Range", value: "custom"},
+];
+
+export const MONITOR_SERIES_COLORS = [
+  "#1677ff",
+  "#0ea5e9",
+  "#14b8a6",
+  "#6366f1",
+  "#8b5cf6",
+  "#0891b2",
+  "#0958d9",
+  "#38bdf8",
+  "#22c55e",
+  "#f59e0b",
+  "#ef4444",
+  "#64748b",
+];
+
 export const MONITOR_METRIC_REQUESTS = [
   {key: "cpu", scope: "cluster", metric: "cpu"},
   {key: "memory", scope: "cluster", metric: "memory"},
@@ -94,17 +117,38 @@ export function toMonitorChartSeries(dataSources) {
       }
       if (points.length === 0) {return;}
       const objectName = series.object || response.scope || "";
+      const name = objectName && objectName !== "cluster" ? objectName : source.label;
+      const color = stableMonitorSeriesColor(name);
       result.push({
-        name: objectName && objectName !== "cluster" ? objectName : source.label,
+        name,
         type: "line",
         showSymbol: false,
         connectNulls: false,
         sampling: "lttb",
         data: points,
+        lineStyle: {color},
+        itemStyle: {color},
       });
     });
   });
-  return result;
+  return result.sort((a, b) => String(a.name).localeCompare(String(b.name)));
+}
+
+export function stableMonitorSeriesColor(name) {
+  const text = String(name || "");
+  let hash = 0;
+  for (let i = 0; i < text.length; i++) {
+    hash = ((hash << 5) - hash + text.charCodeAt(i)) | 0;
+  }
+  return MONITOR_SERIES_COLORS[Math.abs(hash) % MONITOR_SERIES_COLORS.length];
+}
+
+export function shouldRunMonitorAutoRefresh({autoRefresh, timePreset, customTimeRange, active = true, documentHidden = false}) {
+  if (!autoRefresh || !active || documentHidden) {return false;}
+  if (timePreset === "custom") {
+    return Array.isArray(customTimeRange) && customTimeRange[1] === "now";
+  }
+  return timePreset !== "custom";
 }
 
 export function formatMonitorMetricValue(value, unit) {

@@ -1,4 +1,5 @@
 import React from "react";
+import {Link} from "react-router-dom";
 import {
   Alert, Button, Divider, Form, Input, Modal, Popconfirm, Select, Space, Table, Tag, Typography
 } from "antd";
@@ -9,6 +10,7 @@ import * as ConfigMapBackend from "./backend/ConfigMapBackend";
 import * as SecretBackend from "./backend/SecretBackend";
 import * as Setting from "./Setting";
 import EnvVarEditor, {ENV_SOURCE_CONFIGMAP, ENV_SOURCE_PLAIN, ENV_SOURCE_SECRET} from "./EnvVarEditor";
+import {resourcePath} from "./resourceRoutes";
 
 const {Text} = Typography;
 
@@ -187,7 +189,7 @@ class DaemonSetListPage extends React.Component {
 
     const columns = [
       {title: "Namespace", dataIndex: "namespace", key: "namespace", width: 160},
-      {title: "Name", dataIndex: "name", key: "name"},
+      {title: "Name", dataIndex: "name", key: "name", render: (name, record) => <Link to={resourcePath("daemonset", record.namespace, name)}>{name}</Link>},
       {title: "Image", dataIndex: "image", key: "image", ellipsis: true},
       {
         title: "Desired / Ready",

@@ -6,6 +6,7 @@ import i18next from "i18next";
 const RESOURCE_LABELS = {
   "dashboard": "general:Dashboard",
   "deployments": "general:Deployments",
+  "daemonsets": "general:Daemon Sets",
   "pods": "general:Pods",
   "nodes": "general:Nodes",
   "namespaces": "general:Namespaces",
@@ -16,6 +17,7 @@ const RESOURCE_LABELS = {
   "clusterrolebindings": "general:ClusterRoleBindings",
   "ingresses": "general:Ingresses",
   "statefulsets": "general:Stateful Sets",
+  "pvcs": "general:Persistent Volume Claims",
   "sites": "general:Sites",
   "machines": "general:Machines",
   "monitor": "general:Monitor Center",

@@ -8,6 +8,15 @@ export function getDeployments(namespace = "") {
   }).then(res => res.json());
 }
 
+export function getDeployment(namespace, name) {
+  const params = new URLSearchParams({namespace, name});
+  return fetch(`${Setting.ServerUrl}/api/get-deployment?${params}`, {
+    method: "GET",
+    credentials: "include",
+    headers: {"Accept-Language": Setting.getAcceptLanguage()},
+  }).then(res => res.json());
+}
+
 export function addDeployment(deployment) {
   return fetch(`${Setting.ServerUrl}/api/add-deployment`, {
     method: "POST",

@@ -8,6 +8,15 @@ export function getDaemonSets(namespace = "") {
   }).then(res => res.json());
 }
 
+export function getDaemonSet(namespace, name) {
+  const params = new URLSearchParams({namespace, name});
+  return fetch(`${Setting.ServerUrl}/api/get-daemonset?${params}`, {
+    method: "GET",
+    credentials: "include",
+    headers: {"Accept-Language": Setting.getAcceptLanguage()},
+  }).then(res => res.json());
+}
+
 export function addDaemonSet(daemonset) {
   return fetch(`${Setting.ServerUrl}/api/add-daemonset`, {
     method: "POST",

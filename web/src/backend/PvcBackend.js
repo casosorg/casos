@@ -8,6 +8,15 @@ export function getPvcs(namespace = "") {
   }).then(res => res.json());
 }
 
+export function getPvc(namespace, name) {
+  const params = new URLSearchParams({namespace, name});
+  return fetch(`${Setting.ServerUrl}/api/get-pvc?${params}`, {
+    method: "GET",
+    credentials: "include",
+    headers: {"Accept-Language": Setting.getAcceptLanguage()},
+  }).then(res => res.json());
+}
+
 export function addPvc(pvc) {
   return fetch(`${Setting.ServerUrl}/api/add-pvc`, {
     method: "POST",

@@ -57,7 +57,7 @@ Supported scope and metric combinations are:
 | `cluster` | `cpu`, `memory`, `network_receive`, `network_transmit`, `disk` | percent or bytes/second |
 | `node` | `cpu`, `memory`, `network_receive`, `network_transmit`, `disk` | percent or bytes/second |
 | `pod` | `cpu`, `memory`, `network_receive`, `network_transmit` | cores, bytes, or bytes/second |
-| `pvc` | `storage` | percent |
+| `pvc` | `storage`, `storage_used_bytes`, `storage_capacity_bytes` | percent or bytes |
 
 Query parameters:
 
@@ -114,8 +114,138 @@ as parallel timestamp and value arrays:
 }
 ```
 
-PromQL definitions are centralized in `object/monitor_metrics.go`; controllers
-and frontend code never construct PromQL.
+PromQL definitions are centralized in `object/monitor_metrics.go` and
+`object/monitor_resource.go`; controllers and frontend code never construct
+PromQL.
+
+## Resource detail monitoring
+
+The generic metric endpoint remains available for debugging and reusable
+queries. Resource detail pages use aggregate endpoints that return Kubernetes
+metadata, multiple metric results, per-metric status, and relationship data in
+one response:
+
+| Endpoint | Resource |
+| --- | --- |
+| `GET /api/get-node-monitor-overview?name=<node>` | Node detail |
+| `GET /api/get-pod-monitor-overview?namespace=<ns>&name=<pod>&mode=total|container` | Pod detail |
+| `GET /api/get-workload-monitor-overview?kind=Deployment|StatefulSet|DaemonSet&namespace=<ns>&name=<name>&mode=total|pod` | Workload detail |
+| `GET /api/get-pvc-monitor-overview?namespace=<ns>&name=<pvc>` | PVC detail |
+| `GET /api/get-monitor-resource-inventory` | Monitor Center resource inventory |
+| `GET /api/get-monitor-top?resource=node|pod|workload&metric=cpu|memory&limit=5` | Cluster Top N |
+| `GET /api/get-monitor-resource-events?kind=<kind>&namespace=<ns>&name=<name>` | Resource Events tab |
+
+Each overview response contains a `metrics` array. Every metric has independent
+`status`, `error.code`, and `data.series` fields. A failed chart does not clear
+other successful charts, and Kubernetes metadata still loads when Prometheus is
+disabled or unavailable.
+
+Structured monitor error codes are:
+
+| Code | Meaning |
+| --- | --- |
+| `invalid_params` | Request validation failed |
+| `prometheus_not_configured` | `prometheusAddress` is empty |
+| `prometheus_unavailable` | Prometheus could not be reached or returned a server-side failure |
+| `prometheus_timeout` | The Prometheus request exceeded `prometheusQueryTimeout` |
+| `query_error` | Prometheus rejected the query or returned an invalid result |
+| `empty` | The query succeeded but returned no usable samples |
+
+CasOS cannot reliably distinguish "metric family missing" from "valid query
+with no samples" without additional Prometheus metadata checks, so both are
+reported as `empty` on successful queries.
+
+## Kubernetes ownership and resource relationships
+
+CasOS does not model Kubernetes resources as a single linear tree. Node and
+Workload are parallel relationships for Pods:
+
+- Node detail lists Pods using Kubernetes field selector
+  `spec.nodeName=<node>`.
+- Pod detail shows both `Scheduled On` (Node) and `Controlled By` (Workload).
+- Deployment Pod ownership is resolved as
+  `Deployment -> ReplicaSet -> Pod` using controller ownerReferences and UID
+  checks.
+- StatefulSet and DaemonSet Pods are resolved through controller
+  ownerReferences and UID checks.
+- Job and CronJob ownership is resolved for Pod relationship display and
+  Workload Top N aggregation when present.
+
+CasOS does not infer ownership from Pod name prefixes.
+
+## Workload monitoring semantics
+
+This phase does not require kube-state-metrics. Workload monitoring uses the
+Kubernetes API to list the Workload's current Pods, then queries Prometheus for
+those Pod names:
+
+```text
+Current Workload Pods -> safe pod=~"^(...|...)$" matcher -> Prometheus range query
+```
+
+The resulting Workload trends are therefore **current Pods historical trends**,
+not complete Workload history across the whole selected time range. If a
+Deployment rolled out earlier and old Pods were deleted, those deleted Pods are
+not included unless future kube-state-metrics joins or recording rules are
+added.
+
+`mode=total` returns one aggregate line by default. `mode=pod` is opt-in and is
+limited to 10 lines by default with a hard cap of 20 selected Pod series. Pod
+names are safely regex-escaped before building PromQL, and oversized matchers
+are rejected.
+
+CPU and memory request/limit values come from the current Kubernetes
+configuration. If they are shown as references alongside usage, they do not
+represent historical request/limit changes.
+
+## Node identity mapping
+
+Node detail monitoring handles common node_exporter label conventions in this
+order:
+
+1. Prometheus `node="<node name>"`;
+2. Prometheus `nodename="<node name>"`;
+3. `instance` matching Kubernetes Node InternalIP or ExternalIP with optional
+   port;
+4. `instance` matching the Kubernetes Node name with optional port.
+
+If none of these match, the metric query returns empty data for that Node rather
+than matching another Node.
+
+## Container and storage limitations
+
+Pod CPU and memory support `Total` and `By Container`. Pod network is shown only
+as Pod total because `container_network_*` metrics commonly represent the shared
+Pod network namespace and can be double-counted if split by container.
+
+PVC storage uses kubelet volume stats:
+
+- `kubelet_volume_stats_used_bytes`
+- `kubelet_volume_stats_capacity_bytes`
+
+PVC IOPS and read/write throughput are not displayed by default. They require a
+CSI driver metric source or another storage exporter with reliable volume
+labels.
+
+## Query limits
+
+CasOS applies the following limits before sending queries to Prometheus:
+
+- Maximum time range: 90 days.
+- Maximum requested points per series: 11,000.
+- Minimum step: 1 second.
+- Rate window: `max(5m, step * 4)` capped at 1 hour.
+- Overview Prometheus query concurrency: 4.
+- Default Workload By Pod series limit: 10.
+- Hard series and selected-Pod limit: 20.
+- Maximum Pod regex matcher length: 4,096 characters.
+- Top N default limit: 5; maximum: 20.
+- Prometheus HTTP response size: 32 MiB.
+
+Frontend monitoring tabs cancel old requests with `AbortController`, ignore
+stale responses with a request id, refresh only the active Monitoring tab, pause
+automatic refresh when `document.hidden`, and do not auto-refresh fixed custom
+history ranges.
 
 ## UI behavior and limitations
 
@@ -123,14 +253,22 @@ The Monitor Center provides the last 1 hour, 6 hours, 24 hours, 7 days, and a
 custom range. Manual refresh is always available, and automatic refresh runs
 every 60 seconds when enabled.
 
-- Node series rely on the common node_exporter `instance` label. A name filter
-  matches `node-name` and `node-name:<port>`; installations with different
-  relabeling conventions may need matching Prometheus relabel rules.
+- Node detail monitoring supports `node`, `nodename`, Node IP, and compatible
+  `instance` matching as described above. The generic `node` scope still uses
+  the historical `instance` matcher for backwards compatibility.
 - Pod and PVC queries rely on the conventional `namespace`, `pod`, and
   `persistentvolumeclaim` labels.
 - The Node disk chart shows the most-used eligible filesystem per Node. Virtual
   and container-runtime filesystems are excluded.
-- Querying all Nodes or PVCs can produce many lines in large clusters. Object
-  selectors and additional UI filtering can be added in a later phase.
+- Monitor Center uses Kubernetes API objects as the primary navigation source:
+  Nodes, Workloads, and PVCs are listed only when those objects exist in the
+  current CasOS Kubernetes API. Prometheus is used only to add current CPU,
+  memory, network, disk, and PVC usage columns to those rows.
+- Node rows can be expanded to show Pods scheduled on that Node. Workload rows
+  can be expanded to show Pods currently owned by that Workload. Missing
+  resource groups are not rendered.
+- The Top N API remains available as an auxiliary discovery/debug endpoint, but
+  Prometheus-only objects should not be used as primary detail navigation when
+  they are not present in the current Kubernetes API.
 - Authentication, custom CA bundles, and per-tenant Prometheus data-source
   configuration are not included in this phase.

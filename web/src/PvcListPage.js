@@ -1,4 +1,5 @@
 import React from "react";
+import {Link} from "react-router-dom";
 import {
   Alert, Badge, Button, Form, Input, Modal, Popconfirm, Select, Table
 } from "antd";
@@ -6,6 +7,7 @@ import {DeleteOutlined, PlusOutlined, ReloadOutlined} from "@ant-design/icons";
 import * as PvcBackend from "./backend/PvcBackend";
 import * as NamespaceBackend from "./backend/NamespaceBackend";
 import * as Setting from "./Setting";
+import {resourcePath} from "./resourceRoutes";
 
 const ACCESS_MODE_OPTIONS = [
   {label: "ReadWriteOnce (单节点读写)", value: "ReadWriteOnce"},
@@ -116,7 +118,7 @@ class PvcListPage extends React.Component {
 
     const columns = [
       {title: "Namespace", dataIndex: "namespace", key: "namespace", width: 160},
-      {title: "Name", dataIndex: "name", key: "name"},
+      {title: "Name", dataIndex: "name", key: "name", render: (name, record) => <Link to={resourcePath("pvc", record.namespace, name)}>{name}</Link>},
       {
         title: "Status",
         dataIndex: "status",

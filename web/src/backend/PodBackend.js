@@ -8,6 +8,15 @@ export function getPods(namespace = "") {
   }).then(res => res.json());
 }
 
+export function getPod(namespace, name) {
+  const params = new URLSearchParams({namespace, name});
+  return fetch(`${Setting.ServerUrl}/api/get-pod?${params}`, {
+    method: "GET",
+    credentials: "include",
+    headers: {"Accept-Language": Setting.getAcceptLanguage()},
+  }).then(res => res.json());
+}
+
 export function addPod(pod) {
   return fetch(`${Setting.ServerUrl}/api/add-pod`, {
     method: "POST",

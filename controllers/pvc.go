@@ -69,6 +69,24 @@ func (c *ApiController) GetPersistentVolumeClaims() {
 	c.ResponseOk(result)
 }
 
+// GetPersistentVolumeClaim returns a single PVC.
+// @router /api/get-pvc [get]
+func (c *ApiController) GetPersistentVolumeClaim() {
+	cfg := getAdminRestConfig()
+	if cfg == nil {
+		c.ResponseError("apiserver not ready")
+		return
+	}
+	namespace := c.GetString("namespace")
+	name := c.GetString("name")
+	pvc, err := object.GetPersistentVolumeClaim(cfg, namespace, name)
+	if err != nil {
+		c.ResponseError(err.Error())
+		return
+	}
+	c.ResponseOk(toPvcSummary(*pvc))
+}
+
 type pvcRequest struct {
 	Namespace        string `json:"namespace"`
 	Name             string `json:"name"`

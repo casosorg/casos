@@ -1,4 +1,5 @@
 import React from "react";
+import {Link} from "react-router-dom";
 import {
   Alert, Button, Divider, Form, Input, InputNumber, Modal, Popconfirm, Select, Space, Table, Typography
 } from "antd";
@@ -10,6 +11,7 @@ import * as SecretBackend from "./backend/SecretBackend";
 import * as Setting from "./Setting";
 import EnvVarEditor, {ENV_SOURCE_CONFIGMAP, ENV_SOURCE_PLAIN, ENV_SOURCE_SECRET} from "./EnvVarEditor";
 import ReplicasControl from "./ReplicasControl";
+import {resourcePath} from "./resourceRoutes";
 
 const {Text} = Typography;
 
@@ -194,7 +196,7 @@ class StatefulSetListPage extends React.Component {
 
     const columns = [
       {title: "Namespace", dataIndex: "namespace", key: "namespace", width: 160},
-      {title: "Name", dataIndex: "name", key: "name"},
+      {title: "Name", dataIndex: "name", key: "name", render: (name, record) => <Link to={resourcePath("statefulset", record.namespace, name)}>{name}</Link>},
       {title: "Service Name", dataIndex: "serviceName", key: "serviceName", width: 160},
       {title: "Image", dataIndex: "image", key: "image", ellipsis: true},
       {

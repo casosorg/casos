@@ -7,6 +7,8 @@ import {
   formatMonitorTimeAxisLabel,
   formatMonitorTooltipTime,
   monitorStepForDuration,
+  shouldRunMonitorAutoRefresh,
+  stableMonitorSeriesColor,
   toMonitorChartSeries
 } from "./monitorMetrics";
 
@@ -70,6 +72,30 @@ describe("monitor metric helpers", () => {
     expect(chartSeries).toHaveLength(1);
     expect(chartSeries[0].name).toBe("CPU");
     expect(chartSeries[0].data).toEqual([[100000, 12.5], [160000, 25]]);
+    expect(chartSeries[0].lineStyle.color).toBe(stableMonitorSeriesColor("CPU"));
+  });
+
+  test("sorts chart series by stable display name", () => {
+    const chartSeries = toMonitorChartSeries([{
+      label: "Pods",
+      data: {
+        scope: "pod",
+        series: [
+          {object: "default/web", timestamps: [100], values: [1]},
+          {object: "default/api", timestamps: [100], values: [2]},
+        ],
+      },
+    }]);
+    expect(chartSeries.map(series => series.name)).toEqual(["default/api", "default/web"]);
+    expect(stableMonitorSeriesColor("default/api")).toBe(stableMonitorSeriesColor("default/api"));
+  });
+
+  test("applies monitoring auto-refresh rules", () => {
+    expect(shouldRunMonitorAutoRefresh({autoRefresh: true, timePreset: "1h", active: true, documentHidden: false})).toBe(true);
+    expect(shouldRunMonitorAutoRefresh({autoRefresh: true, timePreset: "1h", active: false, documentHidden: false})).toBe(false);
+    expect(shouldRunMonitorAutoRefresh({autoRefresh: true, timePreset: "1h", active: true, documentHidden: true})).toBe(false);
+    expect(shouldRunMonitorAutoRefresh({autoRefresh: false, timePreset: "1h", active: true, documentHidden: false})).toBe(false);
+    expect(shouldRunMonitorAutoRefresh({autoRefresh: true, timePreset: "custom", customTimeRange: [1, 2], active: true, documentHidden: false})).toBe(false);
   });
 
   test("formats metric units", () => {

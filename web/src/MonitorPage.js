@@ -1,4 +1,5 @@
 import React, {useCallback, useEffect, useMemo, useRef, useState} from "react";
+import {Link} from "react-router-dom";
 import {Alert, Button, Card, Col, DatePicker, Descriptions, Drawer, Input, Modal, Row, Segmented, Space, Spin, Statistic, Switch, Table, Tag, Typography} from "antd";
 import {
   AppstoreOutlined,
@@ -20,8 +21,10 @@ import MonitorMetricChart from "./MonitorMetricChart";
 import {
   MONITOR_AUTO_REFRESH_INTERVAL_MS,
   MONITOR_METRIC_REQUESTS,
-  buildMonitorTimeRange
+  buildMonitorTimeRange,
+  formatMonitorMetricValue
 } from "./monitorMetrics";
+import {resourceLabel, resourcePath} from "./resourceRoutes";
 
 const {Paragraph, Text} = Typography;
 const {RangePicker} = DatePicker;
@@ -53,22 +56,36 @@ const metricChartDefinitions = [
   {key: "storage", title: "PVC Storage Usage", unit: "percent"},
 ];
 
+const topRankingDefinitions = [
+  {key: "nodeCpu", resource: "node", metric: "cpu", title: "Top CPU Nodes", unit: "percent"},
+  {key: "nodeMemory", resource: "node", metric: "memory", title: "Top Memory Nodes", unit: "bytes"},
+  {key: "podCpu", resource: "pod", metric: "cpu", title: "Top CPU Pods", unit: "cores"},
+  {key: "podMemory", resource: "pod", metric: "memory", title: "Top Memory Pods", unit: "bytes"},
+  {key: "workloadCpu", resource: "workload", metric: "cpu", title: "Top CPU Workloads", unit: "cores"},
+  {key: "workloadMemory", resource: "workload", metric: "memory", title: "Top Memory Workloads", unit: "bytes"},
+];
+
 function registerMonitorI18nKeys() {
   // The existing i18n generator only scans literal i18next.t(...) calls.
   i18next.t("monitor:Abnormal Pods");
   i18next.t("monitor:Auto Refresh");
   i18next.t("monitor:Category");
+  i18next.t("monitor:Check that kubelet or cAdvisor metrics are scraped with namespace and pod labels for this Pod.");
   i18next.t("monitor:Check");
   i18next.t("monitor:Count");
+  i18next.t("monitor:CPU");
   i18next.t("monitor:CPU Usage");
   i18next.t("monitor:Critical Checks");
   i18next.t("monitor:Current");
+  i18next.t("monitor:Current Pods");
   i18next.t("monitor:Custom Range");
   i18next.t("monitor:Details");
   i18next.t("monitor:Diagnosis");
   i18next.t("monitor:Diagnosis Context");
+  i18next.t("monitor:Disk Usage");
   i18next.t("monitor:Event Center");
   i18next.t("monitor:Event Details");
+  i18next.t("monitor:Failed to load cluster rankings");
   i18next.t("monitor:Failed to load diagnosis");
   i18next.t("monitor:Failed to load events");
   i18next.t("monitor:Failed to load health checks");
@@ -86,26 +103,56 @@ function registerMonitorI18nKeys() {
   i18next.t("monitor:Last Checked");
   i18next.t("monitor:Message");
   i18next.t("monitor:Memory Usage");
+  i18next.t("monitor:Memory");
   i18next.t("monitor:Monitor Issues");
   i18next.t("monitor:Network Receive");
   i18next.t("monitor:Network Transmit");
+  i18next.t("monitor:Network Rx");
+  i18next.t("monitor:Network Tx");
   i18next.t("monitor:No metric data");
+  i18next.t("monitor:No Node resources found");
   i18next.t("monitor:Node Disk Usage");
+  i18next.t("monitor:Node Resources");
   i18next.t("monitor:Object");
+  i18next.t("monitor:Owner Workload");
   i18next.t("monitor:Overall Status");
+  i18next.t("monitor:Pod Count");
+  i18next.t("monitor:Pod is not Running");
+  i18next.t("monitor:Pod is not scheduled to a Node");
+  i18next.t("monitor:Pod metrics may be empty until the Pod is running and kubelet reports container usage.");
+  i18next.t("monitor:Pod metrics require the Pod to be scheduled and reported by kubelet or cAdvisor.");
+  i18next.t("monitor:Pod network metrics total only note");
+  i18next.t("monitor:Prometheus returned no Pod metrics");
+  i18next.t("monitor:Prometheus-only ranking items are not shown as current Kubernetes resources unless the Kubernetes API returns the object.");
   i18next.t("monitor:PVC Storage Usage");
+  i18next.t("monitor:PVC Resources");
+  i18next.t("monitor:PVC storage metrics source note");
   i18next.t("monitor:Previous");
   i18next.t("monitor:Ready Nodes");
+  i18next.t("monitor:Ready Replicas");
   i18next.t("monitor:Reason");
   i18next.t("monitor:Related Events");
+  i18next.t("monitor:Resource Inventory");
   i18next.t("monitor:Resource Trends");
+  i18next.t("monitor:Restart Count");
   i18next.t("monitor:Running Pods");
   i18next.t("monitor:Select a custom time range");
   i18next.t("monitor:Source");
   i18next.t("monitor:Suggestion");
   i18next.t("monitor:Time");
+  i18next.t("monitor:Metrics only");
+  i18next.t("monitor:Top CPU Nodes");
+  i18next.t("monitor:Top CPU Pods");
+  i18next.t("monitor:Top CPU Workloads");
+  i18next.t("monitor:Top Memory Nodes");
+  i18next.t("monitor:Top Memory Pods");
+  i18next.t("monitor:Top Memory Workloads");
+  i18next.t("monitor:Used");
   i18next.t("monitor:Warning Checks");
   i18next.t("monitor:Warning Events");
+  i18next.t("monitor:Workload Resources");
+  i18next.t("monitor:Workload current Pods metrics note");
+  i18next.t("monitor:Workload request limit current config note");
   i18next.t("monitor:severity critical");
   i18next.t("monitor:severity info");
   i18next.t("monitor:severity warning");
@@ -143,6 +190,22 @@ function objectLabel(record) {
   return `${record.kind || "-"} / ${name || "-"}`;
 }
 
+function resourceLink(resource) {
+  const label = resourceLabel(resource);
+  if (!resource?.validated) {return label;}
+  const path = resourcePath(resource.kind, resource.namespace, resource.name);
+  return path ? <Link to={path}>{label}</Link> : label;
+}
+
+function formatOptionalMetric(value, unit) {
+  if (value === undefined || value === null) {return "-";}
+  return formatMonitorMetricValue(value, unit);
+}
+
+function podTableRowKey(record) {
+  return `${record.namespace}/${record.name}`;
+}
+
 function MonitorPage() {
   const {t} = useTranslation();
   const [summary, setSummary] = useState(null);
@@ -164,11 +227,21 @@ function MonitorPage() {
   const [metricData, setMetricData] = useState({});
   const [metricErrors, setMetricErrors] = useState({});
   const [metricsLoading, setMetricsLoading] = useState(false);
+  const [resourceInventory, setResourceInventory] = useState(null);
+  const [resourceInventoryError, setResourceInventoryError] = useState(null);
+  const [resourceInventoryLoading, setResourceInventoryLoading] = useState(false);
+  const [topRankings, setTopRankings] = useState({});
+  const [topRankingErrors, setTopRankingErrors] = useState({});
+  const [topRankingsLoading, setTopRankingsLoading] = useState(false);
   const [timePreset, setTimePreset] = useState("1h");
   const [customTimeRange, setCustomTimeRange] = useState(null);
   const [autoRefresh, setAutoRefresh] = useState(true);
   const metricRequestRef = useRef(0);
   const metricAbortRef = useRef(null);
+  const inventoryRequestRef = useRef(0);
+  const inventoryAbortRef = useRef(null);
+  const topRankingsRequestRef = useRef(0);
+  const topRankingsAbortRef = useRef(null);
 
   function fetchOverview() {
     setLoading(true);
@@ -274,10 +347,71 @@ function MonitorPage() {
     }).finally(() => setDiagnosisLoading(false));
   }, [t]);
 
+  const fetchResourceInventory = useCallback(() => {
+    inventoryAbortRef.current?.abort();
+    const controller = new AbortController();
+    inventoryAbortRef.current = controller;
+    const requestID = ++inventoryRequestRef.current;
+    setResourceInventoryLoading(true);
+    setResourceInventoryError(null);
+    MonitorBackend.getMonitorResourceInventory(controller.signal).then(res => {
+      if (controller.signal.aborted || requestID !== inventoryRequestRef.current) {return;}
+      if (res.status === "ok") {
+        setResourceInventory(res.data || null);
+      } else {
+        setResourceInventoryError(res.msg || t("monitor:Failed to load resource trends"));
+      }
+    }).catch(err => {
+      if (controller.signal.aborted || requestID !== inventoryRequestRef.current) {return;}
+      setResourceInventoryError(err.message);
+    }).finally(() => {
+      if (!controller.signal.aborted && requestID === inventoryRequestRef.current) {
+        setResourceInventoryLoading(false);
+      }
+    });
+  }, [t]);
+
+  const fetchTopRankings = useCallback(() => {
+    topRankingsAbortRef.current?.abort();
+    const controller = new AbortController();
+    topRankingsAbortRef.current = controller;
+    const requestID = ++topRankingsRequestRef.current;
+    setTopRankingsLoading(true);
+    setTopRankingErrors({});
+
+    Promise.all(topRankingDefinitions.map(async definition => {
+      try {
+        const response = await MonitorBackend.getMonitorTop(definition.resource, definition.metric, 5, "", controller.signal);
+        return {definition, response};
+      } catch (requestError) {
+        return {definition, error: requestError};
+      }
+    })).then(results => {
+      if (controller.signal.aborted || requestID !== topRankingsRequestRef.current) {return;}
+      const nextRankings = {};
+      const nextErrors = {};
+      results.forEach(result => {
+        if (result.response?.status === "ok") {
+          nextRankings[result.definition.key] = result.response.data?.items || [];
+        } else {
+          nextErrors[result.definition.key] = result.response?.msg || result.error?.message || t("monitor:Failed to load cluster rankings");
+        }
+      });
+      setTopRankings(nextRankings);
+      setTopRankingErrors(nextErrors);
+    }).finally(() => {
+      if (!controller.signal.aborted && requestID === topRankingsRequestRef.current) {
+        setTopRankingsLoading(false);
+      }
+    });
+  }, [t]);
+
   useEffect(() => {
     fetchOverview();
     fetchIssues();
     fetchEvents("");
+    fetchResourceInventory();
+    fetchTopRankings();
   }, []);
 
   useEffect(() => {
@@ -290,9 +424,20 @@ function MonitorPage() {
 
   useEffect(() => {
     if (!autoRefresh) {return undefined;}
-    const timer = window.setInterval(fetchMetricTrends, MONITOR_AUTO_REFRESH_INTERVAL_MS);
+    const timer = window.setInterval(() => {
+      fetchMetricTrends();
+      fetchResourceInventory();
+      fetchTopRankings();
+    }, MONITOR_AUTO_REFRESH_INTERVAL_MS);
     return () => window.clearInterval(timer);
-  }, [autoRefresh, fetchMetricTrends]);
+  }, [autoRefresh, fetchMetricTrends, fetchResourceInventory, fetchTopRankings]);
+
+  useEffect(() => () => {
+    inventoryRequestRef.current++;
+    inventoryAbortRef.current?.abort();
+    topRankingsRequestRef.current++;
+    topRankingsAbortRef.current?.abort();
+  }, []);
 
   const checkColumns = useMemo(() => [
     {title: t("monitor:Check"), dataIndex: "name", key: "name", width: 280, ellipsis: true},
@@ -350,6 +495,124 @@ function MonitorPage() {
           {t("monitor:Details")}
         </Button>
       ),
+    },
+  ], [t]);
+
+  const inventoryPodColumns = useMemo(() => [
+    {title: t("policy:Namespace"), dataIndex: "namespace", key: "namespace", width: 150},
+    {
+      title: t("general:Name"),
+      dataIndex: "name",
+      key: "name",
+      ellipsis: true,
+      render: (name, record) => <Link to={resourcePath("pod", record.namespace, name)}>{name}</Link>,
+    },
+    {
+      title: t("monitor:Owner Workload"),
+      key: "owner",
+      width: 260,
+      ellipsis: true,
+      render: (_, record) => record.owner ? resourceLink(record.owner) : "-",
+    },
+    {
+      title: t("monitor:CPU"),
+      dataIndex: "currentCpuCores",
+      key: "currentCpuCores",
+      width: 120,
+      render: value => formatOptionalMetric(value, "cores"),
+    },
+    {
+      title: t("monitor:Memory"),
+      dataIndex: "currentMemoryBytes",
+      key: "currentMemoryBytes",
+      width: 130,
+      render: value => formatOptionalMetric(value, "bytes"),
+    },
+    {title: t("monitor:Restart Count"), dataIndex: "restartCount", key: "restartCount", width: 130},
+    {
+      title: t("general:Status"),
+      key: "status",
+      width: 130,
+      render: (_, record) => <Tag color={record.phase === "Running" ? "green" : "default"}>{record.status || record.phase || "-"}</Tag>,
+    },
+  ], [t]);
+
+  const nodeResourceColumns = useMemo(() => [
+    {
+      title: t("general:Name"),
+      key: "name",
+      ellipsis: true,
+      render: (_, record) => resourceLink(record.resource),
+    },
+    {
+      title: t("general:Status"),
+      dataIndex: "status",
+      key: "status",
+      width: 120,
+      render: value => <Tag color={value === "Ready" ? "green" : "red"}>{value || "-"}</Tag>,
+    },
+    {title: "Internal IP", dataIndex: "internalIP", key: "internalIP", width: 140},
+    {title: t("monitor:Pod Count"), dataIndex: "podCount", key: "podCount", width: 110},
+    {title: t("monitor:CPU"), dataIndex: "cpuPercent", key: "cpuPercent", width: 120, render: value => formatOptionalMetric(value, "percent")},
+    {title: t("monitor:Memory"), dataIndex: "memoryPercent", key: "memoryPercent", width: 120, render: value => formatOptionalMetric(value, "percent")},
+    {title: t("monitor:Network Rx"), dataIndex: "networkReceiveBytesPerSecond", key: "networkReceiveBytesPerSecond", width: 140, render: value => formatOptionalMetric(value, "bytes_per_second")},
+    {title: t("monitor:Network Tx"), dataIndex: "networkTransmitBytesPerSecond", key: "networkTransmitBytesPerSecond", width: 140, render: value => formatOptionalMetric(value, "bytes_per_second")},
+    {title: t("monitor:Disk Usage"), dataIndex: "diskUsagePercent", key: "diskUsagePercent", width: 130, render: value => formatOptionalMetric(value, "percent")},
+  ], [t]);
+
+  const workloadResourceColumns = useMemo(() => [
+    {
+      title: t("monitor:Object"),
+      key: "resource",
+      ellipsis: true,
+      render: (_, record) => resourceLink(record.resource),
+    },
+    {title: t("monitor:Ready Replicas"), key: "readyReplicas", width: 140, render: (_, record) => `${record.readyReplicas ?? 0} / ${record.replicas ?? 0}`},
+    {title: t("monitor:Current Pods"), dataIndex: "currentPodCount", key: "currentPodCount", width: 120},
+    {title: t("monitor:CPU"), dataIndex: "cpuCores", key: "cpuCores", width: 120, render: value => formatOptionalMetric(value, "cores")},
+    {title: t("monitor:Memory"), dataIndex: "memoryBytes", key: "memoryBytes", width: 130, render: value => formatOptionalMetric(value, "bytes")},
+    {title: t("monitor:Network Rx"), dataIndex: "networkReceiveBytesPerSecond", key: "networkReceiveBytesPerSecond", width: 140, render: value => formatOptionalMetric(value, "bytes_per_second")},
+    {title: t("monitor:Network Tx"), dataIndex: "networkTransmitBytesPerSecond", key: "networkTransmitBytesPerSecond", width: 140, render: value => formatOptionalMetric(value, "bytes_per_second")},
+  ], [t]);
+
+  const pvcResourceColumns = useMemo(() => [
+    {
+      title: t("monitor:Object"),
+      key: "resource",
+      ellipsis: true,
+      render: (_, record) => (
+        <Space size={8}>
+          {resourceLink(record.resource)}
+          {record.resource && !record.resource.validated && <Tag>{t("monitor:Metrics only")}</Tag>}
+        </Space>
+      ),
+    },
+    {
+      title: t("general:Status"),
+      dataIndex: "status",
+      key: "status",
+      width: 120,
+      render: value => <Tag color={value === "Bound" ? "green" : "gold"}>{value || "-"}</Tag>,
+    },
+    {title: "StorageClass", dataIndex: "storageClassName", key: "storageClassName", width: 160},
+    {title: t("monitor:Used"), dataIndex: "usedBytes", key: "usedBytes", width: 130, render: value => formatOptionalMetric(value, "bytes")},
+    {title: t("monitor:Capacity"), dataIndex: "capacityBytes", key: "capacityBytes", width: 130, render: value => formatOptionalMetric(value, "bytes")},
+    {title: t("monitor:Storage Usage"), dataIndex: "usagePercent", key: "usagePercent", width: 140, render: value => formatOptionalMetric(value, "percent")},
+  ], [t]);
+
+  const topRankingColumns = useCallback((definition) => [
+    {
+      title: t("monitor:Object"),
+      key: "resource",
+      ellipsis: true,
+      render: (_, record) => resourceLink(record.resource),
+    },
+    {
+      title: definition.metric === "cpu" ? t("monitor:CPU") : t("monitor:Memory"),
+      dataIndex: "value",
+      key: "value",
+      width: 130,
+      render: (value, record) => formatOptionalMetric(value, record.unit || definition.unit),
     },
   ], [t]);
 
@@ -440,6 +703,11 @@ function MonitorPage() {
   ];
   const waitingForCustomRange = timePreset === "custom" && !customTimeRange;
   const metricsUnavailableError = Object.keys(metricErrors).length === MONITOR_METRIC_REQUESTS.length ? Object.values(metricErrors)[0] : null;
+  const inventoryNodes = resourceInventory?.nodes || [];
+  const inventoryWorkloads = resourceInventory?.workloads || [];
+  const inventoryPvcs = resourceInventory?.pvcs || [];
+  const hasInventoryResources = inventoryNodes.length > 0 || inventoryWorkloads.length > 0 || inventoryPvcs.length > 0;
+  const topRankingErrorMessage = Object.values(topRankingErrors).filter(Boolean)[0] || "";
 
   if (loading && !summary) {
     return (
@@ -547,6 +815,118 @@ function MonitorPage() {
       </Row>
 
       <Card
+        title={t("monitor:Resource Inventory")}
+        variant="borderless"
+        style={{borderRadius: 8, border: "1px solid #e8e8e8", marginTop: 16}}
+        extra={
+          <Button icon={<ReloadOutlined />} loading={resourceInventoryLoading} onClick={fetchResourceInventory}>
+            {t("general:Refresh")}
+          </Button>
+        }
+      >
+        {resourceInventoryError && (
+          <Alert
+            type="error"
+            showIcon
+            message={t("monitor:Failed to load resource trends")}
+            description={resourceInventoryError}
+            style={{marginBottom: 16}}
+          />
+        )}
+        {resourceInventory?.error && (
+          <Alert
+            type="warning"
+            showIcon
+            message={t("monitor:Failed to load resource trends")}
+            description={resourceInventory.error.message}
+            style={{marginBottom: 16}}
+          />
+        )}
+        {!hasInventoryResources && !resourceInventoryLoading && (
+          <Alert
+            type="info"
+            showIcon
+            message={t("general:No resources found")}
+          />
+        )}
+        <div style={{marginBottom: 20}}>
+          <div style={{fontWeight: 600, marginBottom: 12}}>{t("monitor:Node Resources")}</div>
+          {inventoryNodes.length > 0 ? (
+            <Table
+              rowKey={record => record.resource.name}
+              columns={nodeResourceColumns}
+              dataSource={inventoryNodes}
+              loading={resourceInventoryLoading}
+              size="middle"
+              pagination={{pageSize: 20}}
+              scroll={{x: 1220}}
+              expandable={{
+                rowExpandable: record => (record.pods || []).length > 0,
+                expandedRowRender: record => (
+                  <Table
+                    rowKey={podTableRowKey}
+                    columns={inventoryPodColumns}
+                    dataSource={record.pods || []}
+                    size="small"
+                    pagination={false}
+                    scroll={{x: 1120}}
+                  />
+                ),
+              }}
+            />
+          ) : (
+            <Alert
+              type="info"
+              showIcon
+              message={t("monitor:No Node resources found")}
+              description={t("monitor:Prometheus-only ranking items are not shown as current Kubernetes resources unless the Kubernetes API returns the object.")}
+            />
+          )}
+        </div>
+        {inventoryWorkloads.length > 0 && (
+          <div style={{marginBottom: 20}}>
+            <div style={{fontWeight: 600, marginBottom: 12}}>{t("monitor:Workload Resources")}</div>
+            <Table
+              rowKey={record => `${record.resource.kind}/${record.resource.namespace}/${record.resource.name}`}
+              columns={workloadResourceColumns}
+              dataSource={inventoryWorkloads}
+              loading={resourceInventoryLoading}
+              size="middle"
+              pagination={{pageSize: 20}}
+              scroll={{x: 1130}}
+              expandable={{
+                rowExpandable: record => (record.pods || []).length > 0,
+                expandedRowRender: record => (
+                  <Table
+                    rowKey={podTableRowKey}
+                    columns={inventoryPodColumns}
+                    dataSource={record.pods || []}
+                    size="small"
+                    pagination={false}
+                    scroll={{x: 1120}}
+                  />
+                ),
+              }}
+            />
+          </div>
+        )}
+        {inventoryPvcs.length > 0 && (
+          <div>
+            <div style={{fontWeight: 600, marginBottom: 12}}>{t("monitor:PVC Resources")}</div>
+            <Table
+              rowKey={record => `${record.resource.namespace}/${record.resource.name}`}
+              columns={pvcResourceColumns}
+              dataSource={inventoryPvcs}
+              loading={resourceInventoryLoading}
+              size="middle"
+              pagination={{pageSize: 20}}
+              scroll={{x: 820}}
+            />
+          </div>
+        )}
+      </Card>
+
+      <Card
         title={t("monitor:Resource Trends")}
         variant="borderless"
         style={{borderRadius: 8, border: "1px solid #e8e8e8", marginTop: 16}}
@@ -619,6 +999,45 @@ function MonitorPage() {
             </Row>
           </>
         )}
+      </Card>
+
+      <Card
+        title={t("monitor:Cluster Rankings")}
+        variant="borderless"
+        style={{borderRadius: 8, border: "1px solid #e8e8e8", marginTop: 16}}
+        extra={
+          <Button icon={<ReloadOutlined />} loading={topRankingsLoading} onClick={fetchTopRankings}>
+            {t("general:Refresh")}
+          </Button>
+        }
+      >
+        {topRankingErrorMessage && (
+          <Alert
+            type="warning"
+            showIcon
+            message={t("monitor:Failed to load cluster rankings")}
+            description={topRankingErrorMessage}
+            style={{marginBottom: 16}}
+          />
+        )}
+        <Row gutter={[16, 16]}>
+          {topRankingDefinitions.map(definition => (
+            <Col xs={24} md={12} xl={8} key={definition.key}>
+              <div style={{height: "100%", border: "1px solid #f0f0f0", borderRadius: 8, padding: 12}}>
+                <div style={{fontWeight: 600, marginBottom: 12}}>{t(`monitor:${definition.title}`)}</div>
+                <Table
+                  rowKey={(record, index) => `${record.resource?.kind || definition.resource}/${record.resource?.namespace || ""}/${record.resource?.name || index}`}
+                  columns={topRankingColumns(definition)}
+                  dataSource={topRankings[definition.key] || []}
+                  loading={topRankingsLoading}
+                  size="small"
+                  pagination={false}
+                  scroll={{x: 430}}
+                />
+              </div>
+            </Col>
+          ))}
+        </Row>
       </Card>
 
       <Card

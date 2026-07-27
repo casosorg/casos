@@ -1,4 +1,5 @@
 import React from "react";
+import {Link} from "react-router-dom";
 import {
   Alert, Button, Divider, Form, Input, InputNumber, Modal, Popconfirm, Select, Space, Table, Tag, Tooltip, Typography
 } from "antd";
@@ -9,7 +10,6 @@ import * as ConfigMapBackend from "./backend/ConfigMapBackend";
 import * as SecretBackend from "./backend/SecretBackend";
 import * as ServiceBackend from "./backend/ServiceBackend";
 import * as NodeBackend from "./backend/NodeBackend";
-import * as MetricsBackend from "./backend/MetricsBackend";
 import * as IngressBackend from "./backend/IngressBackend";
 import * as Setting from "./Setting";
 import DeploymentExposeModal from "./DeploymentExposeModal";
@@ -18,6 +18,7 @@ import DeploymentDomainModal from "./DeploymentDomainModal";
 import DeploymentStorageEditor from "./DeploymentStorageEditor";
 import EnvVarEditor, {ENV_SOURCE_CONFIGMAP, ENV_SOURCE_PLAIN, ENV_SOURCE_SECRET} from "./EnvVarEditor";
 import ReplicasControl from "./ReplicasControl";
+import {resourcePath} from "./resourceRoutes";
 
 const {Text} = Typography;
 
@@ -69,7 +70,6 @@ class DeploymentListPage extends React.Component {
       domainDeploy: null,
       envVars: [],
       volumes: [],
-      podMetrics: [],
     };
     this.formRef = React.createRef();
   }
@@ -79,7 +79,6 @@ class DeploymentListPage extends React.Component {
     this.fetchNamespaces();
     this.fetchServices();
     this.fetchNodeIP();
-    this.fetchPodMetrics();
     this.fetchIngresses();
   }
 
@@ -112,12 +111,6 @@ class DeploymentListPage extends React.Component {
           if (node.internalIP) {this.setState({nodeIP: node.internalIP}); return;}
         }
       }
-    }).catch(() => {});
-  }
-
-  fetchPodMetrics() {
-    MetricsBackend.getMetrics().then(res => {
-      if (res.status === "ok") {this.setState({podMetrics: res.data?.pods ?? []});}
     }).catch(() => {});
   }
 
@@ -272,21 +265,13 @@ class DeploymentListPage extends React.Component {
   render() {
     const {deployments, namespaces, configMaps, secrets, services, loading, error,
       modalVisible, modalMode, submitting, exposeDeploy, updateImageDeploy, domainDeploy,
-      envVars, volumes, podMetrics} = this.state;
-
-    const metricsAvailable = podMetrics.length > 0;
-    const getDeployMetrics = (deploy) => {
-      const pods = podMetrics.filter(
-        p => p.namespace === deploy.namespace && p.name.startsWith(deploy.name + "-")
-      );
-      return pods.reduce((acc, p) => ({cpuM: acc.cpuM + p.cpuM, memMi: acc.memMi + p.memMi}), {cpuM: 0, memMi: 0});
-    };
+      envVars, volumes} = this.state;
 
     const nsOptions = namespaces.map(ns => ({label: ns.name, value: ns.name}));
 
     const columns = [
       {title: "Namespace", dataIndex: "namespace", key: "namespace", width: 160},
-      {title: "Name", dataIndex: "name", key: "name"},
+      {title: "Name", dataIndex: "name", key: "name", render: (name, record) => <Link to={resourcePath("deployment", record.namespace, name)}>{name}</Link>},
       {
         title: "Image",
         key: "image",
@@ -342,21 +327,6 @@ class DeploymentListPage extends React.Component {
             }).catch(e => Setting.showMessage("error", e.message))}
           />
         ),
-      },
-      {
-        title: "CPU / Memory",
-        key: "metrics",
-        width: 180,
-        render: (_, r) => {
-          if (!metricsAvailable) {return <span style={{color: "#bfbfbf", fontSize: 12}}>—</span>;}
-          const {cpuM, memMi} = getDeployMetrics(r);
-          const memStr = memMi >= 1024 ? `${(memMi / 1024).toFixed(1)}G` : `${memMi}M`;
-          return (
-            <span style={{fontSize: 12, color: "#595959", fontFamily: "monospace"}}>
-              {(cpuM / 1000).toFixed(3)}c&nbsp;&nbsp;{memStr}
-            </span>
-          );
-        },
       },
       {
         title: "Access URL",

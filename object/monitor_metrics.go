@@ -19,6 +19,7 @@ const (
 	defaultPrometheusQueryTimeout = 10 * time.Second
 	maxMonitorMetricRange         = 90 * 24 * time.Hour
 	maxMonitorMetricSamples       = 11000
+	maxMonitorMetricRateWindow    = time.Hour
 )
 
 var ErrPrometheusNotConfigured = errors.New("Prometheus is not configured")
@@ -180,6 +181,18 @@ var monitorMetricDefinitions = map[string]map[string]monitorMetricDefinition{
 				return fmt.Sprintf(`100 * max by (namespace, persistentvolumeclaim) (%s) / max by (namespace, persistentvolumeclaim) (%s > 0)`, used, capacity)
 			},
 		},
+		"storage_used_bytes": {
+			unit: "bytes",
+			buildQuery: func(query MonitorMetricQuery) string {
+				return fmt.Sprintf(`max by (namespace, persistentvolumeclaim) (%s)`, promSelector("kubelet_volume_stats_used_bytes", pvcMatchers(query)))
+			},
+		},
+		"storage_capacity_bytes": {
+			unit: "bytes",
+			buildQuery: func(query MonitorMetricQuery) string {
+				return fmt.Sprintf(`max by (namespace, persistentvolumeclaim) (%s)`, promSelector("kubelet_volume_stats_capacity_bytes", pvcMatchers(query)))
+			},
+		},
 	},
 }
 
@@ -264,23 +277,31 @@ func ParseMonitorMetricQuery(params MonitorMetricQueryParams) (MonitorMetricQuer
 }
 
 func GetMonitorMetrics(ctx context.Context, query MonitorMetricQuery) (MonitorMetricResponse, error) {
+	client, err := newConfiguredPrometheusClient()
+	if err != nil {
+		return MonitorMetricResponse{}, err
+	}
+	return queryMonitorMetrics(ctx, client, query)
+}
+
+func newConfiguredPrometheusClient() (prometheusQuerier, error) {
 	address := strings.TrimSpace(conf.GetConfigString("prometheusAddress"))
 	if address == "" {
-		return MonitorMetricResponse{}, ErrPrometheusNotConfigured
+		return nil, ErrPrometheusNotConfigured
 	}
 	timeout := defaultPrometheusQueryTimeout
 	if configured := strings.TrimSpace(conf.GetConfigString("prometheusQueryTimeout")); configured != "" {
 		parsed, err := parseMonitorMetricDuration(configured)
 		if err != nil || parsed <= 0 {
-			return MonitorMetricResponse{}, fmt.Errorf("invalid prometheusQueryTimeout %q", configured)
+			return nil, fmt.Errorf("invalid prometheusQueryTimeout %q", configured)
 		}
 		timeout = parsed
 	}
 	client, err := prometheusapi.NewClient(address, timeout)
 	if err != nil {
-		return MonitorMetricResponse{}, err
+		return nil, err
 	}
-	return queryMonitorMetrics(ctx, client, query)
+	return client, nil
 }
 
 func queryMonitorMetrics(ctx context.Context, client prometheusQuerier, query MonitorMetricQuery) (MonitorMetricResponse, error) {
@@ -307,10 +328,17 @@ func queryMonitorMetrics(ctx context.Context, client prometheusQuerier, query Mo
 		return MonitorMetricResponse{}, err
 	}
 
+	response := monitorMetricResponseFromPromSeries(query, definition.unit, promSeries, func(labels map[string]string) string {
+		return monitorMetricObjectName(query.Scope, labels)
+	})
+	return response, nil
+}
+
+func monitorMetricResponseFromPromSeries(query MonitorMetricQuery, unit string, promSeries []prometheusapi.Series, objectName func(map[string]string) string) MonitorMetricResponse {
 	response := MonitorMetricResponse{
 		Scope:  query.Scope,
 		Metric: query.Metric,
-		Unit:   definition.unit,
+		Unit:   unit,
 		Series: []MonitorMetricSeries{},
 	}
 	if query.IsRange {
@@ -328,7 +356,7 @@ func queryMonitorMetrics(ctx context.Context, client prometheusQuerier, query Mo
 		}
 		metricSeries := MonitorMetricSeries{
 			Metric:     query.Metric,
-			Object:     monitorMetricObjectName(query.Scope, labels),
+			Object:     objectName(labels),
 			Labels:     labels,
 			Timestamps: make([]float64, 0, len(series.Samples)),
 			Values:     make([]float64, 0, len(series.Samples)),
@@ -339,7 +367,10 @@ func queryMonitorMetrics(ctx context.Context, client prometheusQuerier, query Mo
 		}
 		response.Series = append(response.Series, metricSeries)
 	}
-	return response, nil
+	sort.SliceStable(response.Series, func(i, j int) bool {
+		return response.Series[i].Object < response.Series[j].Object
+	})
+	return response
 }
 
 func monitorMetricObjectName(scope string, labels map[string]string) string {
@@ -374,6 +405,9 @@ func monitorMetricRateWindow(query MonitorMetricQuery) string {
 	window := 5 * time.Minute
 	if query.IsRange && query.Step*4 > window {
 		window = query.Step * 4
+	}
+	if window > maxMonitorMetricRateWindow {
+		window = maxMonitorMetricRateWindow
 	}
 	return formatPrometheusDuration(window)
 }

@@ -1,4 +1,5 @@
 import React from "react";
+import {Link} from "react-router-dom";
 import {
   Alert, Button, Drawer, Form, Input, Modal, Popconfirm, Select, Space, Table, Tag, Tooltip
 } from "antd";
@@ -10,6 +11,7 @@ import DockerHubModal from "./DockerHubModal";
 import PodLogsDrawer from "./PodLogsDrawer";
 import PodTerminalDrawer from "./PodTerminalDrawer";
 import PodFilesDrawer from "./PodFilesDrawer";
+import {resourcePath} from "./resourceRoutes";
 
 const phaseColor = {
   Running: "green",
@@ -227,14 +229,14 @@ class PodListPage extends React.Component {
 
     const columns = [
       {title: "Namespace", dataIndex: "namespace", key: "namespace", width: 140},
-      {title: "Name", dataIndex: "name", key: "name"},
+      {title: "Name", dataIndex: "name", key: "name", render: (name, record) => <Link to={resourcePath("pod", record.namespace, name)}>{name}</Link>},
       {title: "Image", dataIndex: "image", key: "image"},
       {
         title: "Node",
         dataIndex: "nodeName",
         key: "nodeName",
         width: 160,
-        render: v => v || <span style={{color: "#999"}}>—</span>,
+        render: v => v ? <Link to={resourcePath("node", "", v)}>{v}</Link> : <span style={{color: "#999"}}>—</span>,
       },
       {
         title: "Phase",

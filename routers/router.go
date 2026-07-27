@@ -76,6 +76,13 @@ func InitAPI() {
 	beego.Router("/api/get-metrics", &controllers.ApiController{}, "GET:GetMetrics")
 	beego.Router("/api/get-monitor-overview", &controllers.ApiController{}, "GET:GetMonitorOverview")
 	beego.Router("/api/get-monitor-metrics", &controllers.ApiController{}, "GET:GetMonitorMetrics")
+	beego.Router("/api/get-node-monitor-overview", &controllers.ApiController{}, "GET:GetNodeMonitorOverview")
+	beego.Router("/api/get-pod-monitor-overview", &controllers.ApiController{}, "GET:GetPodMonitorOverview")
+	beego.Router("/api/get-workload-monitor-overview", &controllers.ApiController{}, "GET:GetWorkloadMonitorOverview")
+	beego.Router("/api/get-pvc-monitor-overview", &controllers.ApiController{}, "GET:GetPVCMonitorOverview")
+	beego.Router("/api/get-monitor-top", &controllers.ApiController{}, "GET:GetMonitorTop")
+	beego.Router("/api/get-monitor-resource-inventory", &controllers.ApiController{}, "GET:GetMonitorResourceInventory")
+	beego.Router("/api/get-monitor-resource-events", &controllers.ApiController{}, "GET:GetMonitorResourceEvents")
 	beego.Router("/api/get-monitor-summary", &controllers.ApiController{}, "GET:GetMonitorSummary")
 	beego.Router("/api/get-monitor-checks", &controllers.ApiController{}, "GET:GetMonitorChecks")
 	beego.Router("/api/get-monitor-events", &controllers.ApiController{}, "GET:GetMonitorEvents")
@@ -114,6 +121,7 @@ func InitAPI() {
 	beego.Router("/api/delete-secret", &controllers.ApiController{}, "POST:DeleteSecret")
 
 	beego.Router("/api/get-pvcs", &controllers.ApiController{}, "GET:GetPersistentVolumeClaims")
+	beego.Router("/api/get-pvc", &controllers.ApiController{}, "GET:GetPersistentVolumeClaim")
 	beego.Router("/api/add-pvc", &controllers.ApiController{}, "POST:AddPersistentVolumeClaim")
 	beego.Router("/api/delete-pvc", &controllers.ApiController{}, "POST:DeletePersistentVolumeClaim")
 

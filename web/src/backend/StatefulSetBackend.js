@@ -8,6 +8,15 @@ export function getStatefulSets(namespace = "") {
   }).then(res => res.json());
 }
 
+export function getStatefulSet(namespace, name) {
+  const params = new URLSearchParams({namespace, name});
+  return fetch(`${Setting.ServerUrl}/api/get-statefulset?${params}`, {
+    method: "GET",
+    credentials: "include",
+    headers: {"Accept-Language": Setting.getAcceptLanguage()},
+  }).then(res => res.json());
+}
+
 export function addStatefulSet(statefulset) {
   return fetch(`${Setting.ServerUrl}/api/add-statefulset`, {
     method: "POST",
