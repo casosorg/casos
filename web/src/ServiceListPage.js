@@ -238,17 +238,28 @@ class ServiceListPage extends React.Component {
         title: "Access URL",
         key: "accessUrl",
         render: (_, record) => {
-          if (record.type !== "NodePort" || !nodeIP) {
+          if (record.type !== "NodePort" && record.type !== "LoadBalancer") {
             return null;
           }
-          return (record.ports ?? []).filter(p => p.nodePort).map((p, i) => {
-            const url = `http://${nodeIP}:${p.nodePort}`;
-            return (
-              <a key={i} href={url} target="_blank" rel="noopener noreferrer" style={{display: "block"}}>
+          const loadBalancerAddresses = record.loadBalancerAddresses ?? [];
+          const ports = record.type === "LoadBalancer"
+            ? (record.ports ?? []).filter(p => p.port)
+            : (record.ports ?? []).filter(p => p.nodePort);
+          const addresses = record.type === "LoadBalancer" ? loadBalancerAddresses : (nodeIP ? [nodeIP] : []);
+          const links = [];
+          addresses.forEach(address => ports.forEach((p, i) => {
+            const port = record.type === "LoadBalancer" ? p.port : p.nodePort;
+            const host = address.includes(":") ? `[${address}]` : address;
+            const portName = String(p.name ?? "").toLowerCase();
+            const scheme = p.port === 443 || portName.includes("https") || portName.includes("websecure") ? "https" : "http";
+            const url = `${scheme}://${host}:${port}`;
+            links.push(
+              <a key={`${address}-${i}`} href={url} target="_blank" rel="noopener noreferrer" style={{display: "block"}}>
                 {url}
               </a>
             );
-          });
+          }));
+          return links;
         },
       },
       {title: "Created", dataIndex: "createdAt", key: "createdAt", width: 180},
@@ -321,6 +332,18 @@ class ServiceListPage extends React.Component {
             </Form.Item>
             <Form.Item label="Type" name="type" rules={[{required: true, message: "Required"}]}>
               <Select options={SERVICE_TYPES.map(t => ({label: t, value: t}))} />
+            </Form.Item>
+
+            <Form.Item noStyle shouldUpdate={(previous, current) => previous.type !== current.type}>
+              {({getFieldValue}) => getFieldValue("type") === "LoadBalancer" ? (
+                <Alert
+                  type="warning"
+                  showIcon
+                  message="LoadBalancer ports must be free on worker nodes"
+                  description="Traefik reserves host ports 80 and 443. Another LoadBalancer Service using the same host port cannot be scheduled on those workers; use ClusterIP behind Ingress for shared HTTP or HTTPS access."
+                  style={{marginBottom: 16}}
+                />
+              ) : null}
             </Form.Item>
 
             {/* Ports */}

@@ -153,13 +153,24 @@ class DeploymentListPage extends React.Component {
     const {services, ingresses, nodeIP} = this.state;
     const urls = [];
 
-    if (nodeIP) {
-      const svc = services.find(s => s.name === deploy.name && s.namespace === deploy.namespace && s.type === "NodePort");
-      if (svc) {
-        (svc.ports ?? []).filter(p => p.nodePort).forEach(p => {
-          urls.push({url: `http://${nodeIP}:${p.nodePort}`, type: "nodeport"});
-        });
+    const svc = services.find(s => s.name === deploy.name && s.namespace === deploy.namespace && (s.type === "NodePort" || s.type === "LoadBalancer"));
+    if (svc) {
+      let addresses;
+      if (svc.type === "LoadBalancer") {
+        addresses = svc.loadBalancerAddresses ?? [];
+      } else {
+        addresses = nodeIP ? [nodeIP] : [];
       }
+      const ports = svc.type === "LoadBalancer"
+        ? (svc.ports ?? []).filter(p => p.port)
+        : (svc.ports ?? []).filter(p => p.nodePort);
+      addresses.forEach(address => ports.forEach(p => {
+        const port = svc.type === "LoadBalancer" ? p.port : p.nodePort;
+        const host = address.includes(":") ? `[${address}]` : address;
+        const portName = String(p.name ?? "").toLowerCase();
+        const scheme = p.port === 443 || portName.includes("https") || portName.includes("websecure") ? "https" : "http";
+        urls.push({url: `${scheme}://${host}:${port}`, type: svc.type === "LoadBalancer" ? "loadbalancer" : "nodeport"});
+      }));
     }
 
     const deployServiceNames = new Set(
@@ -173,9 +184,19 @@ class DeploymentListPage extends React.Component {
       .filter(ing => ing.namespace === deploy.namespace)
       .forEach(ing => {
         (ing.rules ?? []).forEach(rule => {
-          if (deployServiceNames.has(rule.serviceName) && rule.host) {
-            const path = rule.path && rule.path !== "/" ? rule.path : "";
-            urls.push({url: `http://${rule.host}${path}`, type: "domain"});
+          if (!deployServiceNames.has(rule.serviceName)) {
+            return;
+          }
+          const path = rule.path && rule.path !== "/" ? rule.path : "";
+          const scheme = ing.tlsEnabled ? "https" : "http";
+          if (rule.host) {
+            urls.push({url: `${scheme}://${rule.host}${path}`, type: "domain"});
+          } else {
+            const publishedAddresses = ing.loadBalancerAddresses ?? [];
+            publishedAddresses.forEach(address => {
+              const host = address.includes(":") ? `[${address}]` : address;
+              urls.push({url: `${scheme}://${host}${path}`, type: "ingress"});
+            });
           }
         });
       });

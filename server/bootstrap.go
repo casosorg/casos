@@ -16,8 +16,8 @@ import (
 	"k8s.io/client-go/rest"
 )
 
-// Bootstrap creates cluster-wide resources required for worker-node components
-// to function correctly. It is idempotent — safe to call on every startup.
+// Bootstrap creates CasOS-managed cluster add-ons. It is idempotent and safe
+// to call on every startup; individual add-ons can be disabled in config.
 func Bootstrap(ctx context.Context, cfg *rest.Config, srvCfg Config) error {
 	client, err := kubernetes.NewForConfig(cfg)
 	if err != nil {
@@ -32,6 +32,14 @@ func Bootstrap(ctx context.Context, cfg *rest.Config, srvCfg Config) error {
 	errs = append(errs, ensureNodeProxierBinding(ctx, client))
 	errs = append(errs, ensureFlannel(ctx, client, srvCfg))
 	errs = append(errs, ensureClusterDNS(ctx, client, srvCfg))
+	if srvCfg.IngressControllerEnabled {
+		errs = append(errs, ensureIngressController(ctx, client, srvCfg))
+	} else {
+		errs = append(errs, cleanupIngressController(ctx, client))
+	}
+	if !srvCfg.ServiceLBEnabled {
+		errs = append(errs, cleanupServiceLB(ctx, client))
+	}
 	if srvCfg.StorageProvisionerEnabled {
 		errs = append(errs, ensureDefaultStorageProvisioner(ctx, client, srvCfg))
 	}

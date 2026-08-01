@@ -20,6 +20,7 @@ export default function HelmInstallModal({open, chart, onClose, onInstalled}) {
   const [form] = Form.useForm();
   const [namespaces, setNamespaces] = useState([]);
   const [valuesYAML, setValuesYAML] = useState("");
+  const [valuesBaselineYAML, setValuesBaselineYAML] = useState("");
   const [valuesLoading, setValuesLoading] = useState(false);
   const [installing, setInstalling] = useState(false);
   const [pollingPaused, setPollingPaused] = useState(false);
@@ -192,11 +193,14 @@ export default function HelmInstallModal({open, chart, onClose, onInstalled}) {
     if (chart.chartName && chart.repoURL) {
       setValuesLoading(true);
       setValuesYAML("");
+      setValuesBaselineYAML("");
       HelmBackend.getHelmChartValues(chart.chartName, chart.repoURL, chart.version ?? "")
         .then(res => {
           if (!mountedRef.current) {return;}
           if (res.status === "ok") {
-            setValuesYAML(res.data ?? "");
+            const initialValues = res.data ?? "";
+            setValuesYAML(initialValues);
+            setValuesBaselineYAML(initialValues);
           } else {
             setError(res.msg);
           }
@@ -234,6 +238,7 @@ export default function HelmInstallModal({open, chart, onClose, onInstalled}) {
     submittingRef.current = false;
     form.resetFields();
     setValuesYAML("");
+    setValuesBaselineYAML("");
     setError(null);
     setStorageWarning(null);
     setLogs([]);
@@ -269,6 +274,7 @@ export default function HelmInstallModal({open, chart, onClose, onInstalled}) {
           repoURL: chart.repoURL,
           version: values.version || chart.version,
           valuesYAML,
+          valuesBaselineYAML,
         },
         line => {
           if (!mountedRef.current) {return;}

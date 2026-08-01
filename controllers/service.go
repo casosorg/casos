@@ -20,14 +20,15 @@ type portSummary struct {
 }
 
 type serviceSummary struct {
-	Namespace       string            `json:"namespace"`
-	Name            string            `json:"name"`
-	Type            string            `json:"type"`
-	ClusterIP       string            `json:"clusterIP"`
-	Selector        map[string]string `json:"selector"`
-	Ports           []portSummary     `json:"ports"`
-	CreatedAt       string            `json:"createdAt"`
-	ResourceVersion string            `json:"resourceVersion"`
+	Namespace             string            `json:"namespace"`
+	Name                  string            `json:"name"`
+	Type                  string            `json:"type"`
+	ClusterIP             string            `json:"clusterIP"`
+	Selector              map[string]string `json:"selector"`
+	Ports                 []portSummary     `json:"ports"`
+	LoadBalancerAddresses []string          `json:"loadBalancerAddresses,omitempty"`
+	CreatedAt             string            `json:"createdAt"`
+	ResourceVersion       string            `json:"resourceVersion"`
 }
 
 func toSvcSummary(svc corev1.Service) serviceSummary {
@@ -41,15 +42,24 @@ func toSvcSummary(svc corev1.Service) serviceSummary {
 			NodePort:   p.NodePort,
 		})
 	}
+	loadBalancerAddresses := make([]string, 0, len(svc.Status.LoadBalancer.Ingress))
+	for _, ingress := range svc.Status.LoadBalancer.Ingress {
+		if ingress.IP != "" {
+			loadBalancerAddresses = append(loadBalancerAddresses, ingress.IP)
+		} else if ingress.Hostname != "" {
+			loadBalancerAddresses = append(loadBalancerAddresses, ingress.Hostname)
+		}
+	}
 	return serviceSummary{
-		Namespace:       svc.Namespace,
-		Name:            svc.Name,
-		Type:            string(svc.Spec.Type),
-		ClusterIP:       svc.Spec.ClusterIP,
-		Selector:        svc.Spec.Selector,
-		Ports:           ports,
-		CreatedAt:       svc.CreationTimestamp.UTC().Format("2006-01-02 15:04:05"),
-		ResourceVersion: svc.ResourceVersion,
+		Namespace:             svc.Namespace,
+		Name:                  svc.Name,
+		Type:                  string(svc.Spec.Type),
+		ClusterIP:             svc.Spec.ClusterIP,
+		Selector:              svc.Spec.Selector,
+		Ports:                 ports,
+		LoadBalancerAddresses: loadBalancerAddresses,
+		CreatedAt:             svc.CreationTimestamp.UTC().Format("2006-01-02 15:04:05"),
+		ResourceVersion:       svc.ResourceVersion,
 	}
 }
 

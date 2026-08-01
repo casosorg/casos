@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/casosorg/casos/conf"
+	"github.com/sirupsen/logrus"
 )
 
 // Config holds control-plane settings populated from app.conf.
@@ -22,8 +23,12 @@ type Config struct {
 	LocalPathHelperImage      string             // helper pod image used by local-path-provisioner
 	FlannelImage              string             // Flannel daemon image used by the built-in network bootstrap
 	FlannelCNIPluginImage     string             // Flannel CNI plugin image installed on worker hosts
+	IngressControllerImage    string             // Traefik image used by the built-in Ingress controller
+	ServiceLBImage            string             // hostPort proxy image used by the built-in ServiceLB
 	StorageProvisionerEnabled bool               // install the built-in local-path provisioner for local clusters
 	RegistryMirrorMode        RegistryMirrorMode // imageRegistryMirror mode, evaluated on each target worker
+	IngressControllerEnabled  bool               // install the built-in Traefik controller
+	ServiceLBEnabled          bool               // run the built-in bare-metal LoadBalancer controller
 }
 
 // ConfigFromAppConf reads server config from the beego app.conf.
@@ -56,13 +61,15 @@ func ConfigFromAppConf() (Config, error) {
 	localPathHelperImage := conf.GetConfigStringDefault("localPathHelperImage", "docker.io/library/busybox:1.37.0")
 	flannelImage := conf.GetConfigStringDefault("flannelImage", defaultFlannelImage)
 	flannelCNIPluginImage := conf.GetConfigStringDefault("flannelCNIPluginImage", defaultFlannelCNIPluginImage)
-
 	registryMirrorMode, err := resolveRegistryMirrorMode()
 	if err != nil {
 		return Config{}, err
 	}
-
-	return Config{
+	ingressControllerEnabled := conf.GetConfigBoolDefault("ingressControllerEnabled", false)
+	serviceLBEnabled := conf.GetConfigBoolDefault("serviceLBEnabled", false)
+	ingressControllerImage := conf.GetConfigStringDefault("ingressControllerImage", defaultIngressControllerImage)
+	serviceLBImage := conf.GetConfigStringDefault("serviceLBImage", defaultServiceLBImage)
+	config := Config{
 		DataDir:                   dataDir,
 		ApiserverBind:             bind,
 		AdvertiseAddress:          advertise,
@@ -75,9 +82,22 @@ func ConfigFromAppConf() (Config, error) {
 		LocalPathHelperImage:      localPathHelperImage,
 		FlannelImage:              flannelImage,
 		FlannelCNIPluginImage:     flannelCNIPluginImage,
+		IngressControllerImage:    ingressControllerImage,
+		ServiceLBImage:            serviceLBImage,
 		StorageProvisionerEnabled: storageProvisionerEnabled,
 		RegistryMirrorMode:        registryMirrorMode,
-	}, nil
+		IngressControllerEnabled:  ingressControllerEnabled,
+		ServiceLBEnabled:          serviceLBEnabled,
+	}
+	normalizeApplicationAccessConfig(&config)
+	return config, nil
+}
+
+func normalizeApplicationAccessConfig(config *Config) {
+	if config != nil && config.IngressControllerEnabled && !config.ServiceLBEnabled {
+		logrus.Warn("ingressControllerEnabled requires serviceLBEnabled; disabling the built-in Ingress controller")
+		config.IngressControllerEnabled = false
+	}
 }
 
 // injectDBName inserts dbName into a MySQL DSN of the form

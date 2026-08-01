@@ -1205,6 +1205,14 @@ func GetHelmReleases(cfg *rest.Config, namespace string) ([]HelmReleaseSummary, 
 }
 
 func InstallHelmChart(cfg *rest.Config, releaseName, namespace, chartName, repoURL, version, valuesYAML string) error {
+	return installHelmChart(cfg, releaseName, namespace, chartName, repoURL, version, valuesYAML, "")
+}
+
+func InstallHelmChartWithValuesBaseline(cfg *rest.Config, releaseName, namespace, chartName, repoURL, version, valuesYAML, valuesBaselineYAML string) error {
+	return installHelmChart(cfg, releaseName, namespace, chartName, repoURL, version, valuesYAML, valuesBaselineYAML)
+}
+
+func installHelmChart(cfg *rest.Config, releaseName, namespace, chartName, repoURL, version, valuesYAML, valuesBaselineYAML string) error {
 	actionConfig, err := newHelmConfig(cfg, namespace)
 	if err != nil {
 		return err
@@ -1213,9 +1221,20 @@ func InstallHelmChart(cfg *rest.Config, releaseName, namespace, chartName, repoU
 	if err != nil {
 		return err
 	}
+	valuesYAML, inputIsOverrides, err := getHelmValueOverrides(valuesYAML, valuesBaselineYAML)
+	if err != nil {
+		return err
+	}
 	vals, err := parseValues(valuesYAML)
 	if err != nil {
 		return err
+	}
+	vals, adjustments, err := prepareHelmInstallValuesWithMode(ch, repoURL, vals, inputIsOverrides)
+	if err != nil {
+		return err
+	}
+	for _, warning := range adjustments.warnings() {
+		logrus.Warn(warning)
 	}
 
 	attachHelmCapabilities(actionConfig, cfg, namespace, helmWarningLog)
@@ -1252,6 +1271,14 @@ type HelmInstallLifecycle interface {
 // request. Lifecycle persistence is supplied by the caller so store remains
 // independent of the database layer.
 func InstallHelmChartStream(ctx context.Context, lifecycle HelmInstallLifecycle, cfg *rest.Config, releaseName, namespace, chartName, repoURL, version, valuesYAML string) <-chan string {
+	return installHelmChartStream(ctx, lifecycle, cfg, releaseName, namespace, chartName, repoURL, version, valuesYAML, "")
+}
+
+func InstallHelmChartStreamWithValuesBaseline(ctx context.Context, lifecycle HelmInstallLifecycle, cfg *rest.Config, releaseName, namespace, chartName, repoURL, version, valuesYAML, valuesBaselineYAML string) <-chan string {
+	return installHelmChartStream(ctx, lifecycle, cfg, releaseName, namespace, chartName, repoURL, version, valuesYAML, valuesBaselineYAML)
+}
+
+func installHelmChartStream(ctx context.Context, lifecycle HelmInstallLifecycle, cfg *rest.Config, releaseName, namespace, chartName, repoURL, version, valuesYAML, valuesBaselineYAML string) <-chan string {
 	logCh := make(chan string, 64)
 	if lifecycle == nil {
 		logCh <- "ERROR: Helm install lifecycle is required"
@@ -1302,6 +1329,14 @@ func InstallHelmChartStream(ctx context.Context, lifecycle HelmInstallLifecycle,
 			}
 			return
 		}
+		valuesYAML, inputIsOverrides, err := getHelmValueOverrides(valuesYAML, valuesBaselineYAML)
+		if err != nil {
+			send("ERROR: " + err.Error())
+			if finishErr := lifecycle.Finish(err); finishErr != nil {
+				logrus.Errorf("failed to finish Helm operation after value override parsing error: %v", finishErr)
+			}
+			return
+		}
 		vals, err := parseValues(valuesYAML)
 		if err != nil {
 			send("ERROR: " + err.Error())
@@ -1309,6 +1344,17 @@ func InstallHelmChartStream(ctx context.Context, lifecycle HelmInstallLifecycle,
 				logrus.Errorf("failed to finish Helm operation after values parsing error: %v", finishErr)
 			}
 			return
+		}
+		vals, adjustments, err := prepareHelmInstallValuesWithMode(helmChart, repoURL, vals, inputIsOverrides)
+		if err != nil {
+			send("ERROR: " + err.Error())
+			if finishErr := lifecycle.Finish(err); finishErr != nil {
+				logrus.Errorf("failed to finish Helm operation after values preparation error: %v", finishErr)
+			}
+			return
+		}
+		for _, warning := range adjustments.warnings() {
+			send("WARNING: " + warning)
 		}
 		attachHelmCapabilities(actionConfig, cfg, namespace, logFn)
 		if err := validateHelmChartCompatibility(installCtx, cfg, actionConfig, releaseName, namespace, helmChart, vals); err != nil {
@@ -1361,6 +1407,14 @@ func InstallHelmChartStream(ctx context.Context, lifecycle HelmInstallLifecycle,
 }
 
 func UpgradeHelmRelease(cfg *rest.Config, releaseName, namespace, chartName, repoURL, version, valuesYAML string) error {
+	return upgradeHelmRelease(cfg, releaseName, namespace, chartName, repoURL, version, valuesYAML, "")
+}
+
+func UpgradeHelmReleaseWithValuesBaseline(cfg *rest.Config, releaseName, namespace, chartName, repoURL, version, valuesYAML, valuesBaselineYAML string) error {
+	return upgradeHelmRelease(cfg, releaseName, namespace, chartName, repoURL, version, valuesYAML, valuesBaselineYAML)
+}
+
+func upgradeHelmRelease(cfg *rest.Config, releaseName, namespace, chartName, repoURL, version, valuesYAML, valuesBaselineYAML string) error {
 	actionConfig, err := newHelmConfig(cfg, namespace)
 	if err != nil {
 		return err
@@ -1369,9 +1423,20 @@ func UpgradeHelmRelease(cfg *rest.Config, releaseName, namespace, chartName, rep
 	if err != nil {
 		return err
 	}
+	valuesYAML, inputIsOverrides, err := getHelmValueOverrides(valuesYAML, valuesBaselineYAML)
+	if err != nil {
+		return err
+	}
 	vals, err := parseValues(valuesYAML)
 	if err != nil {
 		return err
+	}
+	vals, adjustments, err := prepareHelmInstallValuesWithMode(ch, repoURL, vals, inputIsOverrides)
+	if err != nil {
+		return err
+	}
+	for _, warning := range adjustments.warnings() {
+		logrus.Warn(warning)
 	}
 
 	attachHelmCapabilities(actionConfig, cfg, namespace, helmWarningLog)
@@ -1459,20 +1524,4 @@ func GetHelmReleaseHistory(cfg *rest.Config, releaseName, namespace string) ([]H
 		})
 	}
 	return result, nil
-}
-
-// GetHelmChartDefaultValues downloads a chart and returns its default values.yaml content.
-func GetHelmChartDefaultValues(chartName, repoURL, version string) (string, error) {
-	ch, err := loadChart(chartName, repoURL, version)
-	if err != nil {
-		return "", err
-	}
-	if ch.Values == nil {
-		return "", nil
-	}
-	data, err := yaml.Marshal(ch.Values)
-	if err != nil {
-		return "", err
-	}
-	return string(data), nil
 }

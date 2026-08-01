@@ -144,7 +144,7 @@ func (c *ApiController) GetRepoCharts() {
 
 // ---------- Chart values (via store/Helm SDK) ----------
 
-// GetHelmChartValues fetches the default values.yaml for a chart.
+// GetHelmChartValues fetches the values.yaml shown in the App Store install dialog.
 // @router /api/get-helm-chart-values [get]
 func (c *ApiController) GetHelmChartValues() {
 	if c.RequireSignedIn() {
@@ -157,7 +157,7 @@ func (c *ApiController) GetHelmChartValues() {
 		c.ResponseError("chart and repo are required")
 		return
 	}
-	values, err := store.GetHelmChartDefaultValues(chartName, repoURL, version)
+	values, err := store.GetHelmChartInstallValues(chartName, repoURL, version)
 	if err != nil {
 		c.ResponseError(err.Error())
 		return
@@ -188,12 +188,13 @@ func (c *ApiController) GetHelmReleases() {
 }
 
 type helmInstallReq struct {
-	ReleaseName string `json:"releaseName"`
-	Namespace   string `json:"namespace"`
-	ChartName   string `json:"chartName"`
-	RepoURL     string `json:"repoURL"`
-	Version     string `json:"version"`
-	ValuesYAML  string `json:"valuesYAML"`
+	ReleaseName        string `json:"releaseName"`
+	Namespace          string `json:"namespace"`
+	ChartName          string `json:"chartName"`
+	RepoURL            string `json:"repoURL"`
+	Version            string `json:"version"`
+	ValuesYAML         string `json:"valuesYAML"`
+	ValuesBaselineYAML string `json:"valuesBaselineYAML"`
 }
 
 // InstallHelmChart installs a new Helm release.
@@ -212,7 +213,7 @@ func (c *ApiController) InstallHelmChart() {
 		c.ResponseError(err.Error())
 		return
 	}
-	if err := store.InstallHelmChart(cfg, req.ReleaseName, req.Namespace, req.ChartName, req.RepoURL, req.Version, req.ValuesYAML); err != nil {
+	if err := store.InstallHelmChartWithValuesBaseline(cfg, req.ReleaseName, req.Namespace, req.ChartName, req.RepoURL, req.Version, req.ValuesYAML, req.ValuesBaselineYAML); err != nil {
 		c.ResponseError(err.Error())
 		return
 	}
@@ -285,7 +286,7 @@ func (c *ApiController) InstallHelmChartStream() {
 		return
 	}
 	recorder := object.NewHelmOperationRecorder(task.Id)
-	logCh := store.InstallHelmChartStream(ctx, recorder, cfg, req.ReleaseName, req.Namespace, req.ChartName, req.RepoURL, req.Version, req.ValuesYAML)
+	logCh := store.InstallHelmChartStreamWithValuesBaseline(ctx, recorder, cfg, req.ReleaseName, req.Namespace, req.ChartName, req.RepoURL, req.Version, req.ValuesYAML, req.ValuesBaselineYAML)
 	for line := range logCh {
 		if _, err := fmt.Fprintf(w, "data: %s\n\n", line); err != nil {
 			break
@@ -369,7 +370,7 @@ func (c *ApiController) UpgradeHelmRelease() {
 		c.ResponseError(err.Error())
 		return
 	}
-	if err := store.UpgradeHelmRelease(cfg, req.ReleaseName, req.Namespace, req.ChartName, req.RepoURL, req.Version, req.ValuesYAML); err != nil {
+	if err := store.UpgradeHelmReleaseWithValuesBaseline(cfg, req.ReleaseName, req.Namespace, req.ChartName, req.RepoURL, req.Version, req.ValuesYAML, req.ValuesBaselineYAML); err != nil {
 		c.ResponseError(err.Error())
 		return
 	}

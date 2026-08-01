@@ -391,7 +391,18 @@ func hashConfigData(data map[string]string) string {
 	return fmt.Sprintf("%x", sum[:])
 }
 
-func createOrUpdateServiceAccount(ctx context.Context, client kubernetes.Interface, sa *corev1.ServiceAccount) error {
+type existingObjectValidator func(metav1.Object) error
+
+func validateExistingObject(object metav1.Object, validators []existingObjectValidator) error {
+	for _, validator := range validators {
+		if err := validator(object); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func createOrUpdateServiceAccount(ctx context.Context, client kubernetes.Interface, sa *corev1.ServiceAccount, validators ...existingObjectValidator) error {
 	current, err := client.CoreV1().ServiceAccounts(sa.Namespace).Get(ctx, sa.Name, metav1.GetOptions{})
 	if apierrors.IsNotFound(err) {
 		_, err = client.CoreV1().ServiceAccounts(sa.Namespace).Create(ctx, sa, metav1.CreateOptions{})
@@ -402,6 +413,9 @@ func createOrUpdateServiceAccount(ctx context.Context, client kubernetes.Interfa
 	}
 	if err != nil {
 		return fmt.Errorf("get serviceaccount %s/%s: %w", sa.Namespace, sa.Name, err)
+	}
+	if err := validateExistingObject(current, validators); err != nil {
+		return fmt.Errorf("validate serviceaccount %s/%s: %w", sa.Namespace, sa.Name, err)
 	}
 	sa.Labels = mergeStringMap(current.Labels, sa.Labels)
 	sa.Annotations = mergeStringMap(current.Annotations, sa.Annotations)
@@ -415,7 +429,7 @@ func createOrUpdateServiceAccount(ctx context.Context, client kubernetes.Interfa
 	return nil
 }
 
-func createOrUpdateClusterRole(ctx context.Context, client kubernetes.Interface, role *rbacv1.ClusterRole) error {
+func createOrUpdateClusterRole(ctx context.Context, client kubernetes.Interface, role *rbacv1.ClusterRole, validators ...existingObjectValidator) error {
 	current, err := client.RbacV1().ClusterRoles().Get(ctx, role.Name, metav1.GetOptions{})
 	if apierrors.IsNotFound(err) {
 		_, err = client.RbacV1().ClusterRoles().Create(ctx, role, metav1.CreateOptions{})
@@ -427,6 +441,9 @@ func createOrUpdateClusterRole(ctx context.Context, client kubernetes.Interface,
 	if err != nil {
 		return fmt.Errorf("get clusterrole %s: %w", role.Name, err)
 	}
+	if err := validateExistingObject(current, validators); err != nil {
+		return fmt.Errorf("validate clusterrole %s: %w", role.Name, err)
+	}
 	role.Labels = mergeStringMap(current.Labels, role.Labels)
 	role.Annotations = mergeStringMap(current.Annotations, role.Annotations)
 	role.ResourceVersion = current.ResourceVersion
@@ -436,7 +453,7 @@ func createOrUpdateClusterRole(ctx context.Context, client kubernetes.Interface,
 	return nil
 }
 
-func createOrUpdateClusterRoleBinding(ctx context.Context, client kubernetes.Interface, binding *rbacv1.ClusterRoleBinding) error {
+func createOrUpdateClusterRoleBinding(ctx context.Context, client kubernetes.Interface, binding *rbacv1.ClusterRoleBinding, validators ...existingObjectValidator) error {
 	current, err := client.RbacV1().ClusterRoleBindings().Get(ctx, binding.Name, metav1.GetOptions{})
 	if apierrors.IsNotFound(err) {
 		_, err = client.RbacV1().ClusterRoleBindings().Create(ctx, binding, metav1.CreateOptions{})
@@ -447,6 +464,9 @@ func createOrUpdateClusterRoleBinding(ctx context.Context, client kubernetes.Int
 	}
 	if err != nil {
 		return fmt.Errorf("get clusterrolebinding %s: %w", binding.Name, err)
+	}
+	if err := validateExistingObject(current, validators); err != nil {
+		return fmt.Errorf("validate clusterrolebinding %s: %w", binding.Name, err)
 	}
 	binding.Labels = mergeStringMap(current.Labels, binding.Labels)
 	binding.Annotations = mergeStringMap(current.Annotations, binding.Annotations)
@@ -478,7 +498,7 @@ func createOrUpdateConfigMap(ctx context.Context, client kubernetes.Interface, c
 	return nil
 }
 
-func createOrUpdateDeployment(ctx context.Context, client kubernetes.Interface, deployment *appsv1.Deployment) error {
+func createOrUpdateDeployment(ctx context.Context, client kubernetes.Interface, deployment *appsv1.Deployment, validators ...existingObjectValidator) error {
 	current, err := client.AppsV1().Deployments(deployment.Namespace).Get(ctx, deployment.Name, metav1.GetOptions{})
 	if apierrors.IsNotFound(err) {
 		_, err = client.AppsV1().Deployments(deployment.Namespace).Create(ctx, deployment, metav1.CreateOptions{})
@@ -489,6 +509,9 @@ func createOrUpdateDeployment(ctx context.Context, client kubernetes.Interface, 
 	}
 	if err != nil {
 		return fmt.Errorf("get deployment %s/%s: %w", deployment.Namespace, deployment.Name, err)
+	}
+	if err := validateExistingObject(current, validators); err != nil {
+		return fmt.Errorf("validate deployment %s/%s: %w", deployment.Namespace, deployment.Name, err)
 	}
 	deployment.Labels = mergeStringMap(current.Labels, deployment.Labels)
 	deployment.Annotations = mergeStringMap(current.Annotations, deployment.Annotations)

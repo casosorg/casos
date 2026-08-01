@@ -67,6 +67,11 @@ func main() {
 			if err := server.Bootstrap(ctx, adminCfg, srvCfg); err != nil {
 				logs.Warning("bootstrap: %v", err)
 			}
+			if srvCfg.ServiceLBEnabled {
+				if err := server.StartServiceLB(ctx, adminCfg, srvCfg); err != nil {
+					logs.Warning("start service load balancer: %v", err)
+				}
+			}
 			if err := server.StartScheduler(ctx, srvCfg); err != nil {
 				logs.Warning("start scheduler: %v", err)
 			}

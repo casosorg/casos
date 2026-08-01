@@ -18,14 +18,15 @@ type ingressRule struct {
 }
 
 type ingressSummary struct {
-	Namespace       string        `json:"namespace"`
-	Name            string        `json:"name"`
-	IngressClass    string        `json:"ingressClass"`
-	Rules           []ingressRule `json:"rules"`
-	TLSEnabled      bool          `json:"tlsEnabled"`
-	TLSSecretName   string        `json:"tlsSecretName"`
-	CreatedAt       string        `json:"createdAt"`
-	ResourceVersion string        `json:"resourceVersion"`
+	Namespace             string        `json:"namespace"`
+	Name                  string        `json:"name"`
+	IngressClass          string        `json:"ingressClass"`
+	Rules                 []ingressRule `json:"rules"`
+	TLSEnabled            bool          `json:"tlsEnabled"`
+	TLSSecretName         string        `json:"tlsSecretName"`
+	LoadBalancerAddresses []string      `json:"loadBalancerAddresses,omitempty"`
+	CreatedAt             string        `json:"createdAt"`
+	ResourceVersion       string        `json:"resourceVersion"`
 }
 
 func toIngressSummary(ing networkingv1.Ingress) ingressSummary {
@@ -65,15 +66,24 @@ func toIngressSummary(ing networkingv1.Ingress) ingressSummary {
 	if tlsEnabled {
 		tlsSecretName = ing.Spec.TLS[0].SecretName
 	}
+	loadBalancerAddresses := make([]string, 0, len(ing.Status.LoadBalancer.Ingress))
+	for _, address := range ing.Status.LoadBalancer.Ingress {
+		if address.IP != "" {
+			loadBalancerAddresses = append(loadBalancerAddresses, address.IP)
+		} else if address.Hostname != "" {
+			loadBalancerAddresses = append(loadBalancerAddresses, address.Hostname)
+		}
+	}
 	return ingressSummary{
-		Namespace:       ing.Namespace,
-		Name:            ing.Name,
-		IngressClass:    cls,
-		Rules:           rules,
-		TLSEnabled:      tlsEnabled,
-		TLSSecretName:   tlsSecretName,
-		CreatedAt:       ing.CreationTimestamp.UTC().Format("2006-01-02 15:04:05"),
-		ResourceVersion: ing.ResourceVersion,
+		Namespace:             ing.Namespace,
+		Name:                  ing.Name,
+		IngressClass:          cls,
+		Rules:                 rules,
+		TLSEnabled:            tlsEnabled,
+		TLSSecretName:         tlsSecretName,
+		LoadBalancerAddresses: loadBalancerAddresses,
+		CreatedAt:             ing.CreationTimestamp.UTC().Format("2006-01-02 15:04:05"),
+		ResourceVersion:       ing.ResourceVersion,
 	}
 }
 
