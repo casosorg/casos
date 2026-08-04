@@ -1,15 +1,14 @@
 package proxy
 
 import (
-	"crypto/tls"
 	"net"
 	"net/http"
-	"strings"
+	"net/url"
 	"time"
 
 	"github.com/beego/beego/logs"
 	"github.com/casosorg/casos/conf"
-	"golang.org/x/net/proxy"
+	"golang.org/x/net/http/httpproxy"
 )
 
 var (
@@ -18,16 +17,27 @@ var (
 )
 
 func InitHttpClient() {
-	// not use proxy
-	DefaultHttpClient = http.DefaultClient
-
-	// use proxy
-	ProxyHttpClient = getProxyHttpClient()
+	policy, err := NewEgressPolicy(GetSocks5ProxyAddress(), httpproxy.FromEnvironment().NoProxy)
+	if err != nil {
+		logs.Error("Control-plane egress blocked by invalid proxy configuration: %v", err)
+		policy = &EgressPolicy{
+			proxyForURL: func(*url.URL) (*url.URL, error) {
+				return nil, err
+			},
+		}
+	}
+	client := policy.HTTPClient()
+	DefaultHttpClient = client
+	ProxyHttpClient = client
 }
 
 func isAddressOpen(address string) bool {
+	dialAddress, err := proxyDialAddress(address)
+	if err != nil {
+		return false
+	}
 	timeout := time.Millisecond * 100
-	conn, err := net.DialTimeout("tcp", address, timeout)
+	conn, err := net.DialTimeout("tcp", dialAddress, timeout)
 	if err != nil {
 		// cannot connect to address, proxy is not active
 		return false
@@ -35,33 +45,23 @@ func isAddressOpen(address string) bool {
 
 	if conn != nil {
 		defer conn.Close()
-		logs.Info("Socks5 proxy enabled: %s", address)
+		logs.Info("Socks5 proxy enabled: %s", RedactProxyAddress(address))
 		return true
 	}
 
 	return false
 }
 
-func getProxyHttpClient() *http.Client {
-	socks5Proxy := conf.GetConfigString("socks5Proxy")
-	if socks5Proxy == "" {
-		return &http.Client{}
-	}
-
-	if !isAddressOpen(socks5Proxy) {
-		return &http.Client{}
-	}
-
-	// https://stackoverflow.com/questions/33585587/creating-a-go-socks5-client
-	dialer, err := proxy.SOCKS5("tcp", socks5Proxy, nil, proxy.Direct)
+func proxyDialAddress(address string) (string, error) {
+	normalized, err := normalizeSocks5ProxyAddress(address)
 	if err != nil {
-		panic(err)
+		return "", err
 	}
-
-	tr := &http.Transport{Dial: dialer.Dial, TLSClientConfig: &tls.Config{InsecureSkipVerify: true}}
-	return &http.Client{
-		Transport: tr,
+	parsed, err := url.Parse(normalized)
+	if err != nil {
+		return "", invalidProxyAddressError(address)
 	}
+	return parsed.Host, nil
 }
 
 func GetSocks5ProxyAddress() string {
@@ -76,10 +76,6 @@ func GetActiveSocks5ProxyAddress() string {
 	return socks5Proxy
 }
 
-func GetHttpClient(url string) *http.Client {
-	if strings.Contains(url, "hub.docker.com") {
-		return ProxyHttpClient
-	} else {
-		return DefaultHttpClient
-	}
+func GetHttpClient(_ string) *http.Client {
+	return ProxyHttpClient
 }
