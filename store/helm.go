@@ -1319,6 +1319,9 @@ type HelmInstallLifecycle interface {
 	MarkInstalling() error
 	RecordLog(line string) error
 	Finish(installErr error) error
+	// Cancelled returns a channel closed when the task has been requested
+	// to cancel; the installer aborts the Helm run when it fires.
+	Cancelled() <-chan struct{}
 }
 
 const (
@@ -1460,8 +1463,22 @@ func installHelmChartStream(ctx context.Context, lifecycle HelmInstallLifecycle,
 		}
 		install := action.NewInstall(actionConfig)
 		configureHelmInstall(install, releaseName, namespace, installTimeout)
+		cancelWatcher := make(chan struct{})
+		go func() {
+			select {
+			case <-lifecycle.Cancelled():
+				cancelInstall()
+			case <-cancelWatcher:
+			}
+		}()
 		failedRelease, installErr := install.RunWithContext(installCtx, helmChart, vals)
+		close(cancelWatcher)
 		if installErr != nil {
+			if errors.Is(installErr, context.Canceled) {
+				sendLog("ABORTED: install cancelled by user")
+				_ = lifecycle.Finish(fmt.Errorf("install cancelled by user"))
+				return
+			}
 			err = finishFailedHelmInstall(
 				installErr,
 				func(installErr error) error {

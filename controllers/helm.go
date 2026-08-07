@@ -437,6 +437,35 @@ type helmUninstallReq struct {
 	Namespace   string `json:"namespace"`
 }
 
+// CancelHelmOperation requests cancellation of a running Helm operation task.
+// @router /api/cancel-helm-operation [post]
+func (c *ApiController) CancelHelmOperation() {
+	if c.RequireAdmin() {
+		return
+	}
+	var req struct {
+		TaskID int64 `json:"taskId"`
+	}
+	if err := json.Unmarshal(c.Ctx.Input.RequestBody, &req); err != nil {
+		c.ResponseError(err.Error())
+		return
+	}
+	if req.TaskID <= 0 {
+		c.ResponseError("invalid task id")
+		return
+	}
+	task, err := object.GetHelmOperationTaskForOwner(req.TaskID, helmOperationOwner(c))
+	if err != nil || task == nil {
+		c.ResponseError("Helm operation task not found")
+		return
+	}
+	if err := object.RequestHelmOperationCancel(req.TaskID); err != nil {
+		c.ResponseError(err.Error())
+		return
+	}
+	c.ResponseOk()
+}
+
 // UninstallHelmRelease removes a Helm release from the cluster.
 // @router /api/uninstall-helm-release [post]
 func (c *ApiController) UninstallHelmRelease() {

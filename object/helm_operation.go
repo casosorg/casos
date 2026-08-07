@@ -266,7 +266,7 @@ func FinishHelmOperationTaskContext(ctx context.Context, id int64, success bool,
 	}
 	now := time.Now().UTC()
 	affected, err := ormer.Engine.Context(ctx).ID(id).
-		Where("status IN (?, ?)", HelmOperationStatusPending, HelmOperationStatusRunning).
+		Where("status IN (?, ?, ?)", HelmOperationStatusPending, HelmOperationStatusRunning, HelmOperationStatusCancelling).
 		Cols("active_key", "status", "phase", "error_msg", "finished_at", "updated_at").
 		Update(&HelmOperationTask{ActiveKey: nil, Status: status, Phase: phase, ErrorMsg: errorMsg, FinishedAt: now, UpdatedAt: now})
 	if err != nil {
