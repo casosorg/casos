@@ -22,6 +22,7 @@ containerRuntimeEndpoint: unix:///run/containerd/containerd.sock
 clusterDNS:
   - %s
 clusterDomain: cluster.local
+resolvConf: /etc/casos-resolv.conf
 `, nodeDeployClusterDNS)
 }
 
