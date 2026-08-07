@@ -277,6 +277,27 @@ export default function HelmInstallModal({open, chart, onClose, onInstalled}) {
     onClose();
   };
 
+  const [cancelling, setCancelling] = useState(false);
+
+  const handleCancelInstall = () => {
+    const taskId = taskIdRef.current;
+    if (!taskId || cancelling) {return;}
+    setCancelling(true);
+    HelmBackend.cancelHelmOperation(taskId)
+      .then(res => {
+        if (res.status !== "ok") {
+          setError(res.msg || t("helm:Cancel install failed"));
+          setCancelling(false);
+          return;
+        }
+        monitorTask(taskId, taskStorageKeyRef.current, taskIdentityRef.current);
+      })
+      .catch(e => {
+        setError(e.message);
+        setCancelling(false);
+      });
+  };
+
   const handleOk = () => {
     if (done) {
       onInstalled?.();
@@ -436,6 +457,11 @@ export default function HelmInstallModal({open, chart, onClose, onInstalled}) {
           {!done && !pollingPaused && (
             <Button type="primary" loading={installing} onClick={handleOk}>
               {t("helm:Install")}
+            </Button>
+          )}
+          {installing && hasActiveTask && (
+            <Button danger loading={cancelling} onClick={handleCancelInstall}>
+              {t("helm:Cancel install")}
             </Button>
           )}
           {pollingPaused && (

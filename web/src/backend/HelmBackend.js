@@ -50,6 +50,12 @@ export function getHelmOperationTask(id) {
   }).then(r => r.json());
 }
 
+export function cancelHelmOperation(taskId) {
+  return fetch(`${Setting.ServerUrl}/api/cancel-helm-operation`, {
+    method: "POST", credentials: "include", headers: jsonHeaders(), body: JSON.stringify({taskId}),
+  }).then(r => r.json());
+}
+
 export function installHelmChart(payload) {
   return fetch(`${Setting.ServerUrl}/api/install-helm-chart`, {
     method: "POST", credentials: "include", headers: jsonHeaders(), body: JSON.stringify(payload),
