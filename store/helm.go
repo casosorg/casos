@@ -1404,10 +1404,17 @@ func installHelmChartStream(ctx context.Context, lifecycle HelmInstallLifecycle,
 		sendError := func(err error) bool {
 			return send(newHelmErrorEvent(err))
 		}
-		finishWithError := func(err error, context string) {
+		finishWithError := func(err error, step string) {
+			if errors.Is(err, context.Canceled) {
+				sendLog("ABORTED: install cancelled by user")
+				if finishErr := lifecycle.Finish(fmt.Errorf("install cancelled by user")); finishErr != nil {
+					logrus.Errorf("failed to finish Helm operation after %s: %v", step, finishErr)
+				}
+				return
+			}
 			sendError(err)
 			if finishErr := lifecycle.Finish(err); finishErr != nil {
-				logrus.Errorf("failed to finish Helm operation after %s: %v", context, finishErr)
+				logrus.Errorf("failed to finish Helm operation after %s: %v", step, finishErr)
 			}
 		}
 		if err := lifecycle.StartLoading(); err != nil {
@@ -1424,6 +1431,18 @@ func installHelmChartStream(ctx context.Context, lifecycle HelmInstallLifecycle,
 			helmInstallOperationDeadline(installTimeout),
 		)
 		defer cancelInstall()
+		// Watch for cancellation from the very start of the install: the task
+		// is already running during chart loading and compatibility checks, and
+		// cancelInstall() aborts every stage derived from installCtx.
+		cancelWatcher := make(chan struct{})
+		go func() {
+			select {
+			case <-lifecycle.Cancelled():
+				cancelInstall()
+			case <-cancelWatcher:
+			}
+		}()
+		defer close(cancelWatcher)
 		logFn := func(format string, args ...interface{}) {
 			sendLog(fmt.Sprintf(format, args...))
 		}
@@ -1469,16 +1488,7 @@ func installHelmChartStream(ctx context.Context, lifecycle HelmInstallLifecycle,
 		}
 		install := action.NewInstall(actionConfig)
 		configureHelmInstall(install, releaseName, namespace, installTimeout)
-		cancelWatcher := make(chan struct{})
-		go func() {
-			select {
-			case <-lifecycle.Cancelled():
-				cancelInstall()
-			case <-cancelWatcher:
-			}
-		}()
 		failedRelease, installErr := install.RunWithContext(installCtx, helmChart, vals)
-		close(cancelWatcher)
 		if installErr != nil {
 			if errors.Is(installErr, context.Canceled) {
 				sendLog("ABORTED: install cancelled by user")
