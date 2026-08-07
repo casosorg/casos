@@ -265,6 +265,19 @@ func FinishHelmOperationTaskContext(ctx context.Context, id int64, success bool,
 		phase = HelmOperationPhaseFailed
 	}
 	now := time.Now().UTC()
+	// A task whose cancel was already requested finishes as cancelled, not
+	// failed, so callers can tell a user cancellation from an install error.
+	if !success {
+		task := &HelmOperationTask{Id: id}
+		found, err := ormer.Engine.Context(ctx).Get(task)
+		if err != nil {
+			return err
+		}
+		if found && task.Status == HelmOperationStatusCancelling {
+			status = HelmOperationStatusCancelled
+			phase = HelmOperationPhaseFailed
+		}
+	}
 	affected, err := ormer.Engine.Context(ctx).ID(id).
 		Where("status IN (?, ?, ?)", HelmOperationStatusPending, HelmOperationStatusRunning, HelmOperationStatusCancelling).
 		Cols("active_key", "status", "phase", "error_msg", "finished_at", "updated_at").
