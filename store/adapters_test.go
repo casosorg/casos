@@ -1,6 +1,7 @@
 package store
 
 import (
+	"strings"
 	"testing"
 
 	"helm.sh/helm/v3/pkg/chart"
@@ -62,4 +63,40 @@ func TestHelmChartAdapterKeepsBitnamiAdjustments(t *testing.T) {
 		t.Errorf("grafana should get NodePort even on Bitnami repo, got %#v", values["service"])
 	}
 	_ = adjustments
+}
+
+func TestSupersetAdapterPatches(t *testing.T) {
+	values, _, err := prepareHelmInstallValues(testChart("superset"), "https://example.com/charts", map[string]interface{}{})
+	if err != nil {
+		t.Fatalf("prepare values: %v", err)
+	}
+	service, ok := values["service"].(map[string]interface{})
+	if !ok || service["type"] != "NodePort" {
+		t.Errorf("expected service.type NodePort, got %#v", values["service"])
+	}
+	overrides, ok := values["configOverrides"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("expected configOverrides, got %#v", values["configOverrides"])
+	}
+	secret, _ := overrides["secret"].(string)
+	if len(secret) < 32 {
+		t.Errorf("expected generated SECRET_KEY, got %q", secret)
+	}
+	bootstrap, _ := values["bootstrapScript"].(string)
+	if !strings.Contains(bootstrap, "psycopg2") {
+		t.Errorf("expected psycopg2 in bootstrapScript, got %q", bootstrap)
+	}
+}
+
+func TestSupersetAdapterRespectsUserSecret(t *testing.T) {
+	values, _, err := prepareHelmInstallValues(testChart("superset"), "https://example.com/charts", map[string]interface{}{
+		"configOverrides": map[string]interface{}{"secret": "user-secret"},
+	})
+	if err != nil {
+		t.Fatalf("prepare values: %v", err)
+	}
+	overrides, _ := values["configOverrides"].(map[string]interface{})
+	if overrides["secret"] != "user-secret" {
+		t.Errorf("user SECRET_KEY should win, got %#v", overrides["secret"])
+	}
 }
