@@ -188,6 +188,8 @@ spec:
         capabilities:
           drop:
             - ALL
+          add:
+            - DAC_OVERRIDE
       resources:
         requests:
           cpu: 10m
