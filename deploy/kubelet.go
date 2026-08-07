@@ -25,6 +25,7 @@ clusterDomain: cluster.local
 allowedUnsafeSysctls:
   - net.ipv4.ip_forward
   - net.ipv6.conf.all.forwarding
+resolvConf: /etc/casos-resolv.conf
 `, nodeDeployClusterDNS)
 }
 
