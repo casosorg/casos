@@ -346,6 +346,8 @@ func isAllowedNodeDeployPath(path string) bool {
 		"/etc/systemd/system/kubelet.service",
 		"/etc/systemd/system/kube-proxy.service",
 		"/var/lib/kubelet/config.yaml",
+		"/var/lib/kubelet/pki/kubelet-server.crt",
+		"/var/lib/kubelet/pki/kubelet-server.key",
 		"/var/lib/kube-proxy/config.yaml",
 	}
 	for _, allowedPath := range allowedExactPaths {

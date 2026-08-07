@@ -93,7 +93,7 @@ func (d *NodeDeployer) Deploy(ctx context.Context, opts NodeDeployOptions) (*Nod
 	if err = d.installNodeBinaries(ctx, runner, preflightResult.Arch, k8sVersion); err != nil {
 		return nil, err
 	}
-	if err = d.writeNodeFiles(ctx, runner, opts.NodeName, wk.Kubeconfig); err != nil {
+	if err = d.writeNodeFiles(ctx, runner, opts.NodeName, wk.Kubeconfig, wk.KubeletServerCertPEM, wk.KubeletServerKeyPEM); err != nil {
 		return nil, err
 	}
 

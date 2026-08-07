@@ -286,7 +286,7 @@ printf unmanaged`, shellSingleQuote(path), shellSingleQuote(generatedRegistryHos
 	}
 }
 
-func (d *NodeDeployer) writeNodeFiles(ctx context.Context, runner *NodeDeploySSHRunner, nodeName, kubeconfig string) error {
+func (d *NodeDeployer) writeNodeFiles(ctx context.Context, runner *NodeDeploySSHRunner, nodeName, kubeconfig, kubeletServerCert, kubeletServerKey string) error {
 	ca, err := extractCertificateAuthority(kubeconfig)
 	if err != nil {
 		return err
@@ -296,6 +296,14 @@ func (d *NodeDeployer) writeNodeFiles(ctx context.Context, runner *NodeDeploySSH
 	}
 	if err = runner.WriteFileContext(ctx, "/etc/kubernetes/ca.crt", ca, "0644"); err != nil {
 		return fmt.Errorf("write /etc/kubernetes/ca.crt: %w", err)
+	}
+	if kubeletServerCert != "" && kubeletServerKey != "" {
+		if err = runner.WriteFileContext(ctx, "/var/lib/kubelet/pki/kubelet-server.crt", kubeletServerCert, "0600"); err != nil {
+			return fmt.Errorf("write kubelet server cert: %w", err)
+		}
+		if err = runner.WriteFileContext(ctx, "/var/lib/kubelet/pki/kubelet-server.key", kubeletServerKey, "0600"); err != nil {
+			return fmt.Errorf("write kubelet server key: %w", err)
+		}
 	}
 	if err = runner.WriteFileContext(ctx, "/var/lib/kubelet/config.yaml", kubeletConfig(), "0644"); err != nil {
 		return fmt.Errorf("write /var/lib/kubelet/config.yaml: %w", err)
