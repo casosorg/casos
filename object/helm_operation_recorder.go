@@ -23,6 +23,7 @@ const (
 	helmOperationFinishAttempts    = 3
 	helmOperationFinishRetryDelay  = 100 * time.Millisecond
 	helmOperationHeartbeatInterval = time.Minute
+	helmOperationCancelPollInterval = time.Second
 )
 
 type HelmOperationRecorder struct {
@@ -48,6 +49,8 @@ type HelmOperationRecorder struct {
 	finishRetryDelay  time.Duration
 	persistCtx        context.Context
 	cancelPersist     context.CancelFunc
+	cancelCh          chan struct{}
+	cancelPollOnce    sync.Once
 }
 
 func NewHelmOperationRecorder(taskID int64) *HelmOperationRecorder {
@@ -56,6 +59,7 @@ func NewHelmOperationRecorder(taskID int64) *HelmOperationRecorder {
 		taskID:            taskID,
 		queue:             make(chan *HelmOperationLog, helmOperationLogBatchSize*2),
 		done:              make(chan struct{}),
+		cancelCh:          make(chan struct{}),
 		persistLogs:       addHelmOperationLogsContext,
 		finishTask:        FinishHelmOperationTaskContext,
 		terminalMatches:   HelmOperationTaskHasTerminalOutcomeContext,
@@ -69,7 +73,35 @@ func NewHelmOperationRecorder(taskID int64) *HelmOperationRecorder {
 		cancelPersist:     cancelPersist,
 	}
 	go recorder.run()
+	go recorder.pollCancel()
 	return recorder
+}
+
+// Cancelled returns a channel closed when a cancel has been requested for
+// the underlying task. The installer selects on it to abort the Helm run.
+func (r *HelmOperationRecorder) Cancelled() <-chan struct{} {
+	return r.cancelCh
+}
+
+func (r *HelmOperationRecorder) pollCancel() {
+	ticker := time.NewTicker(helmOperationCancelPollInterval)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-r.persistCtx.Done():
+			return
+		case <-ticker.C:
+			cancelling, err := HelmOperationTaskIsCancelling(r.taskID)
+			if err != nil {
+				logs.Warning("poll Helm operation task %d cancel state: %v", r.taskID, err)
+				continue
+			}
+			if cancelling {
+				r.cancelPollOnce.Do(func() { close(r.cancelCh) })
+				return
+			}
+		}
+	}
 }
 
 func (r *HelmOperationRecorder) StartLoading() error {
