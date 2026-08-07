@@ -1382,6 +1382,12 @@ func installHelmChartStream(ctx context.Context, lifecycle HelmInstallLifecycle,
 					logrus.Warnf("failed to persist Helm operation log: %v", err)
 				}
 			}
+			defer func() {
+				// A concurrent sender (e.g. a Helm wait callback) may still
+				// emit after this goroutine's deferred close(eventCh) ran on
+				// the cancel path; swallow the send to a closed channel.
+				_ = recover()
+			}()
 			select {
 			case eventCh <- event:
 				return true
