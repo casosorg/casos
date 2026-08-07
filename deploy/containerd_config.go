@@ -24,20 +24,25 @@ version = 2
 }
 
 // GenerateDockerHubHostsToml returns the content for
-// /etc/containerd/certs.d/docker.io/hosts.toml. The canonical server remains
-// the fallback when the mirror is unavailable.
+// /etc/containerd/certs.d/docker.io/hosts.toml. The canonical server is
+// listed as an explicit host so pull falls back to it when the mirror is
+// unavailable (containerd does not fall back to the server field itself).
 func GenerateDockerHubHostsToml() string {
 	return generatedRegistryHostsMarker + `
 server = "https://registry-1.docker.io"
 
 [host."https://docker.1ms.run"]
   capabilities = ["pull", "resolve"]
+
+[host."https://registry-1.docker.io"]
+  capabilities = ["pull", "resolve"]
 `
 }
 
 // GenerateK8sRegistryHostsToml returns the content for
-// /etc/containerd/certs.d/registry.k8s.io/hosts.toml. The canonical server
-// remains the fallback when the mirror is unavailable.
+// /etc/containerd/certs.d/registry.k8s.io/hosts.toml. The canonical server is
+// listed as an explicit host so pull falls back to it when the mirror is
+// unavailable.
 func GenerateK8sRegistryHostsToml() string {
 	return generatedRegistryHostsMarker + `
 server = "https://registry.k8s.io"
@@ -45,6 +50,9 @@ server = "https://registry.k8s.io"
 [host."https://registry.aliyuncs.com/v2/google_containers"]
   capabilities = ["pull", "resolve"]
   override_path = true
+
+[host."https://registry.k8s.io"]
+  capabilities = ["pull", "resolve"]
 `
 }
 
@@ -53,6 +61,9 @@ func legacyDockerHubHostsToml() string {
 
 [host."https://docker.1ms.run"]
   capabilities = ["pull", "resolve"]
+
+[host."https://registry-1.docker.io"]
+  capabilities = ["pull", "resolve"]
 `
 }
 
@@ -60,6 +71,9 @@ func legacyK8sRegistryHostsToml() string {
 	return `server = "https://registry.k8s.io"
 
 [host."https://registry.aliyuncs.com/google_containers"]
+  capabilities = ["pull", "resolve"]
+
+[host."https://registry.k8s.io"]
   capabilities = ["pull", "resolve"]
 `
 }
