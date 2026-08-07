@@ -130,3 +130,24 @@ func TestGetHelmChartAdapterVisibleOverrides(t *testing.T) {
 		t.Errorf("grafana should have no visible overrides, got %#v", got)
 	}
 }
+
+func TestApplyHelmChartAdapterOverrides(t *testing.T) {
+	values := map[string]interface{}{}
+	ApplyHelmChartAdapterOverrides("n8n", values, map[string]string{"env.N8N_SECURE_COOKIE": "true"})
+	env, _ := values["env"].([]interface{})
+	if len(env) != 1 {
+		t.Fatalf("expected applied env patch, got %#v", values)
+	}
+	entry, _ := env[0].(map[string]interface{})
+	if entry["value"] != "true" {
+		t.Errorf("expected user value true, got %#v", entry)
+	}
+}
+
+func TestApplyHelmChartAdapterOverridesIgnoresUnknown(t *testing.T) {
+	values := map[string]interface{}{}
+	ApplyHelmChartAdapterOverrides("n8n", values, map[string]string{"bogus.key": "x"})
+	if len(values) != 0 {
+		t.Errorf("unknown override should be ignored, got %#v", values)
+	}
+}
