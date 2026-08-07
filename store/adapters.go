@@ -4,6 +4,7 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"fmt"
+	"strconv"
 	"strings"
 
 	"helm.sh/helm/v3/pkg/chart"
@@ -14,7 +15,7 @@ import (
 // type) without requiring the user to know chart internals.
 type helmChartAdapter struct {
 	valuesPatches map[string]interface{}
-	valuesPatchFn func() (map[string]interface{}, error)
+	valuesPatchFn func(nodeIPs []string) (map[string]interface{}, error)
 }
 
 // helmChartAdapterRegistry maps canonical chart names to install adaptations.
@@ -30,11 +31,40 @@ var helmChartAdapterRegistry = map[string]helmChartAdapter{
 		},
 		valuesPatchFn: supersetConfigOverridesPatch,
 	},
-	"nextcloud": {valuesPatches: nodePortServiceValuesPatch},
+	"nextcloud": {
+		valuesPatches: map[string]interface{}{
+			"service": map[string]interface{}{"type": "NodePort"},
+		},
+		valuesPatchFn: nextcloudTrustedDomainsPatch,
+	},
 }
 
 var nodePortServiceValuesPatch = map[string]interface{}{
 	"service": map[string]interface{}{"type": "NodePort"},
+}
+
+// nextcloudTrustedDomainsPatch configures trusted_domains via the chart's
+// post-install occ job: the probe host (the chart probes /status.php with
+// Host nextcloud.kube.home, so omitting it makes liveness fail and the pod
+// restart-loop) plus the cluster node IPs the user reaches the app through.
+func nextcloudTrustedDomainsPatch(nodeIPs []string) (map[string]interface{}, error) {
+	occ := []interface{}{
+		nextcloudOccCommand("config:system:set", []string{"trusted_domains", "0", "--value=nextcloud.kube.home"}),
+	}
+	for index, ip := range nodeIPs {
+		occ = append(occ, nextcloudOccCommand("config:system:set", []string{"trusted_domains", strconv.Itoa(index + 1), "--value=" + ip}))
+	}
+	return map[string]interface{}{
+		"nextcloud": map[string]interface{}{"occ": occ},
+	}, nil
+}
+
+func nextcloudOccCommand(command string, args []string) map[string]interface{} {
+	argValues := make([]interface{}, 0, len(args))
+	for _, arg := range args {
+		argValues = append(argValues, arg)
+	}
+	return map[string]interface{}{"command": command, "args": argValues}
 }
 
 // supersetBootstrapScript installs the psycopg2 driver into a writable target
@@ -44,7 +74,7 @@ const supersetBootstrapScript = "python3 -m pip install --no-cache-dir --target 
 
 // supersetConfigOverridesPatch generates a random SECRET_KEY: the default
 // value makes Superset refuse to start.
-func supersetConfigOverridesPatch() (map[string]interface{}, error) {
+func supersetConfigOverridesPatch(_ []string) (map[string]interface{}, error) {
 	buf := make([]byte, 24)
 	if _, err := rand.Read(buf); err != nil {
 		return nil, fmt.Errorf("generate Superset SECRET_KEY: %w", err)
@@ -56,7 +86,7 @@ func supersetConfigOverridesPatch() (map[string]interface{}, error) {
 
 // applyHelmChartAdapter merges chart-specific compatibility values into the
 // install values; user-set top-level keys are left untouched.
-func applyHelmChartAdapter(ch *chart.Chart, values, explicitValues map[string]interface{}) error {
+func applyHelmChartAdapter(ch *chart.Chart, values, explicitValues map[string]interface{}, nodeIPs []string) error {
 	if ch == nil {
 		return nil
 	}
@@ -70,7 +100,7 @@ func applyHelmChartAdapter(ch *chart.Chart, values, explicitValues map[string]in
 		}
 	}
 	if adapter.valuesPatchFn != nil {
-		fnPatches, err := adapter.valuesPatchFn()
+		fnPatches, err := adapter.valuesPatchFn(nodeIPs)
 		if err != nil {
 			return err
 		}

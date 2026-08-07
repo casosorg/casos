@@ -100,3 +100,44 @@ func TestSupersetAdapterRespectsUserSecret(t *testing.T) {
 		t.Errorf("user SECRET_KEY should win, got %#v", overrides["secret"])
 	}
 }
+
+func TestNextcloudAdapterTrustedDomains(t *testing.T) {
+	values, _, err := prepareHelmInstallValuesWithMode(testChart("nextcloud"), "https://example.com/charts", map[string]interface{}{}, false, []string{"192.168.10.101"})
+	if err != nil {
+		t.Fatalf("prepare values: %v", err)
+	}
+	service, ok := values["service"].(map[string]interface{})
+	if !ok || service["type"] != "NodePort" {
+		t.Errorf("expected service.type NodePort, got %#v", values["service"])
+	}
+	nextcloud, ok := values["nextcloud"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("expected nextcloud values, got %#v", values["nextcloud"])
+	}
+	occ, _ := nextcloud["occ"].([]interface{})
+	if len(occ) != 2 {
+		t.Fatalf("expected 2 occ commands, got %#v", occ)
+	}
+	first, _ := occ[0].(map[string]interface{})
+	args, _ := first["args"].([]interface{})
+	if first["command"] != "config:system:set" || args[0] != "trusted_domains" || args[2] != "--value=nextcloud.kube.home" {
+		t.Errorf("probe host command missing: %#v", first)
+	}
+	second, _ := occ[1].(map[string]interface{})
+	args2, _ := second["args"].([]interface{})
+	if args2[2] != "--value=192.168.10.101" {
+		t.Errorf("node IP command missing: %#v", second)
+	}
+}
+
+func TestNextcloudAdapterWithoutNodeIPs(t *testing.T) {
+	values, _, err := prepareHelmInstallValuesWithMode(testChart("nextcloud"), "https://example.com/charts", map[string]interface{}{}, false, nil)
+	if err != nil {
+		t.Fatalf("prepare values: %v", err)
+	}
+	nextcloud, _ := values["nextcloud"].(map[string]interface{})
+	occ, _ := nextcloud["occ"].([]interface{})
+	if len(occ) != 1 {
+		t.Errorf("expected only probe host command, got %#v", occ)
+	}
+}

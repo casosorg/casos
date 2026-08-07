@@ -142,6 +142,34 @@ func newHelmConfig(cfg *rest.Config, namespace string) (*action.Configuration, e
 	return newHelmConfigWithLog(cfg, namespace, func(string, ...interface{}) {})
 }
 
+// getClusterNodeIPs returns the internal IPs of all cluster nodes; used by
+// install adapters that need a reachable endpoint (e.g. Nextcloud
+// trusted_domains). Returns nil on any failure so adapters degrade gracefully.
+func getClusterNodeIPs(cfg *rest.Config) []string {
+	if cfg == nil {
+		return nil
+	}
+	client, err := kubernetes.NewForConfig(cfg)
+	if err != nil {
+		logrus.Warnf("build node IP client: %v", err)
+		return nil
+	}
+	nodes, err := client.CoreV1().Nodes().List(context.Background(), metav1.ListOptions{})
+	if err != nil {
+		logrus.Warnf("list nodes for install adapter: %v", err)
+		return nil
+	}
+	var ips []string
+	for _, node := range nodes.Items {
+		for _, address := range node.Status.Addresses {
+			if address.Type == corev1.NodeInternalIP {
+				ips = append(ips, address.Address)
+			}
+		}
+	}
+	return ips
+}
+
 func newHelmConfigWithLog(cfg *rest.Config, namespace string, logFn func(string, ...interface{})) (*action.Configuration, error) {
 	actionConfig := new(action.Configuration)
 	if err := actionConfig.Init(newRESTClientGetter(cfg, namespace), namespace, "secret", logFn); err != nil {
@@ -1280,7 +1308,7 @@ func installHelmChart(cfg *rest.Config, releaseName, namespace, chartName, repoU
 	if err != nil {
 		return err
 	}
-	vals, adjustments, err := prepareHelmInstallValuesWithMode(ch, repoURL, vals, inputIsOverrides)
+	vals, adjustments, err := prepareHelmInstallValuesWithMode(ch, repoURL, vals, inputIsOverrides, getClusterNodeIPs(cfg))
 	if err != nil {
 		return err
 	}
@@ -1438,7 +1466,7 @@ func installHelmChartStream(ctx context.Context, lifecycle HelmInstallLifecycle,
 			finishWithError(err, "values parsing error")
 			return
 		}
-		vals, adjustments, err := prepareHelmInstallValuesWithMode(helmChart, repoURL, vals, inputIsOverrides)
+		vals, adjustments, err := prepareHelmInstallValuesWithMode(helmChart, repoURL, vals, inputIsOverrides, getClusterNodeIPs(cfg))
 		if err != nil {
 			finishWithError(err, "values preparation error")
 			return
@@ -1516,7 +1544,7 @@ func upgradeHelmRelease(cfg *rest.Config, releaseName, namespace, chartName, rep
 	if err != nil {
 		return err
 	}
-	vals, adjustments, err := prepareHelmInstallValuesWithMode(ch, repoURL, vals, inputIsOverrides)
+	vals, adjustments, err := prepareHelmInstallValuesWithMode(ch, repoURL, vals, inputIsOverrides, getClusterNodeIPs(cfg))
 	if err != nil {
 		return err
 	}
