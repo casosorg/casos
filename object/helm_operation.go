@@ -195,7 +195,7 @@ func StartHelmOperationTaskContext(ctx context.Context, id int64, phase string) 
 
 func TouchHelmOperationTaskContext(ctx context.Context, id int64) error {
 	_, err := ormer.Engine.Context(ctx).ID(id).
-		Where("status IN (?, ?)", HelmOperationStatusPending, HelmOperationStatusRunning).
+		Where("status IN (?, ?, ?)", HelmOperationStatusPending, HelmOperationStatusRunning, HelmOperationStatusCancelling).
 		Cols("updated_at").
 		Update(&HelmOperationTask{UpdatedAt: time.Now().UTC()})
 	return err
@@ -210,7 +210,7 @@ func UpdateHelmOperationTaskPhaseContext(ctx context.Context, id int64, phase st
 		return fmt.Errorf("invalid Helm operation phase: %s", phase)
 	}
 	affected, err := ormer.Engine.Context(ctx).ID(id).
-		Where("status = ? AND phase = ?", HelmOperationStatusRunning, HelmOperationPhaseLoading).
+		Where("status IN (?, ?) AND phase = ?", HelmOperationStatusRunning, HelmOperationStatusCancelling, HelmOperationPhaseLoading).
 		Cols("phase", "updated_at").
 		Update(&HelmOperationTask{Phase: phase, UpdatedAt: time.Now().UTC()})
 	if err != nil {
@@ -300,7 +300,8 @@ func HelmOperationTaskHasTerminalOutcomeContext(ctx context.Context, id int64, s
 	if success {
 		return task.Status == HelmOperationStatusSucceeded && task.Phase == HelmOperationPhaseReady && task.ErrorMsg == "", nil
 	}
-	return task.Status == HelmOperationStatusFailed && task.Phase == HelmOperationPhaseFailed && task.ErrorMsg == errorMsg, nil
+	return (task.Status == HelmOperationStatusFailed || task.Status == HelmOperationStatusCancelled) &&
+		task.Phase == HelmOperationPhaseFailed && task.ErrorMsg == errorMsg, nil
 }
 
 func addHelmOperationLogs(taskID int64, logs []*HelmOperationLog) error {
@@ -325,7 +326,7 @@ func addHelmOperationLogsContext(ctx context.Context, taskID int64, logs []*Helm
 			return nil, err
 		}
 		_, err := session.ID(taskID).
-			Where("status IN (?, ?)", HelmOperationStatusPending, HelmOperationStatusRunning).
+			Where("status IN (?, ?, ?)", HelmOperationStatusPending, HelmOperationStatusRunning, HelmOperationStatusCancelling).
 			Cols("updated_at").
 			Update(&HelmOperationTask{UpdatedAt: now})
 		return nil, err

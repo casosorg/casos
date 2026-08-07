@@ -10,6 +10,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	semver "github.com/Masterminds/semver/v3"
@@ -1364,6 +1365,13 @@ func installHelmChartStream(ctx context.Context, lifecycle HelmInstallLifecycle,
 		return eventCh
 	}
 	go func() {
+		var streamClosedOnce sync.Once
+		streamClosed := make(chan struct{})
+		defer func() {
+			// Signal concurrent senders (e.g. a Helm wait callback) to stop
+			// before eventCh is closed, so they exit without panicking.
+			streamClosedOnce.Do(func() { close(streamClosed) })
+		}()
 		defer close(eventCh)
 		streamCtx := ctx
 		if streamCtx == nil {
@@ -1383,15 +1391,14 @@ func installHelmChartStream(ctx context.Context, lifecycle HelmInstallLifecycle,
 				}
 			}
 			defer func() {
-				// A concurrent sender (e.g. a Helm wait callback) may still
-				// emit after this goroutine's deferred close(eventCh) ran on
-				// the cancel path; swallow the send to a closed channel.
 				_ = recover()
 			}()
 			select {
 			case eventCh <- event:
 				return true
 			case <-streamCtx.Done():
+				return false
+			case <-streamClosed:
 				return false
 			}
 		}
@@ -1407,8 +1414,13 @@ func installHelmChartStream(ctx context.Context, lifecycle HelmInstallLifecycle,
 		finishWithError := func(err error, step string) {
 			if errors.Is(err, context.Canceled) {
 				sendLog("ABORTED: install cancelled by user")
+				sendLog("WARNING: resources already created may remain; uninstall them from the Helm Releases page if needed")
 				if finishErr := lifecycle.Finish(fmt.Errorf("install cancelled by user")); finishErr != nil {
 					logrus.Errorf("failed to finish Helm operation after %s: %v", step, finishErr)
+				}
+				select {
+				case eventCh <- HelmInstallStreamEvent{Type: HelmInstallStreamEventDone}:
+				case <-streamCtx.Done():
 				}
 				return
 			}
@@ -1492,7 +1504,13 @@ func installHelmChartStream(ctx context.Context, lifecycle HelmInstallLifecycle,
 		if installErr != nil {
 			if errors.Is(installErr, context.Canceled) {
 				sendLog("ABORTED: install cancelled by user")
+				sendLog("WARNING: resources already created may remain; uninstall them from the Helm Releases page if needed")
+				_ = cleanupFailedHelmRelease(actionConfig, install, failedRelease)
 				_ = lifecycle.Finish(fmt.Errorf("install cancelled by user"))
+				select {
+				case eventCh <- HelmInstallStreamEvent{Type: HelmInstallStreamEventDone}:
+				case <-streamCtx.Done():
+				}
 				return
 			}
 			err = finishFailedHelmInstall(
