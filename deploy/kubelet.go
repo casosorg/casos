@@ -22,6 +22,9 @@ containerRuntimeEndpoint: unix:///run/containerd/containerd.sock
 clusterDNS:
   - %s
 clusterDomain: cluster.local
+allowedUnsafeSysctls:
+  - net.ipv4.ip_forward
+  - net.ipv6.conf.all.forwarding
 `, nodeDeployClusterDNS)
 }
 
