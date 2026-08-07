@@ -108,6 +108,11 @@ type NodeDeployResult struct {
 type NodeKubeconfig struct {
 	Kubeconfig string
 	NodeName   string
+
+	// KubeletServerCertPEM / KubeletServerKeyPEM carry the cluster-CA-signed
+	// kubelet server certificate so the installer can drop it on the worker.
+	KubeletServerCertPEM string
+	KubeletServerKeyPEM  string
 }
 
 type KubeconfigGenerator func(nodeName, apiserverURL string) (*NodeKubeconfig, error)
@@ -133,7 +138,12 @@ func ConfigFromServerConfig(cfg server.Config) Config {
 			if err != nil {
 				return nil, err
 			}
-			return &NodeKubeconfig{Kubeconfig: wk.Kubeconfig, NodeName: wk.NodeName}, nil
+			return &NodeKubeconfig{
+				Kubeconfig:           wk.Kubeconfig,
+				NodeName:             wk.NodeName,
+				KubeletServerCertPEM: wk.KubeletServerCertPEM,
+				KubeletServerKeyPEM:  wk.KubeletServerKeyPEM,
+			}, nil
 		},
 	}
 }

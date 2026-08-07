@@ -10,6 +10,7 @@ import (
 	"encoding/pem"
 	"fmt"
 	"math/big"
+	"net"
 	"os"
 	"path/filepath"
 	"time"
@@ -35,6 +36,13 @@ func tryParsePrivateKey(der []byte) (interface{}, error) {
 type WorkerKubeconfig struct {
 	Kubeconfig string // YAML content, ready to write to disk
 	NodeName   string
+
+	// KubeletServerCertPEM and KubeletServerKeyPEM are a cluster-CA-signed
+	// server certificate for the kubelet's TLS endpoint, including the
+	// advertise address and node name in its SANs so that the apiserver's
+	// kubelet proxy (logs/exec) can validate it.
+	KubeletServerCertPEM string
+	KubeletServerKeyPEM  string
 }
 
 // GenerateWorkerKubeconfig signs a node client certificate for the given
@@ -94,6 +102,43 @@ func GenerateWorkerKubeconfigForServer(cfg Config, nodeName, apiserverURL string
 		return nil, err
 	}
 
+	// Generate a kubelet server certificate signed by the cluster CA with the
+	// advertise address and node name in its SANs. Without an IP SAN, the
+	// apiserver cannot validate the kubelet TLS endpoint when proxying logs
+	// or exec (kubectl logs fails with EOF), because the kubelet's self-signed
+	// fallback certificate only carries the hostname.
+	serverKey, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	if err != nil {
+		return nil, err
+	}
+	serverTemplate := &x509.Certificate{
+		SerialNumber: big.NewInt(time.Now().UnixNano()),
+		Subject: pkix.Name{
+			CommonName: "system:node:" + nodeName,
+		},
+		NotBefore: time.Now().Add(-time.Minute),
+		NotAfter:  time.Now().Add(10 * 365 * 24 * time.Hour),
+		KeyUsage:  x509.KeyUsageDigitalSignature | x509.KeyUsageKeyEncipherment,
+		ExtKeyUsage: []x509.ExtKeyUsage{
+			x509.ExtKeyUsageServerAuth,
+			x509.ExtKeyUsageClientAuth,
+		},
+		DNSNames: []string{nodeName},
+	}
+	if cfg.AdvertiseAddress != "" && cfg.AdvertiseAddress != "0.0.0.0" && cfg.AdvertiseAddress != "::" {
+		if ip := net.ParseIP(cfg.AdvertiseAddress); ip != nil {
+			serverTemplate.IPAddresses = []net.IP{ip}
+		}
+	}
+	serverCertDER, err := x509.CreateCertificate(rand.Reader, serverTemplate, caCert, &serverKey.PublicKey, caKeyRaw)
+	if err != nil {
+		return nil, err
+	}
+	serverKeyDER, err := x509.MarshalECPrivateKey(serverKey)
+	if err != nil {
+		return nil, err
+	}
+
 	// Encode to PEM.
 	nodeKeyDER, err := x509.MarshalECPrivateKey(nodeKey)
 	if err != nil {
@@ -130,8 +175,10 @@ users:
 	)
 
 	return &WorkerKubeconfig{
-		Kubeconfig: kubeconfig,
-		NodeName:   nodeName,
+		Kubeconfig:           kubeconfig,
+		NodeName:             nodeName,
+		KubeletServerCertPEM: string(pemEncode("CERTIFICATE", serverCertDER)),
+		KubeletServerKeyPEM:  string(pemEncode("EC PRIVATE KEY", serverKeyDER)),
 	}, nil
 }
 
