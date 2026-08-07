@@ -135,14 +135,16 @@ func (r *HelmOperationRecorder) RecordLog(line string) error {
 		return fmt.Errorf("Helm operation recorder is closed")
 	}
 	r.writers.Add(1)
-	r.mu.Unlock()
-	defer r.writers.Done()
 	timer := time.NewTimer(helmOperationLogEnqueueTimeout)
 	defer timer.Stop()
 	select {
 	case r.queue <- entry:
+		r.writers.Done()
+		r.mu.Unlock()
 		return nil
 	case <-timer.C:
+		r.writers.Done()
+		r.mu.Unlock()
 		return fmt.Errorf("Helm operation log queue is full")
 	}
 }
@@ -151,10 +153,9 @@ func (r *HelmOperationRecorder) Finish(installErr error) error {
 	r.finish.Do(func() {
 		r.mu.Lock()
 		r.closed = true
-		r.mu.Unlock()
-
 		r.writers.Wait()
 		close(r.queue)
+		r.mu.Unlock()
 		shutdownTimer := time.NewTimer(r.shutdownTimeout)
 		select {
 		case <-r.done:
