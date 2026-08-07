@@ -194,6 +194,21 @@ func (c *ApiController) GetHelmChartValues() {
 	c.ResponseOk(values)
 }
 
+// GetHelmChartAdaptations returns the user-adjustable adapter overrides for a
+// chart, so the install form can expose them.
+// @router /api/get-helm-chart-adaptations [get]
+func (c *ApiController) GetHelmChartAdaptations() {
+	if c.RequireSignedIn() {
+		return
+	}
+	chartName := c.GetString("chart")
+	if chartName == "" {
+		c.ResponseError("chart is required")
+		return
+	}
+	c.ResponseOk(store.GetHelmChartAdapterVisibleOverrides(chartName))
+}
+
 // ---------- Release lifecycle (via store/Helm SDK) ----------
 
 // GetHelmReleases lists installed Helm releases.
