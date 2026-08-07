@@ -232,13 +232,14 @@ func (c *ApiController) GetHelmReleases() {
 }
 
 type helmInstallReq struct {
-	ReleaseName        string `json:"releaseName"`
-	Namespace          string `json:"namespace"`
-	ChartName          string `json:"chartName"`
-	RepoURL            string `json:"repoURL"`
-	Version            string `json:"version"`
-	ValuesYAML         string `json:"valuesYAML"`
-	ValuesBaselineYAML string `json:"valuesBaselineYAML"`
+	ReleaseName        string            `json:"releaseName"`
+	Namespace          string            `json:"namespace"`
+	ChartName          string            `json:"chartName"`
+	RepoURL            string            `json:"repoURL"`
+	Version            string            `json:"version"`
+	ValuesYAML         string            `json:"valuesYAML"`
+	ValuesBaselineYAML string            `json:"valuesBaselineYAML"`
+	AdapterOverrides   map[string]string `json:"adapterOverrides"`
 }
 
 // InstallHelmChart installs a new Helm release.
@@ -327,7 +328,7 @@ func (c *ApiController) InstallHelmChartStream() {
 		return
 	}
 	recorder := object.NewHelmOperationRecorder(task.Id)
-	logCh := store.InstallHelmChartStreamWithValuesBaseline(ctx, recorder, cfg, req.ReleaseName, req.Namespace, req.ChartName, req.RepoURL, req.Version, req.ValuesYAML, req.ValuesBaselineYAML)
+	logCh := store.InstallHelmChartStreamWithValuesBaseline(ctx, recorder, cfg, req.ReleaseName, req.Namespace, req.ChartName, req.RepoURL, req.Version, req.ValuesYAML, req.ValuesBaselineYAML, req.AdapterOverrides)
 	for event := range logCh {
 		if err := writeHelmInstallStreamEvent(w, event); err != nil {
 			break

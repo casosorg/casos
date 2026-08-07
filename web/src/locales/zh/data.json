@@ -119,7 +119,8 @@
     "Kubernetes API unavailable": "Kubernetes API 当前不可用，请检查控制面状态和网络连接。",
     "Helm dry run failed": "Helm 预检失败，请检查 Chart 模板、values 和错误详情。",
     "Missing resource": "缺少资源",
-    "Compatibility details": "详细信息"
+    "Compatibility details": "详细信息",
+    "Advanced settings": "高级设置"
   },
   "monitor": {
     "Abnormal Pods": "异常 Pod",

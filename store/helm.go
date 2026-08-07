@@ -1346,14 +1346,14 @@ func newHelmErrorEvent(err error) HelmInstallStreamEvent {
 // request. Lifecycle persistence is supplied by the caller so store remains
 // independent of the database layer.
 func InstallHelmChartStream(ctx context.Context, lifecycle HelmInstallLifecycle, cfg *rest.Config, releaseName, namespace, chartName, repoURL, version, valuesYAML string) <-chan HelmInstallStreamEvent {
-	return installHelmChartStream(ctx, lifecycle, cfg, releaseName, namespace, chartName, repoURL, version, valuesYAML, "")
+	return installHelmChartStream(ctx, lifecycle, cfg, releaseName, namespace, chartName, repoURL, version, valuesYAML, "", nil)
 }
 
-func InstallHelmChartStreamWithValuesBaseline(ctx context.Context, lifecycle HelmInstallLifecycle, cfg *rest.Config, releaseName, namespace, chartName, repoURL, version, valuesYAML, valuesBaselineYAML string) <-chan HelmInstallStreamEvent {
-	return installHelmChartStream(ctx, lifecycle, cfg, releaseName, namespace, chartName, repoURL, version, valuesYAML, valuesBaselineYAML)
+func InstallHelmChartStreamWithValuesBaseline(ctx context.Context, lifecycle HelmInstallLifecycle, cfg *rest.Config, releaseName, namespace, chartName, repoURL, version, valuesYAML, valuesBaselineYAML string, adapterOverrides map[string]string) <-chan HelmInstallStreamEvent {
+	return installHelmChartStream(ctx, lifecycle, cfg, releaseName, namespace, chartName, repoURL, version, valuesYAML, valuesBaselineYAML, adapterOverrides)
 }
 
-func installHelmChartStream(ctx context.Context, lifecycle HelmInstallLifecycle, cfg *rest.Config, releaseName, namespace, chartName, repoURL, version, valuesYAML, valuesBaselineYAML string) <-chan HelmInstallStreamEvent {
+func installHelmChartStream(ctx context.Context, lifecycle HelmInstallLifecycle, cfg *rest.Config, releaseName, namespace, chartName, repoURL, version, valuesYAML, valuesBaselineYAML string, adapterOverrides map[string]string) <-chan HelmInstallStreamEvent {
 	eventCh := make(chan HelmInstallStreamEvent, 64)
 	if lifecycle == nil {
 		eventCh <- newHelmErrorEvent(errors.New("Helm install lifecycle is required"))
@@ -1443,6 +1443,7 @@ func installHelmChartStream(ctx context.Context, lifecycle HelmInstallLifecycle,
 			finishWithError(err, "values preparation error")
 			return
 		}
+		ApplyHelmChartAdapterOverrides(helmChart.Name(), vals, adapterOverrides)
 		for _, warning := range adjustments.warnings() {
 			sendWarning(warning)
 		}

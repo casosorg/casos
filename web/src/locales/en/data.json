@@ -119,7 +119,8 @@
     "Kubernetes API unavailable": "The Kubernetes API is unavailable. Check the control plane and network connection.",
     "Helm dry run failed": "The Helm preflight check failed. Check the chart templates, values, and error details.",
     "Missing resource": "Missing resource",
-    "Compatibility details": "Details"
+    "Compatibility details": "Details",
+    "Advanced settings": "Advanced settings"
   },
   "monitor": {
     "Abnormal Pods": "Abnormal Pods",

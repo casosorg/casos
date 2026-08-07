@@ -1,5 +1,5 @@
 import React, {useEffect, useRef, useState} from "react";
-import {Alert, Button, Form, Input, Modal, Select, Spin, Typography} from "antd";
+import {Alert, Button, Collapse, Form, Input, Modal, Select, Spin, Typography} from "antd";
 import {useTranslation} from "react-i18next";
 import * as HelmBackend from "./backend/HelmBackend";
 import * as NamespaceBackend from "./backend/NamespaceBackend";
@@ -24,6 +24,8 @@ export default function HelmInstallModal({open, chart, onClose, onInstalled}) {
   const [namespaces, setNamespaces] = useState([]);
   const [valuesYAML, setValuesYAML] = useState("");
   const [valuesBaselineYAML, setValuesBaselineYAML] = useState("");
+  const [adaptationOverrides, setAdaptationOverrides] = useState([]);
+  const [adaptationValues, setAdaptationValues] = useState({});
   const [valuesLoading, setValuesLoading] = useState(false);
   const [installing, setInstalling] = useState(false);
   const [pollingPaused, setPollingPaused] = useState(false);
@@ -235,6 +237,15 @@ export default function HelmInstallModal({open, chart, onClose, onInstalled}) {
         .finally(() => {
           if (isCurrentInitialization()) {setValuesLoading(false);}
         });
+      HelmBackend.getHelmChartAdaptations(chart.chartName)
+        .then(res => {
+          if (!isCurrentInitialization()) {return;}
+          const overrides = res.status === "ok" && Array.isArray(res.data) ? res.data : [];
+          setAdaptationOverrides(overrides);
+          const defaults = {};
+          overrides.forEach(o => {defaults[o.key] = o.default;});
+          setAdaptationValues(defaults);
+        });
     }
   }, [open, chart, form]);
 
@@ -268,6 +279,8 @@ export default function HelmInstallModal({open, chart, onClose, onInstalled}) {
     form.resetFields();
     setValuesYAML("");
     setValuesBaselineYAML("");
+    setAdaptationOverrides([]);
+    setAdaptationValues({});
     setError(null);
     setStorageWarning(null);
     setLogs([]);
@@ -275,6 +288,16 @@ export default function HelmInstallModal({open, chart, onClose, onInstalled}) {
     setInstalling(false);
     setPollingPaused(false);
     onClose();
+  };
+
+  const changedAdaptationValues = () => {
+    const changed = {};
+    adaptationOverrides.forEach(o => {
+      if (adaptationValues[o.key] !== o.default) {
+        changed[o.key] = adaptationValues[o.key];
+      }
+    });
+    return changed;
   };
 
   const handleOk = () => {
@@ -317,6 +340,7 @@ export default function HelmInstallModal({open, chart, onClose, onInstalled}) {
           version: values.version || chart.version,
           valuesYAML,
           valuesBaselineYAML,
+          adapterOverrides: changedAdaptationValues(),
         },
         line => {
           if (!mountedRef.current || streamAbortRef.current !== streamController) {return;}
@@ -526,6 +550,29 @@ export default function HelmInstallModal({open, chart, onClose, onInstalled}) {
         </Form>
       )}
 
+      {adaptationOverrides.length > 0 && (
+        <Collapse
+          ghost
+          style={{marginTop: 4}}
+          items={[{
+            key: "advanced",
+            label: t("helm:Advanced settings"),
+            children: adaptationOverrides.map(o => (
+              <Form.Item
+                key={o.key}
+                label={o.label}
+                extra={o.description}
+                style={{marginBottom: 12}}
+              >
+                <Input
+                  value={adaptationValues[o.key]}
+                  onChange={e => setAdaptationValues(prev => ({...prev, [o.key]: e.target.value}))}
+                />
+              </Form.Item>
+            )),
+          }]}
+        />
+      )}
       {showLog && (
         <div
           style={{

@@ -56,6 +56,7 @@ describe("HelmInstallModal form initialization", () => {
       resolveNamespaces = resolve;
     }));
     HelmBackend.getHelmChartValues.mockResolvedValue({status: "ok", data: ""});
+    HelmBackend.getHelmChartAdaptations.mockResolvedValue({status: "ok", data: []});
     container = document.createElement("div");
     document.body.appendChild(container);
     root = createRoot(container);

@@ -10,10 +10,11 @@ import (
 // VisibleAdapterOverride describes a value the adapter injects by default
 // that the user may review and change in the install form.
 type VisibleAdapterOverride struct {
-	Key         string `json:"key"`
-	Label       string `json:"label"`
-	Default     string `json:"default"`
-	Description string `json:"description"`
+	Key         string                 `json:"key"`
+	Label       string                 `json:"label"`
+	Default     string                 `json:"default"`
+	Description string                 `json:"description"`
+	ValuesPatch map[string]interface{} `json:"valuesPatch"`
 }
 
 // helmChartAdapter encodes app-aware install value patches keyed by chart name.
@@ -42,6 +43,11 @@ var helmChartAdapterRegistry = map[string]helmChartAdapter{
 			Label:       "N8N_SECURE_COOKIE",
 			Default:     "false",
 			Description: "n8n refuses plain HTTP when secure cookies are enabled; the App Store access URL requires this off",
+			ValuesPatch: map[string]interface{}{
+				"env": []interface{}{
+					map[string]interface{}{"name": "N8N_SECURE_COOKIE", "value": "false"},
+				},
+			},
 		}},
 	},
 	"superset":  {valuesPatches: nodePortServiceValuesPatch},
@@ -60,6 +66,51 @@ func GetHelmChartAdapterVisibleOverrides(chartName string) []VisibleAdapterOverr
 		return nil
 	}
 	return adapter.visibleOverrides
+}
+
+// ApplyHelmChartAdapterOverrides applies user-chosen values for visible
+// adapter overrides onto the install values. Unknown keys are ignored.
+func ApplyHelmChartAdapterOverrides(chartName string, values map[string]interface{}, overrides map[string]string) {
+	if len(overrides) == 0 {
+		return
+	}
+	adapter, ok := helmChartAdapterRegistry[strings.ToLower(strings.TrimSpace(chartName))]
+	if !ok {
+		return
+	}
+	for _, override := range adapter.visibleOverrides {
+		value, chosen := overrides[override.Key]
+		if !chosen {
+			continue
+		}
+		patch := cloneHelmValues(override.ValuesPatch)
+		replaceAdapterOverrideValue(patch, value)
+		for topKey, subPatch := range patch {
+			_ = mergeHelmValueOverrides(values, map[string]interface{}{topKey: subPatch}, nil)
+		}
+	}
+}
+
+// replaceAdapterOverrideValue replaces the first "value" field in a
+// visible-override patch with the user's choice.
+func replaceAdapterOverrideValue(patch map[string]interface{}, value string) {
+	for key, item := range patch {
+		switch typed := item.(type) {
+		case string:
+			if key == "value" {
+				patch[key] = value
+				return
+			}
+		case map[string]interface{}:
+			replaceAdapterOverrideValue(typed, value)
+		case []interface{}:
+			for _, entry := range typed {
+				if entryMap, ok := entry.(map[string]interface{}); ok {
+					replaceAdapterOverrideValue(entryMap, value)
+				}
+			}
+		}
+	}
 }
 
 // applyHelmChartAdapter merges chart-specific compatibility values into the

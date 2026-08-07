@@ -38,6 +38,13 @@ export function getHelmChartValues(chart, repo, version) {
   ).then(r => r.json());
 }
 
+export function getHelmChartAdaptations(chart) {
+  return fetch(
+    `${Setting.ServerUrl}/api/get-helm-chart-adaptations?chart=${encodeURIComponent(chart)}`,
+    {credentials: "include", headers: lang()}
+  ).then(r => r.json());
+}
+
 export function getHelmReleases(namespace = "all") {
   return fetch(`${Setting.ServerUrl}/api/get-helm-releases?namespace=${namespace}`, {
     credentials: "include", headers: lang(),
