@@ -121,7 +121,9 @@
     "Missing resource": "Missing resource",
     "Compatibility details": "Details",
     "Cancel install": "Cancel install",
-    "Cancel install failed": "Cancel install failed"
+    "Cancel install failed": "Cancel install failed",
+    "Cancel this install?": "Cancel this install?",
+    "Cancel leaves installed resources behind": "Cancelled operations leave already-created resources behind; uninstall them from the Helm Releases page."
   },
   "monitor": {
     "Abnormal Pods": "Abnormal Pods",

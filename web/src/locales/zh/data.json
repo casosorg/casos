@@ -121,7 +121,9 @@
     "Missing resource": "缺少资源",
     "Compatibility details": "详细信息",
     "Cancel install": "取消安装",
-    "Cancel install failed": "取消安装失败"
+    "Cancel install failed": "取消安装失败",
+    "Cancel this install?": "取消本次安装？",
+    "Cancel leaves installed resources behind": "取消后已创建的资源会保留，请到 Helm Releases 页卸载。"
   },
   "monitor": {
     "Abnormal Pods": "异常 Pod",

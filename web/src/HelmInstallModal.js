@@ -142,6 +142,14 @@ export default function HelmInstallModal({open, chart, onClose, onInstalled}) {
             forgetTask(storageKey);
             return;
           }
+          if (task.status === "cancelled") {
+            setInstalling(false);
+            setPollingPaused(false);
+            submittingRef.current = false;
+            forgetTask(storageKey);
+            setDone(true);
+            return;
+          }
           setInstalling(true);
           pollTimerRef.current = setTimeout(poll, 2000);
         })
@@ -282,20 +290,29 @@ export default function HelmInstallModal({open, chart, onClose, onInstalled}) {
   const handleCancelInstall = () => {
     const taskId = taskIdRef.current;
     if (!taskId || cancelling) {return;}
-    setCancelling(true);
-    HelmBackend.cancelHelmOperation(taskId)
-      .then(res => {
-        if (res.status !== "ok") {
-          setError(res.msg || t("helm:Cancel install failed"));
-          setCancelling(false);
-          return;
-        }
-        monitorTask(taskId, taskStorageKeyRef.current, taskIdentityRef.current);
-      })
-      .catch(e => {
-        setError(e.message);
-        setCancelling(false);
-      });
+    Modal.confirm({
+      title: t("helm:Cancel this install?"),
+      content: t("helm:Cancel leaves installed resources behind"),
+      okText: t("helm:Cancel install"),
+      okButtonProps: {danger: true},
+      cancelText: t("general:Cancel"),
+      onOk: () => {
+        setCancelling(true);
+        HelmBackend.cancelHelmOperation(taskId)
+          .then(res => {
+            if (res.status !== "ok") {
+              setError(res.msg || t("helm:Cancel install failed"));
+              setCancelling(false);
+              return;
+            }
+            monitorTask(taskId, taskStorageKeyRef.current, taskIdentityRef.current);
+          })
+          .catch(e => {
+            setError(e.message);
+            setCancelling(false);
+          });
+      },
+    });
   };
 
   const handleOk = () => {
