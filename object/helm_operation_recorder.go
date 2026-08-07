@@ -13,16 +13,16 @@ import (
 )
 
 const (
-	helmOperationLogBatchSize      = 50
-	helmOperationLogFlushInterval  = 200 * time.Millisecond
-	helmOperationLogEnqueueTimeout = 2 * time.Second
-	helmOperationLogPersistTimeout = HelmOperationPersistenceTimeout
-	helmOperationRecorderShutdown  = 3*helmOperationLogPersistTimeout + time.Second
-	helmOperationRecorderStopGrace = 100 * time.Millisecond
-	helmOperationFinishTimeout     = HelmOperationPersistenceTimeout
-	helmOperationFinishAttempts    = 3
-	helmOperationFinishRetryDelay  = 100 * time.Millisecond
-	helmOperationHeartbeatInterval = time.Minute
+	helmOperationLogBatchSize       = 50
+	helmOperationLogFlushInterval   = 200 * time.Millisecond
+	helmOperationLogEnqueueTimeout  = 2 * time.Second
+	helmOperationLogPersistTimeout  = HelmOperationPersistenceTimeout
+	helmOperationRecorderShutdown   = 3*helmOperationLogPersistTimeout + time.Second
+	helmOperationRecorderStopGrace  = 100 * time.Millisecond
+	helmOperationFinishTimeout      = HelmOperationPersistenceTimeout
+	helmOperationFinishAttempts     = 3
+	helmOperationFinishRetryDelay   = 100 * time.Millisecond
+	helmOperationHeartbeatInterval  = time.Minute
 	helmOperationCancelPollInterval = time.Second
 )
 

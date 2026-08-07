@@ -14,10 +14,10 @@ import (
 const (
 	HelmOperationInstall = "install"
 
-	HelmOperationStatusPending   = "pending"
-	HelmOperationStatusRunning   = "running"
-	HelmOperationStatusSucceeded = "succeeded"
-	HelmOperationStatusFailed    = "failed"
+	HelmOperationStatusPending    = "pending"
+	HelmOperationStatusRunning    = "running"
+	HelmOperationStatusSucceeded  = "succeeded"
+	HelmOperationStatusFailed     = "failed"
 	HelmOperationStatusCancelling = "cancelling"
 	HelmOperationStatusCancelled  = "cancelled"
 
