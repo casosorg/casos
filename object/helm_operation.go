@@ -18,6 +18,8 @@ const (
 	HelmOperationStatusRunning   = "running"
 	HelmOperationStatusSucceeded = "succeeded"
 	HelmOperationStatusFailed    = "failed"
+	HelmOperationStatusCancelling = "cancelling"
+	HelmOperationStatusCancelled  = "cancelled"
 
 	HelmOperationPhaseQueued     = "queued"
 	HelmOperationPhaseLoading    = "loading"
@@ -222,6 +224,34 @@ func UpdateHelmOperationTaskPhaseContext(ctx context.Context, id int64, phase st
 
 func FinishHelmOperationTask(id int64, success bool, errorMsg string) error {
 	return FinishHelmOperationTaskContext(context.Background(), id, success, errorMsg)
+}
+
+// RequestHelmOperationCancel marks a running task as cancelling; the installer
+// goroutine polls this state and aborts the Helm operation.
+func RequestHelmOperationCancel(id int64) error {
+	affected, err := ormer.Engine.ID(id).
+		Where("status = ?", HelmOperationStatusRunning).
+		Cols("status", "updated_at").
+		Update(&HelmOperationTask{Status: HelmOperationStatusCancelling, UpdatedAt: time.Now().UTC()})
+	if err != nil {
+		return err
+	}
+	if affected == 0 {
+		return fmt.Errorf("Helm operation task %d is not running", id)
+	}
+	return nil
+}
+
+func HelmOperationTaskIsCancelling(id int64) (bool, error) {
+	task := &HelmOperationTask{Id: id}
+	found, err := ormer.Engine.Get(task)
+	if err != nil {
+		return false, err
+	}
+	if !found {
+		return false, nil
+	}
+	return task.Status == HelmOperationStatusCancelling, nil
 }
 
 func FinishHelmOperationTaskContext(ctx context.Context, id int64, success bool, errorMsg string) error {
