@@ -29,6 +29,12 @@ go.work.sum
 
 tmp/
 
+# Local build output
+/casos
+
+# Local runtime data (certs, kine storage, etc.)
+/data/
+
 # Editor/IDE
 .idea/
 .vscode/
