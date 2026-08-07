@@ -1,6 +1,8 @@
 package store
 
 import (
+	"crypto/rand"
+	"encoding/hex"
 	"fmt"
 	"strings"
 
@@ -21,6 +23,7 @@ type VisibleAdapterOverride struct {
 // type) without requiring the user to know chart internals.
 type helmChartAdapter struct {
 	valuesPatches    map[string]interface{}
+	valuesPatchFn    func() (map[string]interface{}, error)
 	visibleOverrides []VisibleAdapterOverride
 }
 
@@ -44,7 +47,16 @@ var helmChartAdapterRegistry = map[string]helmChartAdapter{
 			Description: "n8n refuses plain HTTP when secure cookies are enabled; the App Store access URL requires this off",
 		}},
 	},
-	"superset":  {valuesPatches: nodePortServiceValuesPatch},
+	"superset": {
+		valuesPatches: map[string]interface{}{
+			"service": map[string]interface{}{
+				"type":     "NodePort",
+				"nodePort": map[string]interface{}{"http": 30088},
+			},
+			"bootstrapScript": supersetBootstrapScript,
+		},
+		valuesPatchFn: supersetConfigOverridesPatch,
+	},
 	"nextcloud": {valuesPatches: nodePortServiceValuesPatch},
 }
 
@@ -62,6 +74,25 @@ func GetHelmChartAdapterVisibleOverrides(chartName string) []VisibleAdapterOverr
 	return adapter.visibleOverrides
 }
 
+// supersetBootstrapScript installs the psycopg2 driver into a writable target
+// dir at pod start: the apache/superset image has no psycopg2, the app venv
+// has no pip, and the system python (/usr/local/bin/python3) does. ${...}
+// keeps the shell expansion out of Helm's tpl processing.
+const supersetBootstrapScript = "/usr/local/bin/python3 -m pip install --no-cache-dir --target /tmp/pgdrivers psycopg2-binary && export PYTHONPATH=/tmp/pgdrivers:${PYTHONPATH}"
+
+// supersetConfigOverridesPatch generates a random SECRET_KEY: the default
+// value makes Superset refuse to start. The configOverrides template emits
+// the raw value, so the patch is a complete Python assignment.
+func supersetConfigOverridesPatch() (map[string]interface{}, error) {
+	buf := make([]byte, 24)
+	if _, err := rand.Read(buf); err != nil {
+		return nil, fmt.Errorf("generate Superset SECRET_KEY: %w", err)
+	}
+	return map[string]interface{}{
+		"configOverrides": map[string]interface{}{"secret": fmt.Sprintf("SECRET_KEY = %q", hex.EncodeToString(buf))},
+	}, nil
+}
+
 // applyHelmChartAdapter merges chart-specific compatibility values into the
 // install values; user-set top-level keys are left untouched, except that
 // array patches merge into user arrays by item name.
@@ -74,21 +105,39 @@ func applyHelmChartAdapter(ch *chart.Chart, values, explicitValues map[string]in
 		return nil
 	}
 	for topKey, patch := range adapter.valuesPatches {
-		existing, explicitlySet := explicitValues[topKey]
-		if explicitlySet {
-			existingArray, userArray := existing.([]interface{})
-			patchArray, patchIsArray := patch.([]interface{})
-			if !userArray || !patchIsArray {
-				continue
-			}
-			values[topKey] = mergeNamedHelmValuesArrays(existingArray, patchArray)
-			continue
+		if err := mergeAdapterValuesPatch(values, explicitValues, topKey, patch); err != nil {
+			return err
 		}
-		if err := mergeHelmValueOverrides(values, map[string]interface{}{topKey: patch}, nil); err != nil {
-			return fmt.Errorf("apply Helm chart adapter for %s: %w", ch.Name(), err)
+	}
+	if adapter.valuesPatchFn != nil {
+		fnPatches, err := adapter.valuesPatchFn()
+		if err != nil {
+			return err
+		}
+		for topKey, patch := range fnPatches {
+			if err := mergeAdapterValuesPatch(values, explicitValues, topKey, patch); err != nil {
+				return err
+			}
 		}
 	}
 	return nil
+}
+
+// mergeAdapterValuesPatch merges one adapter patch into the install values;
+// user-set top-level keys are left untouched, except array patches merge
+// into user arrays by item name.
+func mergeAdapterValuesPatch(values, explicitValues map[string]interface{}, topKey string, patch interface{}) error {
+	existing, explicitlySet := explicitValues[topKey]
+	if explicitlySet {
+		existingArray, userArray := existing.([]interface{})
+		patchArray, patchIsArray := patch.([]interface{})
+		if !userArray || !patchIsArray {
+			return nil
+		}
+		values[topKey] = mergeNamedHelmValuesArrays(existingArray, patchArray)
+		return nil
+	}
+	return mergeHelmValueOverrides(values, map[string]interface{}{topKey: patch}, nil)
 }
 
 // mergeNamedHelmValuesArrays appends patch items whose name is not already

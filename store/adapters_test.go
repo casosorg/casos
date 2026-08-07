@@ -1,6 +1,7 @@
 package store
 
 import (
+	"strings"
 	"testing"
 
 	"helm.sh/helm/v3/pkg/chart"
@@ -123,10 +124,50 @@ func TestN8nAdapterUserEnvWinsByName(t *testing.T) {
 
 func TestGetHelmChartAdapterVisibleOverrides(t *testing.T) {
 	overrides := GetHelmChartAdapterVisibleOverrides("n8n")
-	if len(overrides) != 1 || overrides[0].Key != "env.N8N_SECURE_COOKIE" || overrides[0].Default != "false" {
+	if len(overrides) != 1 || overrides[0].Key != "extraEnv.N8N_SECURE_COOKIE" || overrides[0].Default != "false" {
 		t.Fatalf("unexpected visible overrides: %#v", overrides)
 	}
 	if got := GetHelmChartAdapterVisibleOverrides("grafana"); got != nil {
 		t.Errorf("grafana should have no visible overrides, got %#v", got)
+	}
+}
+
+func TestSupersetAdapterPatches(t *testing.T) {
+	values, _, err := prepareHelmInstallValues(testChart("superset"), "https://example.com/charts", map[string]interface{}{})
+	if err != nil {
+		t.Fatalf("prepare values: %v", err)
+	}
+	service, ok := values["service"].(map[string]interface{})
+	if !ok || service["type"] != "NodePort" {
+		t.Errorf("expected service.type NodePort, got %#v", values["service"])
+	}
+	nodePort, _ := service["nodePort"].(map[string]interface{})
+	if nodePort["http"] != 30088 {
+		t.Errorf("expected explicit numeric nodePort, got %#v", service["nodePort"])
+	}
+	overrides, ok := values["configOverrides"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("expected configOverrides, got %#v", values["configOverrides"])
+	}
+	secret, _ := overrides["secret"].(string)
+	if !strings.HasPrefix(secret, "SECRET_KEY = ") || len(secret) < 32 {
+		t.Errorf("expected SECRET_KEY assignment, got %q", secret)
+	}
+	bootstrap, _ := values["bootstrapScript"].(string)
+	if !strings.Contains(bootstrap, "psycopg2") {
+		t.Errorf("expected psycopg2 in bootstrapScript, got %q", bootstrap)
+	}
+}
+
+func TestSupersetAdapterRespectsUserSecret(t *testing.T) {
+	values, _, err := prepareHelmInstallValues(testChart("superset"), "https://example.com/charts", map[string]interface{}{
+		"configOverrides": map[string]interface{}{"secret": "user-secret"},
+	})
+	if err != nil {
+		t.Fatalf("prepare values: %v", err)
+	}
+	overrides, _ := values["configOverrides"].(map[string]interface{})
+	if overrides["secret"] != "user-secret" {
+		t.Errorf("user SECRET_KEY should win, got %#v", overrides["secret"])
 	}
 }
