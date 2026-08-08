@@ -123,7 +123,7 @@ func TestN8nAdapterUserEnvWinsByName(t *testing.T) {
 
 func TestGetHelmChartAdapterVisibleOverrides(t *testing.T) {
 	overrides := GetHelmChartAdapterVisibleOverrides("n8n")
-	if len(overrides) != 1 || overrides[0].Key != "env.N8N_SECURE_COOKIE" || overrides[0].Default != "false" {
+	if len(overrides) != 1 || overrides[0].Key != "extraEnv.N8N_SECURE_COOKIE" || overrides[0].Default != "false" {
 		t.Fatalf("unexpected visible overrides: %#v", overrides)
 	}
 	if got := GetHelmChartAdapterVisibleOverrides("grafana"); got != nil {
