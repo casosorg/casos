@@ -113,6 +113,9 @@ type helmInstallValueOptions struct {
 	// secret: the install dialog renders its baseline through this path, and a
 	// value that differs on every render is not the one the install uses.
 	skipGeneratedValues bool
+	// nodeIPs lazily resolves cluster node addresses for adapters that need a
+	// reachable endpoint (e.g. Nextcloud trusted_domains); may be nil.
+	nodeIPs func() []string
 }
 
 // prepareHelmInstallValues computes compatibility changes from Helm's fully
@@ -138,7 +141,7 @@ func prepareHelmInstallValuesWithOptions(ch *chart.Chart, repoURL string, input 
 		}
 		values, adjustments = bitnamiValues, bitnamiAdjustments
 	}
-	if err := applyHelmChartAdapter(ch, values, input, !options.skipGeneratedValues); err != nil {
+	if err := applyHelmChartAdapter(ch, values, input, !options.skipGeneratedValues, options.nodeIPs); err != nil {
 		return nil, adjustments, err
 	}
 	return values, adjustments, nil

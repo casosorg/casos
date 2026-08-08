@@ -19,6 +19,9 @@ type helmChartAdapter struct {
 	// generatedValuesPatchFn mints per-install values such as a random secret.
 	// The values preview skips it so the install dialog stays reproducible.
 	generatedValuesPatchFn func(explicitValues map[string]interface{}) (map[string]interface{}, error)
+	// clusterPatchFn mints patches that need cluster context (chart defaults,
+	// node IPs), e.g. Nextcloud trusted_domains. Skipped for the preview.
+	clusterPatchFn func(ch *chart.Chart, values map[string]interface{}, nodeIPs []string) (map[string]interface{}, error)
 	// preservedValuePaths are carried over from the installed release on upgrade.
 	preservedValuePaths [][]string
 }
@@ -34,7 +37,10 @@ var helmChartAdapterRegistry = map[string]helmChartAdapter{
 		generatedValuesPatchFn: supersetSecretKeyPatch,
 		preservedValuePaths:    supersetPreservedValuePaths,
 	},
-	"nextcloud": {valuesPatches: nodePortServiceValuesPatch()},
+	"nextcloud": {
+		valuesPatches:  nodePortServiceValuesPatch(),
+		clusterPatchFn: nextcloudTrustedDomainsPatch,
+	},
 }
 
 // nodePortServiceValuesPatch returns a fresh patch each call so the registry
@@ -120,7 +126,7 @@ func supersetSecretKeyAlreadySet(values map[string]interface{}) bool {
 
 // applyHelmChartAdapter merges chart-specific compatibility values into the
 // install values; user-set top-level keys are left untouched.
-func applyHelmChartAdapter(ch *chart.Chart, values, explicitValues map[string]interface{}, includeGenerated bool) error {
+func applyHelmChartAdapter(ch *chart.Chart, values, explicitValues map[string]interface{}, includeGenerated bool, nodeIPs func() []string) error {
 	if ch == nil {
 		return nil
 	}
@@ -129,12 +135,25 @@ func applyHelmChartAdapter(ch *chart.Chart, values, explicitValues map[string]in
 		return nil
 	}
 	patches := adapter.valuesPatches
-	if includeGenerated && adapter.generatedValuesPatchFn != nil {
-		generated, err := adapter.generatedValuesPatchFn(explicitValues)
-		if err != nil {
-			return fmt.Errorf("apply Helm chart adapter for %s: %w", ch.Name(), err)
+	if includeGenerated {
+		if adapter.generatedValuesPatchFn != nil {
+			generated, err := adapter.generatedValuesPatchFn(explicitValues)
+			if err != nil {
+				return fmt.Errorf("apply Helm chart adapter for %s: %w", ch.Name(), err)
+			}
+			patches = mergedHelmAdapterPatches(patches, generated)
 		}
-		patches = mergedHelmAdapterPatches(patches, generated)
+		if adapter.clusterPatchFn != nil {
+			var ips []string
+			if nodeIPs != nil {
+				ips = nodeIPs()
+			}
+			clusterPatches, err := adapter.clusterPatchFn(ch, values, ips)
+			if err != nil {
+				return fmt.Errorf("apply Helm chart adapter for %s: %w", ch.Name(), err)
+			}
+			patches = mergedHelmAdapterPatches(patches, clusterPatches)
+		}
 	}
 	for topKey, patch := range patches {
 		if adapterPatchExplicitlyOverridden(explicitValues, topKey, patch) {
@@ -247,4 +266,56 @@ func adapterPatchExplicitlyOverridden(explicitValues map[string]interface{}, top
 		}
 	}
 	return false
+}
+
+// nextcloudTrustedDomainsPatch configures trusted_domains via the chart's
+// config.php fragment mechanism (nextcloud.configs). The fragment APPENDS to
+// any existing trusted_domains (chart defaults, metrics service names, user
+// ingress domains) instead of overwriting them.
+//
+// The probe host is resolved from the user values or the chart default
+// (nextcloud.host); the chart probes /status.php with that host, so omitting
+// it makes liveness fail and the pod restart-loop. Node IPs are the cluster
+// addresses the user reaches the app through; they are snapshotted at
+// install/upgrade time and refreshed on the next upgrade.
+//
+// The filename must match Nextcloud's *.config.php loading pattern, and this
+// fragment loads last (natsort), so $CONFIG already holds prior entries.
+func nextcloudTrustedDomainsPatch(ch *chart.Chart, values map[string]interface{}, nodeIPs []string) (map[string]interface{}, error) {
+	var builder strings.Builder
+	builder.WriteString("<?php\n$CONFIG['trusted_domains'] = array_merge($CONFIG['trusted_domains'] ?? [], [\n")
+	builder.WriteString(fmt.Sprintf("  0 => '%s',\n", escapePHPString(nextcloudProbeHost(ch, values))))
+	for index, ip := range nodeIPs {
+		builder.WriteString(fmt.Sprintf("  %d => '%s',\n", index+1, escapePHPString(ip)))
+	}
+	builder.WriteString("]);\n")
+	return map[string]interface{}{
+		"nextcloud": map[string]interface{}{
+			"configs": map[string]interface{}{
+				"trusted_domains.config.php": builder.String(),
+			},
+		},
+	}, nil
+}
+
+// nextcloudProbeHost returns the effective nextcloud.host: the user-provided
+// value if set, else the chart default, else the historical probe host.
+func nextcloudProbeHost(ch *chart.Chart, values map[string]interface{}) string {
+	if nextcloud, ok := values["nextcloud"].(map[string]interface{}); ok {
+		if host, ok := nextcloud["host"].(string); ok && strings.TrimSpace(host) != "" {
+			return host
+		}
+	}
+	if ch != nil && ch.Values != nil {
+		if nextcloud, ok := ch.Values["nextcloud"].(map[string]interface{}); ok {
+			if host, ok := nextcloud["host"].(string); ok && strings.TrimSpace(host) != "" {
+				return host
+			}
+		}
+	}
+	return "nextcloud.kube.home"
+}
+
+func escapePHPString(value string) string {
+	return strings.ReplaceAll(value, "'", "\\'")
 }
