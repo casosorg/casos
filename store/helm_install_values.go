@@ -110,10 +110,14 @@ func buildHelmChartInstallValues(ch *chart.Chart, repoURL string) (map[string]in
 // prepareHelmInstallValues computes compatibility changes from Helm's fully
 // coalesced values, then merges only changed paths into the caller's values.
 func prepareHelmInstallValues(ch *chart.Chart, repoURL string, input map[string]interface{}) (map[string]interface{}, helmInstallValueAdjustments, error) {
-	return prepareHelmInstallValuesWithMode(ch, repoURL, input, false)
+	return prepareHelmInstallValuesWithMode(ch, repoURL, input, false, nil)
 }
 
-func prepareHelmInstallValuesWithMode(ch *chart.Chart, repoURL string, input map[string]interface{}, inputIsOverrides bool) (map[string]interface{}, helmInstallValueAdjustments, error) {
+// prepareHelmInstallValues computes compatibility changes from Helm's fully
+// coalesced values, then merges only changed paths into the caller's values.
+// nodeIPs are cluster node addresses used by adapters that need a reachable
+// endpoint (e.g. Nextcloud trusted_domains); may be nil.
+func prepareHelmInstallValuesWithMode(ch *chart.Chart, repoURL string, input map[string]interface{}, inputIsOverrides bool, nodeIPs []string) (map[string]interface{}, helmInstallValueAdjustments, error) {
 	values := cloneHelmValues(input)
 	if ch == nil {
 		return values, helmInstallValueAdjustments{}, nil
@@ -126,7 +130,7 @@ func prepareHelmInstallValuesWithMode(ch *chart.Chart, repoURL string, input map
 		}
 		values, adjustments = bitnamiValues, bitnamiAdjustments
 	}
-	if err := applyHelmChartAdapter(ch, values, input); err != nil {
+	if err := applyHelmChartAdapter(ch, values, input, nodeIPs); err != nil {
 		return nil, adjustments, err
 	}
 	return values, adjustments, nil

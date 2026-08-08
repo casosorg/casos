@@ -1,6 +1,7 @@
 package store
 
 import (
+	"strings"
 	"testing"
 
 	"helm.sh/helm/v3/pkg/chart"
@@ -82,7 +83,7 @@ func TestHelmChartAdapterKeepsBitnamiAdjustments(t *testing.T) {
 func TestHelmChartAdapterOverridesModeInjectNodePortWhenSiblingChanged(t *testing.T) {
 	values, _, err := prepareHelmInstallValuesWithMode(testChart("grafana"), "https://example.com/charts", map[string]interface{}{
 		"service": map[string]interface{}{"port": 3001},
-	}, true)
+	}, true, nil)
 	if err != nil {
 		t.Fatalf("prepare values: %v", err)
 	}
@@ -98,12 +99,51 @@ func TestHelmChartAdapterOverridesModeInjectNodePortWhenSiblingChanged(t *testin
 func TestHelmChartAdapterOverridesModeRespectsExplicitType(t *testing.T) {
 	values, _, err := prepareHelmInstallValuesWithMode(testChart("grafana"), "https://example.com/charts", map[string]interface{}{
 		"service": map[string]interface{}{"type": "LoadBalancer", "port": 3001},
-	}, true)
+	}, true, nil)
 	if err != nil {
 		t.Fatalf("prepare values: %v", err)
 	}
 	service, _ := values["service"].(map[string]interface{})
 	if service["type"] != "LoadBalancer" {
 		t.Errorf("user service.type must win; got %#v", values["service"])
+	}
+}
+
+func TestNextcloudAdapterTrustedDomains(t *testing.T) {
+	values, _, err := prepareHelmInstallValuesWithMode(testChart("nextcloud"), "https://example.com/charts", map[string]interface{}{}, false, []string{"192.168.10.101"})
+	if err != nil {
+		t.Fatalf("prepare values: %v", err)
+	}
+	service, ok := values["service"].(map[string]interface{})
+	if !ok || service["type"] != "NodePort" {
+		t.Errorf("expected service.type NodePort, got %#v", values["service"])
+	}
+	nextcloud, ok := values["nextcloud"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("expected nextcloud values, got %#v", values["nextcloud"])
+	}
+	configs, ok := nextcloud["configs"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("expected nextcloud configs, got %#v", nextcloud)
+	}
+	content, _ := configs["trusted_domains.config.php"].(string)
+	if !strings.Contains(content, "nextcloud.kube.home") || !strings.Contains(content, "192.168.10.101") {
+		t.Errorf("trusted_domains fragment missing probe host or node IP: %q", content)
+	}
+}
+
+func TestNextcloudAdapterWithoutNodeIPs(t *testing.T) {
+	values, _, err := prepareHelmInstallValuesWithMode(testChart("nextcloud"), "https://example.com/charts", map[string]interface{}{}, false, nil)
+	if err != nil {
+		t.Fatalf("prepare values: %v", err)
+	}
+	nextcloud, _ := values["nextcloud"].(map[string]interface{})
+	configs, _ := nextcloud["configs"].(map[string]interface{})
+	content, _ := configs["trusted_domains.config.php"].(string)
+	if !strings.Contains(content, "nextcloud.kube.home") {
+		t.Errorf("expected probe host in fragment, got %q", content)
+	}
+	if strings.Contains(content, "192.168") {
+		t.Errorf("expected no node IPs, got %q", content)
 	}
 }
