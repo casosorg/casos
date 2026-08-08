@@ -1,6 +1,8 @@
 package store
 
 import (
+	"crypto/rand"
+	"encoding/hex"
 	"fmt"
 	"strings"
 
@@ -12,15 +14,25 @@ import (
 // type) without requiring the user to know chart internals.
 type helmChartAdapter struct {
 	valuesPatches map[string]interface{}
+	valuesPatchFn func() (map[string]interface{}, error)
 }
 
 // helmChartAdapterRegistry maps canonical chart names to install adaptations.
 // Explicit user values always win over adapter patches.
 var helmChartAdapterRegistry = map[string]helmChartAdapter{
-	"grafana":   {valuesPatches: nodePortServiceValuesPatch()},
-	"pgadmin4":  {valuesPatches: nodePortServiceValuesPatch()},
-	"n8n":       {valuesPatches: nodePortServiceValuesPatch()},
-	"superset":  {valuesPatches: nodePortServiceValuesPatch()},
+	"grafana":  {valuesPatches: nodePortServiceValuesPatch()},
+	"pgadmin4": {valuesPatches: nodePortServiceValuesPatch()},
+	"n8n":      {valuesPatches: nodePortServiceValuesPatch()},
+	"superset": {
+		valuesPatches: map[string]interface{}{
+			"service": map[string]interface{}{
+				"type":     "NodePort",
+				"nodePort": map[string]interface{}{"http": 30088},
+			},
+			"bootstrapScript": supersetBootstrapScript,
+		},
+		valuesPatchFn: supersetConfigOverridesPatch,
+	},
 	"nextcloud": {valuesPatches: nodePortServiceValuesPatch()},
 }
 
@@ -30,6 +42,25 @@ func nodePortServiceValuesPatch() map[string]interface{} {
 	return map[string]interface{}{
 		"service": map[string]interface{}{"type": "NodePort"},
 	}
+}
+
+// supersetBootstrapScript installs the psycopg2 driver into a writable target
+// dir at pod start: the apache/superset image has no psycopg2, the app venv
+// has no pip, and the system python (/usr/local/bin/python3) does. ${...}
+// keeps the shell expansion out of Helm's tpl processing.
+const supersetBootstrapScript = "/usr/local/bin/python3 -m pip install --no-cache-dir --target /tmp/pgdrivers psycopg2-binary && export PYTHONPATH=/tmp/pgdrivers:${PYTHONPATH}"
+
+// supersetConfigOverridesPatch generates a random SECRET_KEY: the default
+// value makes Superset refuse to start. The configOverrides template emits
+// the raw value, so the patch is a complete Python assignment.
+func supersetConfigOverridesPatch() (map[string]interface{}, error) {
+	buf := make([]byte, 24)
+	if _, err := rand.Read(buf); err != nil {
+		return nil, fmt.Errorf("generate Superset SECRET_KEY: %w", err)
+	}
+	return map[string]interface{}{
+		"configOverrides": map[string]interface{}{"secret": fmt.Sprintf("SECRET_KEY = %q", hex.EncodeToString(buf))},
+	}, nil
 }
 
 // applyHelmChartAdapter merges chart-specific compatibility values into the
@@ -48,6 +79,20 @@ func applyHelmChartAdapter(ch *chart.Chart, values, explicitValues map[string]in
 		}
 		if err := mergeHelmValueOverrides(values, map[string]interface{}{topKey: patch}, nil); err != nil {
 			return fmt.Errorf("apply Helm chart adapter for %s: %w", ch.Name(), err)
+		}
+	}
+	if adapter.valuesPatchFn != nil {
+		fnPatches, err := adapter.valuesPatchFn()
+		if err != nil {
+			return err
+		}
+		for topKey, patch := range fnPatches {
+			if adapterPatchExplicitlyOverridden(explicitValues, topKey, patch) {
+				continue
+			}
+			if err := mergeHelmValueOverrides(values, map[string]interface{}{topKey: patch}, nil); err != nil {
+				return fmt.Errorf("apply Helm chart adapter for %s: %w", ch.Name(), err)
+			}
 		}
 	}
 	return nil
