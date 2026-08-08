@@ -79,7 +79,7 @@ func TestHelmChartAdapterKeepsBitnamiAdjustments(t *testing.T) {
 	}
 }
 
-func TestHelmChartAdapterOverridesModeRespectsExplicitService(t *testing.T) {
+func TestHelmChartAdapterOverridesModeInjectNodePortWhenSiblingChanged(t *testing.T) {
 	values, _, err := prepareHelmInstallValuesWithMode(testChart("grafana"), "https://example.com/charts", map[string]interface{}{
 		"service": map[string]interface{}{"port": 3001},
 	}, true)
@@ -87,7 +87,23 @@ func TestHelmChartAdapterOverridesModeRespectsExplicitService(t *testing.T) {
 		t.Fatalf("prepare values: %v", err)
 	}
 	service, _ := values["service"].(map[string]interface{})
-	if service["type"] != nil && service["type"] == "NodePort" {
-		t.Errorf("adapter must skip when the user set any service key; got %#v", values["service"])
+	if service["type"] != "NodePort" {
+		t.Errorf("adapter must inject NodePort when only a sibling key changed; got %#v", values["service"])
+	}
+	if service["port"] != 3001 {
+		t.Errorf("user port must be preserved, got %#v", values["service"])
+	}
+}
+
+func TestHelmChartAdapterOverridesModeRespectsExplicitType(t *testing.T) {
+	values, _, err := prepareHelmInstallValuesWithMode(testChart("grafana"), "https://example.com/charts", map[string]interface{}{
+		"service": map[string]interface{}{"type": "LoadBalancer", "port": 3001},
+	}, true)
+	if err != nil {
+		t.Fatalf("prepare values: %v", err)
+	}
+	service, _ := values["service"].(map[string]interface{})
+	if service["type"] != "LoadBalancer" {
+		t.Errorf("user service.type must win; got %#v", values["service"])
 	}
 }

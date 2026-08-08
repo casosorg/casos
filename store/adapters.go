@@ -43,7 +43,7 @@ func applyHelmChartAdapter(ch *chart.Chart, values, explicitValues map[string]in
 		return nil
 	}
 	for topKey, patch := range adapter.valuesPatches {
-		if _, explicitlySet := explicitValues[topKey]; explicitlySet {
+		if adapterPatchExplicitlyOverridden(explicitValues, topKey, patch) {
 			continue
 		}
 		if err := mergeHelmValueOverrides(values, map[string]interface{}{topKey: patch}, nil); err != nil {
@@ -51,4 +51,26 @@ func applyHelmChartAdapter(ch *chart.Chart, values, explicitValues map[string]in
 		}
 	}
 	return nil
+}
+
+// adapterPatchExplicitlyOverridden reports whether the user explicitly set
+// any leaf of the patch within explicitValues. Leaf-level checking (not the
+// top-level key) keeps the adapter active when the user only touched a
+// sibling key, e.g. service.port while the patch targets service.type.
+func adapterPatchExplicitlyOverridden(explicitValues map[string]interface{}, topKey string, patch interface{}) bool {
+	explicit, exists := explicitValues[topKey]
+	if !exists {
+		return false
+	}
+	patchMap, patchIsMap := patch.(map[string]interface{})
+	explicitMap, explicitIsMap := explicit.(map[string]interface{})
+	if !patchIsMap || !explicitIsMap {
+		return true
+	}
+	for key, subPatch := range patchMap {
+		if adapterPatchExplicitlyOverridden(explicitMap, key, subPatch) {
+			return true
+		}
+	}
+	return false
 }

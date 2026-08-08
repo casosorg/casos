@@ -120,7 +120,7 @@ func prepareHelmInstallValuesWithMode(ch *chart.Chart, repoURL string, input map
 	}
 	adjustments := helmInstallValueAdjustments{}
 	if isBitnamiCommunityChartRepo(repoURL) {
-		bitnamiValues, bitnamiAdjustments, err := applyBitnamiChartAdjustments(ch, repoURL, values, input, inputIsOverrides)
+		bitnamiValues, bitnamiAdjustments, err := applyBitnamiChartAdjustments(ch, values, input, inputIsOverrides)
 		if err != nil {
 			return nil, bitnamiAdjustments, err
 		}
@@ -132,7 +132,7 @@ func prepareHelmInstallValuesWithMode(ch *chart.Chart, repoURL string, input map
 	return values, adjustments, nil
 }
 
-func applyBitnamiChartAdjustments(ch *chart.Chart, repoURL string, values, input map[string]interface{}, inputIsOverrides bool) (map[string]interface{}, helmInstallValueAdjustments, error) {
+func applyBitnamiChartAdjustments(ch *chart.Chart, values, input map[string]interface{}, inputIsOverrides bool) (map[string]interface{}, helmInstallValueAdjustments, error) {
 	coalesced, err := chartutil.CoalesceValues(ch, cloneHelmValues(input))
 	if err != nil {
 		return nil, helmInstallValueAdjustments{}, fmt.Errorf("coalesce Helm install values: %w", err)
