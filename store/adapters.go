@@ -11,6 +11,15 @@ import (
 	"helm.sh/helm/v3/pkg/chartutil"
 )
 
+// VisibleAdapterOverride describes a value the adapter injects by default
+// that the user may review and change in the install form.
+type VisibleAdapterOverride struct {
+	Key         string `json:"key"`
+	Label       string `json:"label"`
+	Default     string `json:"default"`
+	Description string `json:"description"`
+}
+
 // helmChartAdapter encodes app-aware install value patches keyed by chart name.
 // It makes an app usable right after installation (e.g. a reachable service
 // type) without requiring the user to know chart internals.
@@ -21,20 +30,49 @@ type helmChartAdapter struct {
 	generatedValuesPatchFn func(explicitValues map[string]interface{}) (map[string]interface{}, error)
 	// preservedValuePaths are carried over from the installed release on upgrade.
 	preservedValuePaths [][]string
+	// visibleOverrides are adapter defaults the install form may expose as
+	// adjustable options.
+	visibleOverrides []VisibleAdapterOverride
 }
 
 // helmChartAdapterRegistry maps canonical chart names to install adaptations.
-// Explicit user values always win over adapter patches.
+// Explicit user values always win over adapter patches; array patches merge
+// into user arrays by name instead of replacing them.
 var helmChartAdapterRegistry = map[string]helmChartAdapter{
 	"grafana":  {valuesPatches: nodePortServiceValuesPatch()},
 	"pgadmin4": {valuesPatches: nodePortServiceValuesPatch()},
-	"n8n":      {valuesPatches: nodePortServiceValuesPatch()},
+	"n8n": {
+		valuesPatches: map[string]interface{}{
+			"service": map[string]interface{}{"type": "NodePort"},
+			"main": map[string]interface{}{
+				"extraEnv": []interface{}{
+					map[string]interface{}{"name": "N8N_SECURE_COOKIE", "value": "false"},
+				},
+			},
+		},
+		visibleOverrides: []VisibleAdapterOverride{{
+			Key:         "main.extraEnv.N8N_SECURE_COOKIE",
+			Label:       "N8N_SECURE_COOKIE",
+			Default:     "false",
+			Description: "n8n refuses plain HTTP when secure cookies are enabled; the App Store access URL requires this off",
+		}},
+	},
 	"superset": {
 		valuesPatches:          supersetValuesPatches(),
 		generatedValuesPatchFn: supersetSecretKeyPatch,
 		preservedValuePaths:    supersetPreservedValuePaths,
 	},
 	"nextcloud": {valuesPatches: nodePortServiceValuesPatch()},
+}
+
+// GetHelmChartAdapterVisibleOverrides returns the user-adjustable overrides
+// an installed chart ships with, for the install form to expose.
+func GetHelmChartAdapterVisibleOverrides(chartName string) []VisibleAdapterOverride {
+	adapter, ok := helmChartAdapterRegistry[strings.ToLower(strings.TrimSpace(chartName))]
+	if !ok {
+		return nil
+	}
+	return adapter.visibleOverrides
 }
 
 // nodePortServiceValuesPatch returns a fresh patch each call so the registry
@@ -137,14 +175,79 @@ func applyHelmChartAdapter(ch *chart.Chart, values, explicitValues map[string]in
 		patches = mergedHelmAdapterPatches(patches, generated)
 	}
 	for topKey, patch := range patches {
-		if adapterPatchExplicitlyOverridden(explicitValues, topKey, patch) {
-			continue
-		}
-		if err := mergeHelmValueOverrides(values, map[string]interface{}{topKey: patch}, nil); err != nil {
+		if err := mergeAdapterPatchInto(values, explicitValues, topKey, patch); err != nil {
 			return fmt.Errorf("apply Helm chart adapter for %s: %w", ch.Name(), err)
 		}
 	}
 	return nil
+}
+
+// mergeAdapterPatchInto merges one adapter patch into the install values at
+// the given key. User-set leaves win; array patches merge into user arrays by
+// item name; map patches recurse so user siblings stay intact (e.g. a user
+// change to main.extraEnv merges instead of disabling the whole subtree).
+func mergeAdapterPatchInto(values, explicit map[string]interface{}, key string, patch interface{}) error {
+	explicitValue, userSet := explicit[key]
+	switch patchTyped := patch.(type) {
+	case map[string]interface{}:
+		if userSet {
+			userMap, ok := explicitValue.(map[string]interface{})
+			if !ok {
+				return nil
+			}
+			existing, _ := values[key].(map[string]interface{})
+			if existing == nil {
+				existing = map[string]interface{}{}
+				values[key] = existing
+			}
+			for subKey, subPatch := range patchTyped {
+				if err := mergeAdapterPatchInto(existing, userMap, subKey, subPatch); err != nil {
+					return err
+				}
+			}
+			return nil
+		}
+		return mergeHelmValueOverrides(values, map[string]interface{}{key: patch}, nil)
+	case []interface{}:
+		if userSet {
+			if userArray, ok := explicitValue.([]interface{}); ok {
+				values[key] = mergeNamedHelmValuesArrays(userArray, patchTyped)
+				return nil
+			}
+			return nil
+		}
+		values[key] = cloneHelmValue(patchTyped)
+		return nil
+	default:
+		if userSet {
+			return nil
+		}
+		values[key] = cloneHelmValue(patchTyped)
+		return nil
+	}
+}
+
+// mergeNamedHelmValuesArrays appends patch items whose name is not already
+// present in the existing array, so user-defined entries win.
+func mergeNamedHelmValuesArrays(existing, additions []interface{}) []interface{} {
+	known := map[string]bool{}
+	for _, item := range existing {
+		if itemMap, ok := item.(map[string]interface{}); ok {
+			if name, _ := itemMap["name"].(string); name != "" {
+				known[name] = true
+			}
+		}
+	}
+	merged := append([]interface{}{}, existing...)
+	for _, item := range additions {
+		if itemMap, ok := item.(map[string]interface{}); ok {
+			if name, _ := itemMap["name"].(string); known[name] {
+				continue
+			}
+		}
+		merged = append(merged, item)
+	}
+	return merged
 }
 
 // preserveHelmChartAdapterValues copies the installed release's adapter-owned

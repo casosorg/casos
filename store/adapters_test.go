@@ -283,3 +283,86 @@ func TestPreserveHelmChartAdapterValuesIgnoresOtherCharts(t *testing.T) {
 		t.Errorf("charts without preserved paths must be left alone, got %#v", vals)
 	}
 }
+
+func TestN8nAdapterInjectsSecureCookieEnv(t *testing.T) {
+	values, _, err := prepareHelmInstallValues(testChart("n8n"), "https://example.com/charts", map[string]interface{}{})
+	if err != nil {
+		t.Fatalf("prepare values: %v", err)
+	}
+	main, ok := values["main"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("expected main values, got %#v", values["main"])
+	}
+	env, ok := main["extraEnv"].([]interface{})
+	if !ok || len(env) != 1 {
+		t.Fatalf("expected injected env entry, got %#v", main["extraEnv"])
+	}
+	entry, _ := env[0].(map[string]interface{})
+	if entry["name"] != "N8N_SECURE_COOKIE" || entry["value"] != "false" {
+		t.Errorf("unexpected env entry: %#v", entry)
+	}
+}
+
+func TestN8nAdapterMergesUserEnvByName(t *testing.T) {
+	values, _, err := prepareHelmInstallValues(testChart("n8n"), "https://example.com/charts", map[string]interface{}{
+		"main": map[string]interface{}{
+			"extraEnv": []interface{}{
+				map[string]interface{}{"name": "TZ", "value": "Asia/Shanghai"},
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("prepare values: %v", err)
+	}
+	main, ok := values["main"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("expected main values, got %#v", values["main"])
+	}
+	env, ok := main["extraEnv"].([]interface{})
+	if !ok || len(env) != 2 {
+		t.Fatalf("expected 2 merged env entries, got %#v", main["extraEnv"])
+	}
+	names := map[string]string{}
+	for _, item := range env {
+		m, _ := item.(map[string]interface{})
+		names[m["name"].(string)] = m["value"].(string)
+	}
+	if names["TZ"] != "Asia/Shanghai" || names["N8N_SECURE_COOKIE"] != "false" {
+		t.Errorf("unexpected merged env: %#v", names)
+	}
+}
+
+func TestN8nAdapterUserEnvWinsByName(t *testing.T) {
+	values, _, err := prepareHelmInstallValues(testChart("n8n"), "https://example.com/charts", map[string]interface{}{
+		"main": map[string]interface{}{
+			"extraEnv": []interface{}{
+				map[string]interface{}{"name": "N8N_SECURE_COOKIE", "value": "true"},
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("prepare values: %v", err)
+	}
+	main, ok := values["main"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("expected main values, got %#v", values["main"])
+	}
+	env, _ := main["extraEnv"].([]interface{})
+	if len(env) != 1 {
+		t.Fatalf("expected single user env entry, got %#v", main["extraEnv"])
+	}
+	entry, _ := env[0].(map[string]interface{})
+	if entry["value"] != "true" {
+		t.Errorf("user value should win, got %#v", entry)
+	}
+}
+
+func TestGetHelmChartAdapterVisibleOverrides(t *testing.T) {
+	overrides := GetHelmChartAdapterVisibleOverrides("n8n")
+	if len(overrides) != 1 || overrides[0].Key != "main.extraEnv.N8N_SECURE_COOKIE" || overrides[0].Default != "false" {
+		t.Fatalf("unexpected visible overrides: %#v", overrides)
+	}
+	if got := GetHelmChartAdapterVisibleOverrides("grafana"); got != nil {
+		t.Errorf("grafana should have no visible overrides, got %#v", got)
+	}
+}
