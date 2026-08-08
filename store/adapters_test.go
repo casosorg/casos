@@ -69,9 +69,9 @@ func TestN8nAdapterInjectsSecureCookieEnv(t *testing.T) {
 	if err != nil {
 		t.Fatalf("prepare values: %v", err)
 	}
-	env, ok := values["env"].([]interface{})
+	env, ok := values["extraEnv"].([]interface{})
 	if !ok || len(env) != 1 {
-		t.Fatalf("expected injected env entry, got %#v", values["env"])
+		t.Fatalf("expected injected env entry, got %#v", values["extraEnv"])
 	}
 	entry, _ := env[0].(map[string]interface{})
 	if entry["name"] != "N8N_SECURE_COOKIE" || entry["value"] != "false" {
@@ -81,16 +81,16 @@ func TestN8nAdapterInjectsSecureCookieEnv(t *testing.T) {
 
 func TestN8nAdapterMergesUserEnvByName(t *testing.T) {
 	values, _, err := prepareHelmInstallValues(testChart("n8n"), "https://example.com/charts", map[string]interface{}{
-		"env": []interface{}{
+		"extraEnv": []interface{}{
 			map[string]interface{}{"name": "TZ", "value": "Asia/Shanghai"},
 		},
 	})
 	if err != nil {
 		t.Fatalf("prepare values: %v", err)
 	}
-	env, ok := values["env"].([]interface{})
+	env, ok := values["extraEnv"].([]interface{})
 	if !ok || len(env) != 2 {
-		t.Fatalf("expected 2 merged env entries, got %#v", values["env"])
+		t.Fatalf("expected 2 merged env entries, got %#v", values["extraEnv"])
 	}
 	names := map[string]string{}
 	for _, item := range env {
@@ -104,16 +104,16 @@ func TestN8nAdapterMergesUserEnvByName(t *testing.T) {
 
 func TestN8nAdapterUserEnvWinsByName(t *testing.T) {
 	values, _, err := prepareHelmInstallValues(testChart("n8n"), "https://example.com/charts", map[string]interface{}{
-		"env": []interface{}{
+		"extraEnv": []interface{}{
 			map[string]interface{}{"name": "N8N_SECURE_COOKIE", "value": "true"},
 		},
 	})
 	if err != nil {
 		t.Fatalf("prepare values: %v", err)
 	}
-	env, _ := values["env"].([]interface{})
+	env, _ := values["extraEnv"].([]interface{})
 	if len(env) != 1 {
-		t.Fatalf("expected single user env entry, got %#v", values["env"])
+		t.Fatalf("expected single user env entry, got %#v", values["extraEnv"])
 	}
 	entry, _ := env[0].(map[string]interface{})
 	if entry["value"] != "true" {

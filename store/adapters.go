@@ -33,12 +33,12 @@ var helmChartAdapterRegistry = map[string]helmChartAdapter{
 	"n8n": {
 		valuesPatches: map[string]interface{}{
 			"service": map[string]interface{}{"type": "NodePort"},
-			"env": []interface{}{
+			"extraEnv": []interface{}{
 				map[string]interface{}{"name": "N8N_SECURE_COOKIE", "value": "false"},
 			},
 		},
 		visibleOverrides: []VisibleAdapterOverride{{
-			Key:         "env.N8N_SECURE_COOKIE",
+			Key:         "extraEnv.N8N_SECURE_COOKIE",
 			Label:       "N8N_SECURE_COOKIE",
 			Default:     "false",
 			Description: "n8n refuses plain HTTP when secure cookies are enabled; the App Store access URL requires this off",
