@@ -17,15 +17,19 @@ type helmChartAdapter struct {
 // helmChartAdapterRegistry maps canonical chart names to install adaptations.
 // Explicit user values always win over adapter patches.
 var helmChartAdapterRegistry = map[string]helmChartAdapter{
-	"grafana":   {valuesPatches: nodePortServiceValuesPatch},
-	"pgadmin4":  {valuesPatches: nodePortServiceValuesPatch},
-	"n8n":       {valuesPatches: nodePortServiceValuesPatch},
-	"superset":  {valuesPatches: nodePortServiceValuesPatch},
-	"nextcloud": {valuesPatches: nodePortServiceValuesPatch},
+	"grafana":   {valuesPatches: nodePortServiceValuesPatch()},
+	"pgadmin4":  {valuesPatches: nodePortServiceValuesPatch()},
+	"n8n":       {valuesPatches: nodePortServiceValuesPatch()},
+	"superset":  {valuesPatches: nodePortServiceValuesPatch()},
+	"nextcloud": {valuesPatches: nodePortServiceValuesPatch()},
 }
 
-var nodePortServiceValuesPatch = map[string]interface{}{
-	"service": map[string]interface{}{"type": "NodePort"},
+// nodePortServiceValuesPatch returns a fresh patch each call so the registry
+// never shares mutable state.
+func nodePortServiceValuesPatch() map[string]interface{} {
+	return map[string]interface{}{
+		"service": map[string]interface{}{"type": "NodePort"},
+	}
 }
 
 // applyHelmChartAdapter merges chart-specific compatibility values into the

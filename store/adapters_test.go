@@ -53,13 +53,41 @@ func TestHelmChartAdapterSkipsUnregisteredChart(t *testing.T) {
 }
 
 func TestHelmChartAdapterKeepsBitnamiAdjustments(t *testing.T) {
-	values, adjustments, err := prepareHelmInstallValues(testChart("grafana"), bitnamiChartRepoURL, map[string]interface{}{})
+	ch := &chart.Chart{
+		Metadata: &chart.Metadata{Name: "grafana"},
+		Values: map[string]interface{}{
+			"image": map[string]interface{}{
+				"repository": "bitnami/grafana",
+				"tag":        "11.6.1-debian-12-r0",
+			},
+		},
+	}
+	values, adjustments, err := prepareHelmInstallValues(ch, bitnamiChartRepoURL, map[string]interface{}{})
 	if err != nil {
 		t.Fatalf("prepare values: %v", err)
+	}
+	if !adjustments.legacyImages {
+		t.Error("expected Bitnami legacy image adjustment to be preserved")
+	}
+	image, ok := values["image"].(map[string]interface{})
+	if !ok || image["repository"] != "bitnamilegacy/grafana" {
+		t.Errorf("expected rewritten legacy image repository, got %#v", values["image"])
 	}
 	service, ok := values["service"].(map[string]interface{})
 	if !ok || service["type"] != "NodePort" {
 		t.Errorf("grafana should get NodePort even on Bitnami repo, got %#v", values["service"])
 	}
-	_ = adjustments
+}
+
+func TestHelmChartAdapterOverridesModeRespectsExplicitService(t *testing.T) {
+	values, _, err := prepareHelmInstallValuesWithMode(testChart("grafana"), "https://example.com/charts", map[string]interface{}{
+		"service": map[string]interface{}{"port": 3001},
+	}, true)
+	if err != nil {
+		t.Fatalf("prepare values: %v", err)
+	}
+	service, _ := values["service"].(map[string]interface{})
+	if service["type"] != nil && service["type"] == "NodePort" {
+		t.Errorf("adapter must skip when the user set any service key; got %#v", values["service"])
+	}
 }
