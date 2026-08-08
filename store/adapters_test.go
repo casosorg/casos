@@ -304,11 +304,11 @@ func TestNextcloudAdapterTrustedDomains(t *testing.T) {
 		t.Fatalf("expected nextcloud configs, got %#v", nextcloud)
 	}
 	content, _ := configs["trusted_domains.config.php"].(string)
-	if !strings.Contains(content, "nextcloud.kube.home") || !strings.Contains(content, "192.168.10.101") {
-		t.Errorf("trusted_domains fragment missing probe host or node IP: %q", content)
+	if !strings.Contains(content, "nextcloud.kube.home") || !strings.Contains(content, "192.168.10.101") || !strings.Contains(content, "localhost") {
+		t.Errorf("trusted_domains fragment missing probe host, node IP or localhost: %q", content)
 	}
-	if !strings.Contains(content, "array_merge") {
-		t.Errorf("fragment must append to existing trusted_domains, got %q", content)
+	if strings.Contains(content, "array_merge") {
+		t.Errorf("fragment must replace the key with the full Go-computed list: %q", content)
 	}
 }
 
@@ -327,6 +327,64 @@ func TestNextcloudAdapterUsesUserHost(t *testing.T) {
 	}
 	if strings.Contains(content, "nextcloud.kube.home") {
 		t.Errorf("hardcoded probe host must not appear when user host is set: %q", content)
+	}
+}
+
+func TestNextcloudAdapterChartDefaultHost(t *testing.T) {
+	ch := testChart("nextcloud")
+	ch.Values["nextcloud"] = map[string]interface{}{"host": "chart-default.example.com"}
+	values, _, err := prepareHelmInstallValuesWithOptions(ch, "https://example.com/charts", map[string]interface{}{}, helmInstallValueOptions{})
+	if err != nil {
+		t.Fatalf("prepare values: %v", err)
+	}
+	nextcloud, _ := values["nextcloud"].(map[string]interface{})
+	configs, _ := nextcloud["configs"].(map[string]interface{})
+	content, _ := configs["trusted_domains.config.php"].(string)
+	if !strings.Contains(content, "chart-default.example.com") {
+		t.Errorf("fragment must use the chart default host, got %q", content)
+	}
+	if strings.Contains(content, "nextcloud.kube.home") {
+		t.Errorf("fallback host must not appear when the chart default is set: %q", content)
+	}
+}
+
+func TestNextcloudAdapterIncludesTrustedDomainsAndHostnames(t *testing.T) {
+	values, _, err := prepareHelmInstallValuesWithOptions(testChart("nextcloud"), "https://example.com/charts", map[string]interface{}{
+		"nextcloud": map[string]interface{}{
+			"host":           "cloud.example.com",
+			"trustedDomains": []interface{}{"a.example.com", "b.example.com"},
+		},
+		"httpRoute": map[string]interface{}{
+			"hostnames": []interface{}{"route.example.com", "a.example.com"},
+		},
+	}, helmInstallValueOptions{
+		nodeIPs: func() []string { return []string{"192.168.10.101", "192.168.10.101"} },
+	})
+	if err != nil {
+		t.Fatalf("prepare values: %v", err)
+	}
+	nextcloud, _ := values["nextcloud"].(map[string]interface{})
+	configs, _ := nextcloud["configs"].(map[string]interface{})
+	content, _ := configs["trusted_domains.config.php"].(string)
+	for _, domain := range []string{"cloud.example.com", "a.example.com", "b.example.com", "route.example.com", "localhost", "192.168.10.101"} {
+		if !strings.Contains(content, domain) {
+			t.Errorf("fragment missing %q: %q", domain, content)
+		}
+	}
+	if strings.Count(content, "a.example.com") != 1 {
+		t.Errorf("duplicate domains must be deduplicated: %q", content)
+	}
+	if strings.Count(content, "192.168.10.101") != 1 {
+		t.Errorf("duplicate node IPs must be deduplicated: %q", content)
+	}
+}
+
+func TestEscapePHPString(t *testing.T) {
+	if got := escapePHPString("it's a\\test"); got != "it\\'s a\\\\test" {
+		t.Errorf("unexpected escaping: %q", got)
+	}
+	if got := escapePHPString("trailing\\"); got != "trailing\\\\" {
+		t.Errorf("trailing backslash must be escaped: %q", got)
 	}
 }
 

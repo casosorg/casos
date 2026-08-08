@@ -126,7 +126,7 @@ func supersetSecretKeyAlreadySet(values map[string]interface{}) bool {
 
 // applyHelmChartAdapter merges chart-specific compatibility values into the
 // install values; user-set top-level keys are left untouched.
-func applyHelmChartAdapter(ch *chart.Chart, values, explicitValues map[string]interface{}, includeGenerated bool, nodeIPs func() []string) error {
+func applyHelmChartAdapter(ch *chart.Chart, values, explicitValues map[string]interface{}, includeDynamic bool, nodeIPs func() []string) error {
 	if ch == nil {
 		return nil
 	}
@@ -135,7 +135,7 @@ func applyHelmChartAdapter(ch *chart.Chart, values, explicitValues map[string]in
 		return nil
 	}
 	patches := adapter.valuesPatches
-	if includeGenerated {
+	if includeDynamic {
 		if adapter.generatedValuesPatchFn != nil {
 			generated, err := adapter.generatedValuesPatchFn(explicitValues)
 			if err != nil {
@@ -269,26 +269,26 @@ func adapterPatchExplicitlyOverridden(explicitValues map[string]interface{}, top
 }
 
 // nextcloudTrustedDomainsPatch configures trusted_domains via the chart's
-// config.php fragment mechanism (nextcloud.configs). The fragment APPENDS to
-// any existing trusted_domains (chart defaults, metrics service names, user
-// ingress domains) instead of overwriting them.
+// config.php fragment mechanism (nextcloud.configs). The fragment replaces
+// the key with the full domain list computed in Go: Nextcloud's loader resets
+// $CONFIG before every file and merges fragments at the top level, so a
+// fragment cannot append to values written by config.php.
 //
 // The probe host is resolved from the user values or the chart default
 // (nextcloud.host); the chart probes /status.php with that host, so omitting
 // it makes liveness fail and the pod restart-loop. Node IPs are the cluster
 // addresses the user reaches the app through; they are snapshotted at
-// install/upgrade time and refreshed on the next upgrade.
-//
-// The filename must match Nextcloud's *.config.php loading pattern, and this
-// fragment loads last (natsort), so $CONFIG already holds prior entries.
+// install/upgrade time and refreshed on the next upgrade. Known gap: the
+// metrics service FQDN (<release>.<ns>.svc.cluster.local) is not included
+// because the adapter has no release/namespace context.
 func nextcloudTrustedDomainsPatch(ch *chart.Chart, values map[string]interface{}, nodeIPs []string) (map[string]interface{}, error) {
+	domains := nextcloudTrustedDomainList(ch, values, nodeIPs)
 	var builder strings.Builder
-	builder.WriteString("<?php\n$CONFIG['trusted_domains'] = array_merge($CONFIG['trusted_domains'] ?? [], [\n")
-	builder.WriteString(fmt.Sprintf("  0 => '%s',\n", escapePHPString(nextcloudProbeHost(ch, values))))
-	for index, ip := range nodeIPs {
-		builder.WriteString(fmt.Sprintf("  %d => '%s',\n", index+1, escapePHPString(ip)))
+	builder.WriteString("<?php\n$CONFIG['trusted_domains'] = [\n")
+	for index, domain := range domains {
+		builder.WriteString(fmt.Sprintf("  %d => '%s',\n", index, escapePHPString(domain)))
 	}
-	builder.WriteString("]);\n")
+	builder.WriteString("];\n")
 	return map[string]interface{}{
 		"nextcloud": map[string]interface{}{
 			"configs": map[string]interface{}{
@@ -296,6 +296,66 @@ func nextcloudTrustedDomainsPatch(ch *chart.Chart, values map[string]interface{}
 			},
 		},
 	}, nil
+}
+
+// nextcloudTrustedDomainList builds the full trusted_domains list: the probe
+// host, nextcloud.trustedDomains, httpRoute hostnames, localhost and the
+// cluster node IPs, deduplicated.
+func nextcloudTrustedDomainList(ch *chart.Chart, values map[string]interface{}, nodeIPs []string) []string {
+	seen := map[string]bool{}
+	var domains []string
+	add := func(domain string) {
+		domain = strings.TrimSpace(domain)
+		if domain == "" || seen[domain] {
+			return
+		}
+		seen[domain] = true
+		domains = append(domains, domain)
+	}
+	add(nextcloudProbeHost(ch, values))
+	if nextcloud, ok := values["nextcloud"].(map[string]interface{}); ok {
+		for _, domain := range helmStringSlice(nextcloud["trustedDomains"]) {
+			add(domain)
+		}
+	}
+	if ch != nil && ch.Values != nil {
+		if defaultNextcloud, ok := ch.Values["nextcloud"].(map[string]interface{}); ok {
+			for _, domain := range helmStringSlice(defaultNextcloud["trustedDomains"]) {
+				add(domain)
+			}
+		}
+	}
+	for _, source := range []map[string]interface{}{values, ch.Values} {
+		if source == nil {
+			continue
+		}
+		if httpRoute, ok := source["httpRoute"].(map[string]interface{}); ok {
+			for _, domain := range helmStringSlice(httpRoute["hostnames"]) {
+				add(domain)
+			}
+		}
+	}
+	add("localhost")
+	for _, ip := range nodeIPs {
+		add(ip)
+	}
+	return domains
+}
+
+// helmStringSlice flattens a values field that may be []interface{} of strings
+// into a []string.
+func helmStringSlice(value interface{}) []string {
+	items, ok := value.([]interface{})
+	if !ok {
+		return nil
+	}
+	result := make([]string, 0, len(items))
+	for _, item := range items {
+		if text, ok := item.(string); ok {
+			result = append(result, text)
+		}
+	}
+	return result
 }
 
 // nextcloudProbeHost returns the effective nextcloud.host: the user-provided
@@ -316,6 +376,9 @@ func nextcloudProbeHost(ch *chart.Chart, values map[string]interface{}) string {
 	return "nextcloud.kube.home"
 }
 
+// escapePHPString escapes a value for a PHP single-quoted string: backslashes
+// first (they escape the quote otherwise), then single quotes.
 func escapePHPString(value string) string {
+	value = strings.ReplaceAll(value, "\\", "\\\\")
 	return strings.ReplaceAll(value, "'", "\\'")
 }

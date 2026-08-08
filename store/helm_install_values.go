@@ -96,7 +96,7 @@ func buildHelmChartInstallValues(ch *chart.Chart, repoURL string) (map[string]in
 	if ch == nil {
 		return map[string]interface{}{}, helmInstallValueAdjustments{}, nil
 	}
-	overrides, adjustments, err := prepareHelmInstallValuesWithOptions(ch, repoURL, map[string]interface{}{}, helmInstallValueOptions{skipGeneratedValues: true})
+	overrides, adjustments, err := prepareHelmInstallValuesWithOptions(ch, repoURL, map[string]interface{}{}, helmInstallValueOptions{skipDynamicValues: true})
 	if err != nil {
 		return nil, helmInstallValueAdjustments{}, err
 	}
@@ -109,10 +109,11 @@ func buildHelmChartInstallValues(ch *chart.Chart, repoURL string) (map[string]in
 
 type helmInstallValueOptions struct {
 	inputIsOverrides bool
-	// skipGeneratedValues leaves out per-install adapter values such as a random
-	// secret: the install dialog renders its baseline through this path, and a
-	// value that differs on every render is not the one the install uses.
-	skipGeneratedValues bool
+	// skipDynamicValues leaves out per-install adapter values: random
+	// secrets AND cluster-context patches (node IPs). The install dialog
+	// renders its baseline through this path so it stays reproducible and
+	// avoids the node list API call.
+	skipDynamicValues bool
 	// nodeIPs lazily resolves cluster node addresses for adapters that need a
 	// reachable endpoint (e.g. Nextcloud trusted_domains); may be nil.
 	nodeIPs func() []string
@@ -141,7 +142,7 @@ func prepareHelmInstallValuesWithOptions(ch *chart.Chart, repoURL string, input 
 		}
 		values, adjustments = bitnamiValues, bitnamiAdjustments
 	}
-	if err := applyHelmChartAdapter(ch, values, input, !options.skipGeneratedValues, options.nodeIPs); err != nil {
+	if err := applyHelmChartAdapter(ch, values, input, !options.skipDynamicValues, options.nodeIPs); err != nil {
 		return nil, adjustments, err
 	}
 	return values, adjustments, nil

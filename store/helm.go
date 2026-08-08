@@ -160,11 +160,14 @@ func getClusterNodeIPs(cfg *rest.Config) []string {
 		return nil
 	}
 	var ips []string
+	seen := map[string]bool{}
 	for _, node := range nodes.Items {
 		for _, address := range node.Status.Addresses {
-			if address.Type == corev1.NodeInternalIP {
-				ips = append(ips, address.Address)
+			if address.Type != corev1.NodeInternalIP || seen[address.Address] {
+				continue
 			}
+			seen[address.Address] = true
+			ips = append(ips, address.Address)
 		}
 	}
 	return ips
