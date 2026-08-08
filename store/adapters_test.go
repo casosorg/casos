@@ -112,6 +112,7 @@ func TestHelmChartAdapterOverridesModeRespectsExplicitType(t *testing.T) {
 		t.Errorf("user service.type must win; got %#v", values["service"])
 	}
 }
+
 func TestSupersetAdapterPatches(t *testing.T) {
 	values, _, err := prepareHelmInstallValues(testChart("superset"), "https://example.com/charts", map[string]interface{}{})
 	if err != nil {
@@ -153,7 +154,6 @@ func TestSupersetAdapterRespectsUserSecret(t *testing.T) {
 }
 
 func TestReuseSupersetSecretKeyOnUpgrade(t *testing.T) {
-
 	cfg := &action.Configuration{}
 	mem := driver.NewMemory()
 	cfg.Releases = storage.Init(mem)
