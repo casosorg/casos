@@ -114,19 +114,13 @@ func TestNextcloudAdapterTrustedDomains(t *testing.T) {
 	if !ok {
 		t.Fatalf("expected nextcloud values, got %#v", values["nextcloud"])
 	}
-	occ, _ := nextcloud["occ"].([]interface{})
-	if len(occ) != 2 {
-		t.Fatalf("expected 2 occ commands, got %#v", occ)
+	configs, ok := nextcloud["configs"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("expected nextcloud configs, got %#v", nextcloud)
 	}
-	first, _ := occ[0].(map[string]interface{})
-	args, _ := first["args"].([]interface{})
-	if first["command"] != "config:system:set" || args[0] != "trusted_domains" || args[2] != "--value=nextcloud.kube.home" {
-		t.Errorf("probe host command missing: %#v", first)
-	}
-	second, _ := occ[1].(map[string]interface{})
-	args2, _ := second["args"].([]interface{})
-	if args2[2] != "--value=192.168.10.101" {
-		t.Errorf("node IP command missing: %#v", second)
+	content, _ := configs["trusted_domains.config.php"].(string)
+	if !strings.Contains(content, "nextcloud.kube.home") || !strings.Contains(content, "192.168.10.101") {
+		t.Errorf("trusted_domains fragment missing probe host or node IP: %q", content)
 	}
 }
 
@@ -136,8 +130,12 @@ func TestNextcloudAdapterWithoutNodeIPs(t *testing.T) {
 		t.Fatalf("prepare values: %v", err)
 	}
 	nextcloud, _ := values["nextcloud"].(map[string]interface{})
-	occ, _ := nextcloud["occ"].([]interface{})
-	if len(occ) != 1 {
-		t.Errorf("expected only probe host command, got %#v", occ)
+	configs, _ := nextcloud["configs"].(map[string]interface{})
+	content, _ := configs["trusted_domains.config.php"].(string)
+	if !strings.Contains(content, "nextcloud.kube.home") {
+		t.Errorf("expected probe host in fragment, got %q", content)
+	}
+	if strings.Contains(content, "192.168") {
+		t.Errorf("expected no node IPs, got %q", content)
 	}
 }

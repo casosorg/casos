@@ -4,7 +4,6 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"fmt"
-	"strconv"
 	"strings"
 
 	"helm.sh/helm/v3/pkg/chart"
@@ -44,27 +43,26 @@ var nodePortServiceValuesPatch = map[string]interface{}{
 }
 
 // nextcloudTrustedDomainsPatch configures trusted_domains via the chart's
-// post-install occ job: the probe host (the chart probes /status.php with
-// Host nextcloud.kube.home, so omitting it makes liveness fail and the pod
-// restart-loop) plus the cluster node IPs the user reaches the app through.
+// config.php fragment mechanism (nextcloud.configs): the probe host (the chart
+// probes /status.php with Host nextcloud.kube.home, so omitting it makes
+// liveness fail and the pod restart-loop) plus the cluster node IPs the user
+// reaches the app through. The filename must match Nextcloud's *.config.php
+// loading pattern.
 func nextcloudTrustedDomainsPatch(nodeIPs []string) (map[string]interface{}, error) {
-	occ := []interface{}{
-		nextcloudOccCommand("config:system:set", []string{"trusted_domains", "0", "--value=nextcloud.kube.home"}),
-	}
+	var builder strings.Builder
+	builder.WriteString("<?php\n$CONFIG['trusted_domains'] = array(\n")
+	builder.WriteString("  0 => 'nextcloud.kube.home',\n")
 	for index, ip := range nodeIPs {
-		occ = append(occ, nextcloudOccCommand("config:system:set", []string{"trusted_domains", strconv.Itoa(index + 1), "--value=" + ip}))
+		builder.WriteString(fmt.Sprintf("  %d => '%s',\n", index+1, ip))
 	}
+	builder.WriteString(");\n")
 	return map[string]interface{}{
-		"nextcloud": map[string]interface{}{"occ": occ},
+		"nextcloud": map[string]interface{}{
+			"configs": map[string]interface{}{
+				"trusted_domains.config.php": builder.String(),
+			},
+		},
 	}, nil
-}
-
-func nextcloudOccCommand(command string, args []string) map[string]interface{} {
-	argValues := make([]interface{}, 0, len(args))
-	for _, arg := range args {
-		argValues = append(argValues, arg)
-	}
-	return map[string]interface{}{"command": command, "args": argValues}
 }
 
 // supersetBootstrapScript installs the psycopg2 driver into a writable target
