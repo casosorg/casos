@@ -14,11 +14,19 @@ import (
 // helmChartAdapter encodes app-aware install value patches keyed by chart name.
 // It makes an app usable right after installation (e.g. a reachable service
 // type) without requiring the user to know chart internals.
+type helmEndpointBinding struct {
+	valuesPath  []string
+	hostPath    []string
+	sourcePaths [][]string
+	defaultHost string
+}
+
 type helmChartAdapter struct {
 	valuesPatches map[string]interface{}
 	// generatedValuesPatchFn mints per-install values such as a random secret.
 	// The values preview skips it so the install dialog stays reproducible.
 	generatedValuesPatchFn func(explicitValues map[string]interface{}) (map[string]interface{}, error)
+	endpointBindings       []helmEndpointBinding
 	// preservedValuePaths are carried over from the installed release on upgrade.
 	preservedValuePaths [][]string
 }
@@ -34,7 +42,15 @@ var helmChartAdapterRegistry = map[string]helmChartAdapter{
 		generatedValuesPatchFn: supersetSecretKeyPatch,
 		preservedValuePaths:    supersetPreservedValuePaths,
 	},
-	"nextcloud": {valuesPatches: nodePortServiceValuesPatch()},
+	"nextcloud": {
+		valuesPatches: nodePortServiceValuesPatch(),
+		endpointBindings: []helmEndpointBinding{{
+			valuesPath:  []string{"nextcloud", "trustedDomains"},
+			hostPath:    []string{"nextcloud", "host"},
+			sourcePaths: [][]string{{"nextcloud", "trustedDomains"}, {"httpRoute", "hostnames"}},
+			defaultHost: "nextcloud.kube.home",
+		}},
+	},
 }
 
 // nodePortServiceValuesPatch returns a fresh patch each call so the registry
@@ -118,9 +134,88 @@ func supersetSecretKeyAlreadySet(values map[string]interface{}) bool {
 	return ok && strings.TrimSpace(secret) != ""
 }
 
+func applyHelmEndpointBindings(ch *chart.Chart, values map[string]interface{}, bindings []helmEndpointBinding, nodeIPs []string) {
+	for _, binding := range bindings {
+		domains := []string{"localhost"}
+		if host, ok := helmValueAtPath(values, binding.hostPath).(string); ok && strings.TrimSpace(host) != "" {
+			domains = append(domains, host)
+		} else if host, ok := helmValueAtPath(ch.Values, binding.hostPath).(string); ok && strings.TrimSpace(host) != "" {
+			domains = append(domains, host)
+		} else if binding.defaultHost != "" {
+			domains = append(domains, binding.defaultHost)
+		}
+		for _, path := range binding.sourcePaths {
+			domains = append(domains, helmStringValuesAtPath(values, path)...)
+			if ch != nil {
+				domains = append(domains, helmStringValuesAtPath(ch.Values, path)...)
+			}
+		}
+		domains = append(domains, nodeIPs...)
+		setHelmValueAtPath(values, binding.valuesPath, uniqueNonEmptyStrings(domains))
+	}
+}
+
+func helmValueAtPath(values map[string]interface{}, path []string) interface{} {
+	for index, key := range path {
+		value, ok := values[key]
+		if !ok {
+			return nil
+		}
+		if index == len(path)-1 {
+			return value
+		}
+		values, ok = value.(map[string]interface{})
+		if !ok {
+			return nil
+		}
+	}
+	return nil
+}
+
+func helmStringValuesAtPath(values map[string]interface{}, path []string) []string {
+	value := helmValueAtPath(values, path)
+	var result []string
+	switch typed := value.(type) {
+	case []interface{}:
+		for _, item := range typed {
+			if text, ok := item.(string); ok {
+				result = append(result, text)
+			}
+		}
+	case []string:
+		result = append(result, typed...)
+	}
+	return result
+}
+
+func setHelmValueAtPath(values map[string]interface{}, path []string, value interface{}) {
+	for _, key := range path[:len(path)-1] {
+		next, ok := values[key].(map[string]interface{})
+		if !ok {
+			next = map[string]interface{}{}
+			values[key] = next
+		}
+		values = next
+	}
+	values[path[len(path)-1]] = value
+}
+
+func uniqueNonEmptyStrings(values []string) []string {
+	seen := map[string]bool{}
+	result := make([]string, 0, len(values))
+	for _, value := range values {
+		value = strings.TrimSpace(value)
+		if value != "" && !seen[value] {
+			seen[value] = true
+			result = append(result, value)
+		}
+	}
+	return result
+}
+
 // applyHelmChartAdapter merges chart-specific compatibility values into the
 // install values; user-set top-level keys are left untouched.
-func applyHelmChartAdapter(ch *chart.Chart, values, explicitValues map[string]interface{}, includeGenerated bool) error {
+func applyHelmChartAdapter(ch *chart.Chart, values, explicitValues map[string]interface{}, includeDynamic bool, nodeIPs func() []string) error {
 	if ch == nil {
 		return nil
 	}
@@ -129,12 +224,19 @@ func applyHelmChartAdapter(ch *chart.Chart, values, explicitValues map[string]in
 		return nil
 	}
 	patches := adapter.valuesPatches
-	if includeGenerated && adapter.generatedValuesPatchFn != nil {
-		generated, err := adapter.generatedValuesPatchFn(explicitValues)
-		if err != nil {
-			return fmt.Errorf("apply Helm chart adapter for %s: %w", ch.Name(), err)
+	if includeDynamic {
+		var ips []string
+		if nodeIPs != nil {
+			ips = nodeIPs()
 		}
-		patches = mergedHelmAdapterPatches(patches, generated)
+		applyHelmEndpointBindings(ch, values, adapter.endpointBindings, ips)
+		if adapter.generatedValuesPatchFn != nil {
+			generated, err := adapter.generatedValuesPatchFn(explicitValues)
+			if err != nil {
+				return fmt.Errorf("apply Helm chart adapter for %s: %w", ch.Name(), err)
+			}
+			patches = mergedHelmAdapterPatches(patches, generated)
+		}
 	}
 	for topKey, patch := range patches {
 		if adapterPatchExplicitlyOverridden(explicitValues, topKey, patch) {

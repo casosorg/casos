@@ -283,3 +283,76 @@ func TestPreserveHelmChartAdapterValuesIgnoresOtherCharts(t *testing.T) {
 		t.Errorf("charts without preserved paths must be left alone, got %#v", vals)
 	}
 }
+
+func TestNextcloudAdapterTrustedDomains(t *testing.T) {
+	values, _, err := prepareHelmInstallValuesWithOptions(testChart("nextcloud"), "https://example.com/charts", map[string]interface{}{}, helmInstallValueOptions{
+		nodeIPs: func() []string { return []string{"192.168.10.101"} },
+	})
+	if err != nil {
+		t.Fatalf("prepare values: %v", err)
+	}
+	trusted := values["nextcloud"].(map[string]interface{})["trustedDomains"]
+	items, ok := trusted.([]string)
+	if !ok || !reflect.DeepEqual(items, []string{"localhost", "nextcloud.kube.home", "192.168.10.101"}) {
+		t.Errorf("unexpected trusted domains: %#v", trusted)
+	}
+}
+
+func TestNextcloudAdapterUsesUserHost(t *testing.T) {
+	values, _, err := prepareHelmInstallValuesWithOptions(testChart("nextcloud"), "https://example.com/charts", map[string]interface{}{
+		"nextcloud": map[string]interface{}{"host": "cloud.example.com"},
+	}, helmInstallValueOptions{})
+	if err != nil {
+		t.Fatalf("prepare values: %v", err)
+	}
+	trusted := values["nextcloud"].(map[string]interface{})["trustedDomains"]
+	if !reflect.DeepEqual(trusted, []string{"localhost", "cloud.example.com"}) {
+		t.Errorf("unexpected trusted domains: %#v", trusted)
+	}
+}
+
+func TestNextcloudAdapterChartDefaultHost(t *testing.T) {
+	ch := testChart("nextcloud")
+	ch.Values["nextcloud"] = map[string]interface{}{"host": "chart-default.example.com"}
+	values, _, err := prepareHelmInstallValuesWithOptions(ch, "https://example.com/charts", map[string]interface{}{}, helmInstallValueOptions{})
+	if err != nil {
+		t.Fatalf("prepare values: %v", err)
+	}
+	trusted := values["nextcloud"].(map[string]interface{})["trustedDomains"]
+	if !reflect.DeepEqual(trusted, []string{"localhost", "chart-default.example.com"}) {
+		t.Errorf("unexpected trusted domains: %#v", trusted)
+	}
+}
+
+func TestNextcloudAdapterIncludesTrustedDomainsAndHostnames(t *testing.T) {
+	values, _, err := prepareHelmInstallValuesWithOptions(testChart("nextcloud"), "https://example.com/charts", map[string]interface{}{
+		"nextcloud": map[string]interface{}{
+			"host":           "cloud.example.com",
+			"trustedDomains": []interface{}{"a.example.com", "b.example.com"},
+		},
+		"httpRoute": map[string]interface{}{
+			"hostnames": []interface{}{"route.example.com", "a.example.com"},
+		},
+	}, helmInstallValueOptions{
+		nodeIPs: func() []string { return []string{"192.168.10.101", "192.168.10.101"} },
+	})
+	if err != nil {
+		t.Fatalf("prepare values: %v", err)
+	}
+	trusted := values["nextcloud"].(map[string]interface{})["trustedDomains"].([]string)
+	expected := []string{"localhost", "cloud.example.com", "a.example.com", "b.example.com", "route.example.com", "192.168.10.101"}
+	if !reflect.DeepEqual(trusted, expected) {
+		t.Errorf("expected %#v, got %#v", expected, trusted)
+	}
+}
+
+func TestNextcloudAdapterWithoutNodeIPs(t *testing.T) {
+	values, _, err := prepareHelmInstallValuesWithOptions(testChart("nextcloud"), "https://example.com/charts", map[string]interface{}{}, helmInstallValueOptions{})
+	if err != nil {
+		t.Fatalf("prepare values: %v", err)
+	}
+	trusted := values["nextcloud"].(map[string]interface{})["trustedDomains"]
+	if !reflect.DeepEqual(trusted, []string{"localhost", "nextcloud.kube.home"}) {
+		t.Errorf("unexpected trusted domains: %#v", trusted)
+	}
+}
