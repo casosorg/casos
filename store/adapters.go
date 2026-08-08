@@ -26,7 +26,7 @@ type helmChartAdapter struct {
 	// generatedValuesPatchFn mints per-install values such as a random secret.
 	// The values preview skips it so the install dialog stays reproducible.
 	generatedValuesPatchFn func(explicitValues map[string]interface{}) (map[string]interface{}, error)
-	endpointBindings []helmEndpointBinding
+	endpointBindings       []helmEndpointBinding
 	// preservedValuePaths are carried over from the installed release on upgrade.
 	preservedValuePaths [][]string
 }
