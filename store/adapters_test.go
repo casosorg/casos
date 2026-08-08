@@ -291,24 +291,10 @@ func TestNextcloudAdapterTrustedDomains(t *testing.T) {
 	if err != nil {
 		t.Fatalf("prepare values: %v", err)
 	}
-	service, ok := values["service"].(map[string]interface{})
-	if !ok || service["type"] != "NodePort" {
-		t.Errorf("expected service.type NodePort, got %#v", values["service"])
-	}
-	nextcloud, ok := values["nextcloud"].(map[string]interface{})
-	if !ok {
-		t.Fatalf("expected nextcloud values, got %#v", values["nextcloud"])
-	}
-	configs, ok := nextcloud["configs"].(map[string]interface{})
-	if !ok {
-		t.Fatalf("expected nextcloud configs, got %#v", nextcloud)
-	}
-	content, _ := configs["trusted_domains.config.php"].(string)
-	if !strings.Contains(content, "nextcloud.kube.home") || !strings.Contains(content, "192.168.10.101") || !strings.Contains(content, "localhost") {
-		t.Errorf("trusted_domains fragment missing probe host, node IP or localhost: %q", content)
-	}
-	if strings.Contains(content, "array_merge") {
-		t.Errorf("fragment must replace the key with the full Go-computed list: %q", content)
+	trusted := values["nextcloud"].(map[string]interface{})["trustedDomains"]
+	items, ok := trusted.([]string)
+	if !ok || !reflect.DeepEqual(items, []string{"localhost", "nextcloud.kube.home", "192.168.10.101"}) {
+		t.Errorf("unexpected trusted domains: %#v", trusted)
 	}
 }
 
@@ -319,14 +305,9 @@ func TestNextcloudAdapterUsesUserHost(t *testing.T) {
 	if err != nil {
 		t.Fatalf("prepare values: %v", err)
 	}
-	nextcloud, _ := values["nextcloud"].(map[string]interface{})
-	configs, _ := nextcloud["configs"].(map[string]interface{})
-	content, _ := configs["trusted_domains.config.php"].(string)
-	if !strings.Contains(content, "cloud.example.com") {
-		t.Errorf("fragment must use the user host, got %q", content)
-	}
-	if strings.Contains(content, "nextcloud.kube.home") {
-		t.Errorf("hardcoded probe host must not appear when user host is set: %q", content)
+	trusted := values["nextcloud"].(map[string]interface{})["trustedDomains"]
+	if !reflect.DeepEqual(trusted, []string{"localhost", "cloud.example.com"}) {
+		t.Errorf("unexpected trusted domains: %#v", trusted)
 	}
 }
 
@@ -337,14 +318,9 @@ func TestNextcloudAdapterChartDefaultHost(t *testing.T) {
 	if err != nil {
 		t.Fatalf("prepare values: %v", err)
 	}
-	nextcloud, _ := values["nextcloud"].(map[string]interface{})
-	configs, _ := nextcloud["configs"].(map[string]interface{})
-	content, _ := configs["trusted_domains.config.php"].(string)
-	if !strings.Contains(content, "chart-default.example.com") {
-		t.Errorf("fragment must use the chart default host, got %q", content)
-	}
-	if strings.Contains(content, "nextcloud.kube.home") {
-		t.Errorf("fallback host must not appear when the chart default is set: %q", content)
+	trusted := values["nextcloud"].(map[string]interface{})["trustedDomains"]
+	if !reflect.DeepEqual(trusted, []string{"localhost", "chart-default.example.com"}) {
+		t.Errorf("unexpected trusted domains: %#v", trusted)
 	}
 }
 
@@ -363,28 +339,10 @@ func TestNextcloudAdapterIncludesTrustedDomainsAndHostnames(t *testing.T) {
 	if err != nil {
 		t.Fatalf("prepare values: %v", err)
 	}
-	nextcloud, _ := values["nextcloud"].(map[string]interface{})
-	configs, _ := nextcloud["configs"].(map[string]interface{})
-	content, _ := configs["trusted_domains.config.php"].(string)
-	for _, domain := range []string{"cloud.example.com", "a.example.com", "b.example.com", "route.example.com", "localhost", "192.168.10.101"} {
-		if !strings.Contains(content, domain) {
-			t.Errorf("fragment missing %q: %q", domain, content)
-		}
-	}
-	if strings.Count(content, "a.example.com") != 1 {
-		t.Errorf("duplicate domains must be deduplicated: %q", content)
-	}
-	if strings.Count(content, "192.168.10.101") != 1 {
-		t.Errorf("duplicate node IPs must be deduplicated: %q", content)
-	}
-}
-
-func TestEscapePHPString(t *testing.T) {
-	if got := escapePHPString("it's a\\test"); got != "it\\'s a\\\\test" {
-		t.Errorf("unexpected escaping: %q", got)
-	}
-	if got := escapePHPString("trailing\\"); got != "trailing\\\\" {
-		t.Errorf("trailing backslash must be escaped: %q", got)
+	trusted := values["nextcloud"].(map[string]interface{})["trustedDomains"].([]string)
+	expected := []string{"localhost", "cloud.example.com", "a.example.com", "b.example.com", "route.example.com", "192.168.10.101"}
+	if !reflect.DeepEqual(trusted, expected) {
+		t.Errorf("expected %#v, got %#v", expected, trusted)
 	}
 }
 
@@ -393,13 +351,8 @@ func TestNextcloudAdapterWithoutNodeIPs(t *testing.T) {
 	if err != nil {
 		t.Fatalf("prepare values: %v", err)
 	}
-	nextcloud, _ := values["nextcloud"].(map[string]interface{})
-	configs, _ := nextcloud["configs"].(map[string]interface{})
-	content, _ := configs["trusted_domains.config.php"].(string)
-	if !strings.Contains(content, "nextcloud.kube.home") {
-		t.Errorf("expected probe host in fragment, got %q", content)
-	}
-	if strings.Contains(content, "192.168") {
-		t.Errorf("expected no node IPs, got %q", content)
+	trusted := values["nextcloud"].(map[string]interface{})["trustedDomains"]
+	if !reflect.DeepEqual(trusted, []string{"localhost", "nextcloud.kube.home"}) {
+		t.Errorf("unexpected trusted domains: %#v", trusted)
 	}
 }
