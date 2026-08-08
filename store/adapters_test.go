@@ -4,7 +4,11 @@ import (
 	"strings"
 	"testing"
 
+	"helm.sh/helm/v3/pkg/action"
 	"helm.sh/helm/v3/pkg/chart"
+	"helm.sh/helm/v3/pkg/release"
+	"helm.sh/helm/v3/pkg/storage"
+	"helm.sh/helm/v3/pkg/storage/driver"
 )
 
 func testChart(name string) *chart.Chart {
@@ -169,5 +173,37 @@ func TestSupersetAdapterRespectsUserSecret(t *testing.T) {
 	overrides, _ := values["configOverrides"].(map[string]interface{})
 	if overrides["secret"] != "user-secret" {
 		t.Errorf("user SECRET_KEY should win, got %#v", overrides["secret"])
+	}
+}
+
+func TestReuseSupersetSecretKeyOnUpgrade(t *testing.T) {
+
+	cfg := &action.Configuration{}
+	mem := driver.NewMemory()
+	cfg.Releases = storage.Init(mem)
+	chart := &chart.Chart{Metadata: &chart.Metadata{Name: "superset"}}
+	if err := mem.Create("superset-demo", &release.Release{
+		Name:  "superset-demo",
+		Chart: chart,
+		Info:  &release.Info{Status: release.StatusDeployed},
+		Config: map[string]interface{}{
+			"configOverrides": map[string]interface{}{"secret": "old-secret"},
+		},
+	}); err != nil {
+		t.Fatalf("seed release: %v", err)
+	}
+
+	vals := map[string]interface{}{}
+	reuseSupersetSecretKey(cfg, "superset-demo", vals)
+	overrides, _ := vals["configOverrides"].(map[string]interface{})
+	if overrides["secret"] != "old-secret" {
+		t.Fatalf("expected existing SECRET_KEY reused, got %#v", vals["configOverrides"])
+	}
+
+	vals2 := map[string]interface{}{"configOverrides": map[string]interface{}{"secret": "user-key"}}
+	reuseSupersetSecretKey(cfg, "superset-demo", vals2)
+	overrides2, _ := vals2["configOverrides"].(map[string]interface{})
+	if overrides2["secret"] != "user-key" {
+		t.Fatalf("user-provided SECRET_KEY must win, got %#v", vals2["configOverrides"])
 	}
 }

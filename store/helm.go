@@ -1499,6 +1499,37 @@ func UpgradeHelmReleaseWithValuesBaseline(cfg *rest.Config, releaseName, namespa
 	return upgradeHelmRelease(cfg, releaseName, namespace, chartName, repoURL, version, valuesYAML, valuesBaselineYAML)
 }
 
+// reuseSupersetSecretKey carries the installed Superset SECRET_KEY into an
+// upgrade. The adapter only generates a key when none is set; an upgrade that
+// regenerated it would invalidate all encrypted data (DB credentials, saved
+// dashboard ciphertext). Harmless for charts without configOverrides.secret.
+func reuseSupersetSecretKey(actionConfig *action.Configuration, releaseName string, vals map[string]interface{}) {
+	release, err := actionConfig.Releases.Last(releaseName)
+	if err != nil || release == nil || release.Chart == nil {
+		return
+	}
+	coalesced, err := chartutil.CoalesceValues(release.Chart, release.Config)
+	if err != nil {
+		return
+	}
+	overrides, ok := coalesced["configOverrides"].(map[string]interface{})
+	if !ok {
+		return
+	}
+	secret, ok := overrides["secret"].(string)
+	if !ok || secret == "" {
+		return
+	}
+	switch existing := vals["configOverrides"].(type) {
+	case nil:
+		vals["configOverrides"] = map[string]interface{}{"secret": secret}
+	case map[string]interface{}:
+		if _, has := existing["secret"]; !has {
+			existing["secret"] = secret
+		}
+	}
+}
+
 func upgradeHelmRelease(cfg *rest.Config, releaseName, namespace, chartName, repoURL, version, valuesYAML, valuesBaselineYAML string) error {
 	actionConfig, err := newHelmConfig(cfg, namespace)
 	if err != nil {
@@ -1516,6 +1547,7 @@ func upgradeHelmRelease(cfg *rest.Config, releaseName, namespace, chartName, rep
 	if err != nil {
 		return err
 	}
+	reuseSupersetSecretKey(actionConfig, releaseName, vals)
 	vals, adjustments, err := prepareHelmInstallValuesWithMode(ch, repoURL, vals, inputIsOverrides)
 	if err != nil {
 		return err
