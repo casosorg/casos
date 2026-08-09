@@ -14,6 +14,10 @@ import (
 
 const nodeDeployWSLProbeCommand = "[ -f /proc/sys/fs/binfmt_misc/WSLInterop ] || grep -qi microsoft /proc/version"
 
+type nodeDeployCommandRunner interface {
+	RunContext(context.Context, string) (string, error)
+}
+
 type NodeDeployPreflightResult struct {
 	OS           string `json:"os"`
 	Arch         string `json:"arch"`
@@ -115,6 +119,10 @@ func isNodeDeployApiserverProbeStatus(status string) bool {
 }
 
 func ResolveNodeDeployApiserverURL(ctx context.Context, runner *NodeDeploySSHRunner, fallbackURL string) string {
+	return resolveNodeDeployApiserverURL(ctx, runner, fallbackURL)
+}
+
+func resolveNodeDeployApiserverURL(ctx context.Context, runner nodeDeployCommandRunner, fallbackURL string) string {
 	fallbackURL = strings.TrimRight(strings.TrimSpace(fallbackURL), "/")
 	if runner == nil {
 		return fallbackURL
@@ -122,6 +130,11 @@ func ResolveNodeDeployApiserverURL(ctx context.Context, runner *NodeDeploySSHRun
 	wslCtx, wslCancel := context.WithTimeout(ctx, 3*time.Second)
 	defer wslCancel()
 	if !isNodeDeployWSL(wslCtx, runner) {
+		return fallbackURL
+	}
+	probeCtx, probeCancel := context.WithTimeout(ctx, 5*time.Second)
+	defer probeCancel()
+	if probeNodeDeployApiserver(probeCtx, runner, fallbackURL) {
 		return fallbackURL
 	}
 	gatewayCtx, gatewayCancel := context.WithTimeout(ctx, 5*time.Second)
@@ -151,7 +164,18 @@ func ResolveNodeDeployApiserverURL(ctx context.Context, runner *NodeDeploySSHRun
 	return strings.TrimRight(parsed.String(), "/")
 }
 
-func isNodeDeployWSL(ctx context.Context, runner *NodeDeploySSHRunner) bool {
+func probeNodeDeployApiserver(ctx context.Context, runner nodeDeployCommandRunner, apiserverURL string) bool {
+	parsed, err := url.Parse(strings.TrimRight(strings.TrimSpace(apiserverURL), "/"))
+	if err != nil || parsed.Scheme != "https" || parsed.Host == "" {
+		return false
+	}
+	encodedURL := base64.StdEncoding.EncodeToString([]byte(parsed.String()))
+	command := fmt.Sprintf("apiserver_url=$(printf %%s %s | base64 -d) && curl --noproxy '*' -ksS --connect-timeout 3 --max-time 5 --output /dev/null --write-out %%{http_code} \"$apiserver_url/readyz\"", shellSingleQuote(encodedURL))
+	status, err := runner.RunContext(ctx, command)
+	return err == nil && isNodeDeployApiserverProbeStatus(status)
+}
+
+func isNodeDeployWSL(ctx context.Context, runner nodeDeployCommandRunner) bool {
 	if runner == nil {
 		return false
 	}
