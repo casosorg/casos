@@ -65,6 +65,7 @@ jobs:
           --health-timeout=5s
           --health-retries=10
     env:
+      driverName: mysql
       dataSourceName: root:casos-${{ github.run_id }}-${{ github.run_attempt }}@tcp(127.0.0.1:3306)/
       dbName: casos
       socks5Proxy: ""

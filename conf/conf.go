@@ -17,6 +17,7 @@ package conf
 import (
 	"fmt"
 	"os"
+	"path/filepath"
 	"runtime"
 	"strconv"
 	"strings"
@@ -24,6 +25,8 @@ import (
 	"github.com/beego/beego"
 	"github.com/beego/beego/logs"
 )
+
+const DefaultDataDir = "./data"
 
 func init() {
 	// this array contains the beego configuration items that may be modified via env
@@ -141,6 +144,38 @@ func GetConfigDataSourceName() string {
 	return dataSourceName
 }
 
+func GetDatabaseDriverName() string {
+	driverName := strings.ToLower(GetConfigStringDefault("driverName", "sqlite"))
+	if driverName == "sqlite3" {
+		return "sqlite"
+	}
+	return driverName
+}
+
+func GetDatabaseDataSourceName() string {
+	return resolveDatabaseDataSourceName(
+		GetDatabaseDriverName(),
+		GetConfigDataSourceName(),
+		GetDataDir(),
+	)
+}
+
+func GetDataDir() string {
+	dataDir := GetConfigStringDefault("dataDir", DefaultDataDir)
+	absolutePath, err := filepath.Abs(dataDir)
+	if err != nil {
+		return dataDir
+	}
+	return absolutePath
+}
+
+func resolveDatabaseDataSourceName(driverName, dataSourceName, dataDir string) string {
+	if driverName == "sqlite" && strings.TrimSpace(dataSourceName) == "" {
+		return filepath.Join(dataDir, "casos.db")
+	}
+	return dataSourceName
+}
+
 func GetLanguage(language string) string {
 	if language == "" || language == "*" {
 		return "en"
@@ -166,11 +201,9 @@ func GetConfigBatchSize() int {
 }
 
 func GetConfigRealDataSourceName(driverName string) string {
-	var dataSourceName string
-	if driverName != "mysql" {
-		dataSourceName = GetConfigDataSourceName()
-	} else {
-		dataSourceName = GetConfigDataSourceName() + GetConfigString("dbName")
+	dataSourceName := GetDatabaseDataSourceName()
+	if driverName == "mysql" {
+		dataSourceName += GetConfigStringDefault("dbName", "casos")
 	}
 	return dataSourceName
 }

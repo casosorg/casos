@@ -69,7 +69,6 @@ casos/
 
 - **Backend**: [Go](https://golang.org/dl/) 1.26+
 - **Frontend**: [Node.js](https://nodejs.org/) 20+ and [Yarn](https://classic.yarnpkg.com/) 1.x
-- MySQL database
 - A [Casdoor](https://casdoor.org) instance (for authentication)
 
 Supported platforms: **Linux**, **macOS**, **Windows**
@@ -84,9 +83,10 @@ httpport      = 9000
 runmode       = dev
 
 ; Database
-driverName    = mysql
-dataSourceName= user:pass@tcp(host:3306)/
+driverName    = sqlite
+dataSourceName=
 dbName        = casos
+kineEndpoint  =
 
 ; Casdoor
 casdoorEndpoint     = https://your-casdoor-instance
@@ -103,8 +103,19 @@ socks5Proxy =
 ; Kubernetes control plane
 apiserverPort = 6443
 apiserverBind = 127.0.0.1
-dataDir       = /var/lib/casos
+dataDir       = ./data
 ```
+
+SQLite is the default and stores CasOS business data in `data/casos.db` and
+Kubernetes state in `data/kine/state.db`. The `data` directory is ignored by
+Git and is writable when running the development command from the repository
+root. System installations should set `dataDir` to a persistent directory such
+as `/var/lib/casos` and ensure the service user can write to it.
+
+MySQL remains available by setting `driverName=mysql`, configuring
+`dataSourceName` and `dbName`, and optionally setting a complete
+`kineEndpoint`. Switching an existing installation from MySQL to SQLite starts
+with empty SQLite databases; existing MySQL data is not imported automatically.
 
 The control-plane proxy accepts `host:port`, `socks5://`, and `socks5h://`
 addresses. When `socks5Proxy` is set, CasOS fails requests that cannot use the

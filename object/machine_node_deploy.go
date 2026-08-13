@@ -480,10 +480,7 @@ func machineNodeCredentialSecret() (string, error) {
 		return secret, nil
 	}
 
-	dataDir := strings.TrimSpace(conf.GetConfigString("dataDir"))
-	if dataDir == "" {
-		dataDir = "/var/lib/casos"
-	}
+	dataDir := conf.GetDataDir()
 	secretPath := filepath.Join(dataDir, machineNodeCredentialKeyFile)
 	if data, err := os.ReadFile(secretPath); err == nil {
 		secret := strings.TrimSpace(string(data))

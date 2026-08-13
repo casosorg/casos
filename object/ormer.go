@@ -18,11 +18,15 @@ import (
 	"database/sql"
 	"flag"
 	"fmt"
+	"net/url"
+	"os"
+	"path/filepath"
 	"runtime"
 	"strings"
 
 	"github.com/casosorg/casos/conf"
 	_ "github.com/go-sql-driver/mysql" // db = mysql
+	_ "modernc.org/sqlite"             // db = sqlite
 	"xorm.io/xorm"
 	"xorm.io/xorm/names"
 )
@@ -52,14 +56,17 @@ func InitConfig() {
 }
 
 func InitAdapter() {
+	driverName := conf.GetDatabaseDriverName()
+	dataSourceName := conf.GetDatabaseDataSourceName()
+	dbName := conf.GetConfigStringDefault("dbName", "casos")
 	if createDatabase {
-		err := createDatabaseForPostgres(conf.GetConfigString("driverName"), conf.GetConfigDataSourceName(), conf.GetConfigString("dbName"))
+		err := createDatabaseForPostgres(driverName, dataSourceName, dbName)
 		if err != nil {
 			panic(err)
 		}
 	}
 
-	ormer = NewAdapter(conf.GetConfigString("driverName"), conf.GetConfigDataSourceName(), conf.GetConfigString("dbName"))
+	ormer = NewAdapter(driverName, dataSourceName, dbName)
 
 	tableNamePrefix := conf.GetConfigString("tableNamePrefix")
 	tbMapper := names.NewPrefixMapper(names.SnakeMapper{}, tableNamePrefix)
@@ -77,7 +84,7 @@ func CreateTables() {
 	ormer.createTable()
 }
 
-// Ormer represents the MySQL adapter for policy storage.
+// Ormer represents the SQL adapter for policy storage.
 type Ormer struct {
 	driverName     string
 	dataSourceName string
@@ -95,6 +102,9 @@ func finalizer(a *Ormer) {
 
 // NewAdapter is the constructor for Ormer.
 func NewAdapter(driverName string, dataSourceName string, dbName string) *Ormer {
+	if driverName == "sqlite3" {
+		driverName = "sqlite"
+	}
 	a := &Ormer{}
 	a.driverName = driverName
 	a.dataSourceName = dataSourceName
@@ -131,7 +141,7 @@ func createDatabaseForPostgres(driverName string, dataSourceName string, dbName 
 }
 
 func (a *Ormer) CreateDatabase() error {
-	if a.driverName == "postgres" {
+	if a.driverName == "postgres" || isSQLiteDriver(a.driverName) {
 		return nil
 	}
 
@@ -150,13 +160,58 @@ func (a *Ormer) open() {
 	if a.driverName != "mysql" {
 		dataSourceName = a.dataSourceName
 	}
+	if isSQLiteDriver(a.driverName) {
+		if err := ensureSQLiteDirectory(dataSourceName); err != nil {
+			panic(err)
+		}
+		dataSourceName = sqliteDataSourceName(dataSourceName)
+	}
 
 	engine, err := xorm.NewEngine(a.driverName, dataSourceName)
 	if err != nil {
 		panic(err)
 	}
+	if isSQLiteDriver(a.driverName) {
+		engine.SetMaxOpenConns(1)
+		engine.SetMaxIdleConns(1)
+	}
 
 	a.Engine = engine
+}
+
+func isSQLiteDriver(driverName string) bool {
+	return driverName == "sqlite"
+}
+
+func sqliteDataSourceName(dataSourceName string) string {
+	separator := "?"
+	if strings.Contains(dataSourceName, "?") {
+		separator = "&"
+	}
+	return dataSourceName + separator + "_pragma=busy_timeout(5000)&_pragma=journal_mode(WAL)&_pragma=synchronous(NORMAL)&_txlock=immediate"
+}
+
+func ensureSQLiteDirectory(dataSourceName string) error {
+	databasePath := strings.SplitN(dataSourceName, "?", 2)[0]
+	if strings.HasPrefix(databasePath, "file:") {
+		uri, err := url.Parse(databasePath)
+		if err != nil {
+			return fmt.Errorf("parse SQLite data source: %w", err)
+		}
+		databasePath = uri.Path
+		if uri.Host != "" {
+			databasePath = "//" + uri.Host + databasePath
+		} else if runtime.GOOS == "windows" && len(databasePath) >= 3 && databasePath[0] == '/' && databasePath[2] == ':' {
+			databasePath = databasePath[1:]
+		}
+	}
+	if databasePath == "" || databasePath == ":memory:" {
+		return nil
+	}
+	if err := os.MkdirAll(filepath.Dir(databasePath), 0o700); err != nil {
+		return fmt.Errorf("create SQLite database directory: %w", err)
+	}
+	return nil
 }
 
 func PingDatabase() error {

@@ -3,9 +3,11 @@ package server
 import (
 	"fmt"
 	"net"
+	"path/filepath"
 	"strings"
 
 	"github.com/casosorg/casos/conf"
+	kinesqlite "github.com/k3s-io/kine/pkg/drivers/sqlite"
 	"github.com/sirupsen/logrus"
 )
 
@@ -16,7 +18,7 @@ type Config struct {
 	AdvertiseAddress          string // non-loopback IP registered as kubernetes service endpoint
 	ApiserverPort             int
 	WebhookPort               int                // HTTPS port for the Casbin admission webhook server
-	DSN                       string             // MySQL DSN forwarded to kine
+	DatastoreEndpoint         string             // Kine datastore endpoint
 	SandboxImage              string             // containerd sandbox (pause) image, empty = upstream default
 	CoreDNSImage              string             // CoreDNS image used by the built-in DNS bootstrap
 	LocalPathProvisionerImage string             // local-path-provisioner controller image
@@ -33,18 +35,22 @@ type Config struct {
 
 // ConfigFromAppConf reads server config from the beego app.conf.
 func ConfigFromAppConf() (Config, error) {
-	dataDir := conf.GetConfigStringDefault("dataDir", "/var/lib/casos")
+	dataDir := conf.GetDataDir()
 	bind := conf.GetConfigStringDefault("apiserverBind", outboundIP())
 	port := conf.GetConfigIntDefault("apiserverPort", 6443)
-	dsn := conf.GetConfigString("dataSourceName")
-	if dsn == "" {
-		return Config{}, fmt.Errorf("dataSourceName not set in app.conf")
+	driverName := conf.GetDatabaseDriverName()
+	dataSourceName := conf.GetDatabaseDataSourceName()
+	dbName := conf.GetConfigStringDefault("dbName", "casos")
+	datastoreEndpoint, err := resolveDatastoreEndpoint(
+		driverName,
+		dataSourceName,
+		dbName,
+		dataDir,
+		conf.GetConfigString("kineEndpoint"),
+	)
+	if err != nil {
+		return Config{}, err
 	}
-	dbName := conf.GetConfigString("dbName")
-	if dbName == "" {
-		dbName = "casos"
-	}
-	dsn = injectDBName(dsn, dbName)
 
 	advertise := outboundIP()
 	if advertise == "127.0.0.1" || advertise == "::1" {
@@ -75,7 +81,7 @@ func ConfigFromAppConf() (Config, error) {
 		AdvertiseAddress:          advertise,
 		ApiserverPort:             port,
 		WebhookPort:               webhookPort,
-		DSN:                       dsn,
+		DatastoreEndpoint:         datastoreEndpoint,
 		SandboxImage:              sandboxImage,
 		CoreDNSImage:              coreDNSImage,
 		LocalPathProvisionerImage: localPathProvisionerImage,
@@ -91,6 +97,25 @@ func ConfigFromAppConf() (Config, error) {
 	}
 	normalizeApplicationAccessConfig(&config)
 	return config, nil
+}
+
+func resolveDatastoreEndpoint(driverName, dataSourceName, dbName, dataDir, configuredEndpoint string) (string, error) {
+	if configuredEndpoint = strings.TrimSpace(configuredEndpoint); configuredEndpoint != "" {
+		if !strings.Contains(configuredEndpoint, "://") {
+			return "", fmt.Errorf("kineEndpoint must include a datastore scheme")
+		}
+		return configuredEndpoint, nil
+	}
+
+	switch driverName {
+	case "sqlite":
+		path := filepath.ToSlash(filepath.Join(dataDir, "kine", "state.db"))
+		return "sqlite://" + path + "?" + kinesqlite.DefaultParams, nil
+	case "mysql":
+		return "mysql://" + injectDBName(dataSourceName, dbName), nil
+	default:
+		return "", fmt.Errorf("kineEndpoint is required for database driver %q", driverName)
+	}
 }
 
 func normalizeApplicationAccessConfig(config *Config) {

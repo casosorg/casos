@@ -67,11 +67,13 @@ require (
 	github.com/casdoor/casdoor-go-sdk v0.52.0
 	github.com/go-sql-driver/mysql v1.10.0
 
-	// kine: MySQL as etcd backend
+	// kine: SQL datastore exposed as an etcd-compatible backend
 	github.com/k3s-io/kine v0.16.1
 	github.com/sirupsen/logrus v1.9.4
+	go.etcd.io/etcd/client/v3 v3.6.12
 	k8s.io/apimachinery v1.36.1-k3s1
 	k8s.io/client-go v1.36.1-k3s1
+	modernc.org/sqlite v1.51.0
 
 	// Kubernetes control plane (k3s fork tags)
 	k8s.io/kubernetes v1.36.1-k3s1
@@ -273,7 +275,6 @@ require (
 	go.etcd.io/bbolt v1.4.3 // indirect
 	go.etcd.io/etcd/api/v3 v3.6.12 // indirect
 	go.etcd.io/etcd/client/pkg/v3 v3.6.12 // indirect
-	go.etcd.io/etcd/client/v3 v3.6.12 // indirect
 	go.etcd.io/etcd/pkg/v3 v3.6.12 // indirect
 	go.etcd.io/etcd/server/v3 v3.6.11 // indirect
 	go.etcd.io/raft/v3 v3.6.0 // indirect
@@ -338,7 +339,6 @@ require (
 	modernc.org/libc v1.72.3 // indirect
 	modernc.org/mathutil v1.7.1 // indirect
 	modernc.org/memory v1.11.0 // indirect
-	modernc.org/sqlite v1.51.0 // indirect
 	sigs.k8s.io/apiserver-network-proxy/konnectivity-client v0.34.0 // indirect
 	sigs.k8s.io/json v0.0.0-20250730193827-2d320260d730 // indirect
 	sigs.k8s.io/kustomize/api v0.21.1 // indirect

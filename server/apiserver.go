@@ -3,18 +3,19 @@ package server
 import (
 	"context"
 	"crypto/tls"
-	"database/sql"
 	"fmt"
 	"net/http"
 	"os"
 	"path/filepath"
+	"runtime"
+	"strings"
 	"time"
 
 	"github.com/casosorg/casos/util"
-	_ "github.com/go-sql-driver/mysql"
 	"github.com/k3s-io/kine/pkg/endpoint"
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/pflag"
+	clientv3 "go.etcd.io/etcd/client/v3"
 
 	globalflag "k8s.io/component-base/cli/globalflag"
 	"k8s.io/component-base/logs"
@@ -23,8 +24,9 @@ import (
 )
 
 const (
-	serviceClusterIPRange = "10.43.0.0/16"
-	kubernetesServiceIP   = "10.43.0.1"
+	serviceClusterIPRange      = "10.43.0.0/16"
+	kubernetesServiceIP        = "10.43.0.1"
+	kubernetesEndpointsEtcdKey = "/registry/services/endpoints/default/kubernetes"
 )
 
 // Start launches kine and the apiserver in-process.
@@ -44,13 +46,18 @@ func Start(ctx context.Context, cfg Config) (<-chan struct{}, error) {
 	if err := util.StopOldInstance(2379); err != nil {
 		logrus.Warnf("failed to stop old instance on port 2379: %v", err)
 	}
-	etcdCfg, err := endpoint.Listen(ctx, kineEndpointConfig(cfg.DSN))
+	if err := ensureKineDataDirectory(cfg.DatastoreEndpoint); err != nil {
+		return nil, err
+	}
+	etcdCfg, err := endpoint.Listen(ctx, kineEndpointConfig(cfg.DatastoreEndpoint))
 	if err != nil {
 		return nil, fmt.Errorf("kine listen: %w", err)
 	}
 	logrus.Infof("kine started, etcd endpoint: %v", etcdCfg.Endpoints)
 
-	if err := deleteStaleKubernetesEndpoints(cfg.DSN); err != nil {
+	cleanupCtx, cancelCleanup := context.WithTimeout(ctx, 5*time.Second)
+	defer cancelCleanup()
+	if err := deleteStaleKubernetesEndpoints(cleanupCtx, etcdCfg.Endpoints[0]); err != nil {
 		logrus.Warnf("failed to delete stale kubernetes endpoints: %v", err)
 	}
 
@@ -95,14 +102,31 @@ func Start(ctx context.Context, cfg Config) (<-chan struct{}, error) {
 	return readyCh, nil
 }
 
-func kineEndpointConfig(dsn string) endpoint.Config {
+func kineEndpointConfig(datastoreEndpoint string) endpoint.Config {
 	return endpoint.Config{
-		Endpoint:            "mysql://" + dsn,
+		Endpoint:            datastoreEndpoint,
 		Listener:            "tcp://127.0.0.1:2379",
 		EmulatedETCDVersion: "3.6.11",
 		CompactBatchSize:    100,
 		NotifyInterval:      time.Second,
 	}
+}
+
+func ensureKineDataDirectory(datastoreEndpoint string) error {
+	if !strings.HasPrefix(datastoreEndpoint, "sqlite://") {
+		return nil
+	}
+	databasePath := strings.SplitN(strings.TrimPrefix(datastoreEndpoint, "sqlite://"), "?", 2)[0]
+	if databasePath == "" {
+		return fmt.Errorf("SQLite kine endpoint has no database path")
+	}
+	if runtime.GOOS == "windows" && len(databasePath) >= 3 && databasePath[0] == '/' && databasePath[2] == ':' {
+		databasePath = databasePath[1:]
+	}
+	if err := os.MkdirAll(filepath.Dir(databasePath), 0o700); err != nil {
+		return fmt.Errorf("mkdir kine data directory: %w", err)
+	}
+	return nil
 }
 
 // waitForAPIServer polls /readyz every 2 s until it gets HTTP 200 or ctx is done.
@@ -174,14 +198,19 @@ func buildApiserverArgs(cfg Config, certDir, etcdEndpoint, authzKubeconfig strin
 }
 
 // deleteStaleKubernetesEndpoints removes the default/kubernetes Endpoints object
-// from kine's MySQL table so the bootstrap controller starts fresh on each run.
-func deleteStaleKubernetesEndpoints(dsn string) error {
-	db, err := sql.Open("mysql", dsn)
+// through kine so the bootstrap controller starts fresh on each run.
+func deleteStaleKubernetesEndpoints(ctx context.Context, etcdEndpoint string) error {
+	client, err := clientv3.New(clientv3.Config{
+		Endpoints:   []string{etcdEndpoint},
+		DialTimeout: 5 * time.Second,
+	})
 	if err != nil {
 		return err
 	}
-	defer db.Close()
-	const q = `UPDATE kine SET deleted=1 WHERE name='/registry/endpoints/default/kubernetes' AND deleted=0`
-	_, err = db.Exec(q)
+	defer client.Close()
+	_, err = client.Txn(ctx).Then(
+		clientv3.OpGet(kubernetesEndpointsEtcdKey),
+		clientv3.OpDelete(kubernetesEndpointsEtcdKey),
+	).Commit()
 	return err
 }
