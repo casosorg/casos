@@ -92,6 +92,9 @@ type Ormer struct {
 
 // finalizer is the destructor for Ormer.
 func finalizer(a *Ormer) {
+	if a == nil || a.Engine == nil {
+		return
+	}
 	err := a.Engine.Close()
 	if err != nil {
 		panic(err)
@@ -202,6 +205,10 @@ func PingDatabase() error {
 }
 
 func (a *Ormer) close() {
+	runtime.SetFinalizer(a, nil)
+	if a.Engine == nil {
+		return
+	}
 	_ = a.Engine.Close()
 	a.Engine = nil
 }
@@ -211,6 +218,7 @@ func (a *Ormer) createTable() {
 	a.Engine.ShowSQL(showSql)
 	if err := a.Engine.Sync2(
 		new(Site),
+		new(LocalUser),
 		new(Machine),
 		new(MachineNodeDeployTask),
 		new(MachineNodeDeployLog),

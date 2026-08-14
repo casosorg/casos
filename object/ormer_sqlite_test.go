@@ -43,6 +43,13 @@ func TestSQLiteAdapterConfiguration(t *testing.T) {
 	if !exists {
 		t.Fatal("Site table was not created")
 	}
+	localUserExists, err := adapter.Engine.IsTableExist(new(LocalUser))
+	if err != nil {
+		t.Fatalf("check LocalUser table: %v", err)
+	}
+	if !localUserExists {
+		t.Fatal("LocalUser table was not created")
+	}
 }
 
 func TestSQLite3DriverAlias(t *testing.T) {

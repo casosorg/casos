@@ -53,7 +53,33 @@ func (c *ApiController) GetBuiltInSite() {
 		return
 	}
 
-	c.ResponseOk(site)
+	if site == nil {
+		c.ResponseOk(nil)
+		return
+	}
+	c.ResponseOk(struct {
+		Owner         string `json:"owner"`
+		Name          string `json:"name"`
+		DisplayName   string `json:"displayName"`
+		ThemeColor    string `json:"themeColor"`
+		HtmlTitle     string `json:"htmlTitle"`
+		FaviconUrl    string `json:"faviconUrl"`
+		LogoUrl       string `json:"logoUrl"`
+		NavbarHtml    string `json:"navbarHtml"`
+		FooterHtml    string `json:"footerHtml"`
+		StaticBaseUrl string `json:"staticBaseUrl"`
+	}{
+		Owner:         site.Owner,
+		Name:          site.Name,
+		DisplayName:   site.DisplayName,
+		ThemeColor:    site.ThemeColor,
+		HtmlTitle:     site.HtmlTitle,
+		FaviconUrl:    site.FaviconUrl,
+		LogoUrl:       site.LogoUrl,
+		NavbarHtml:    site.NavbarHtml,
+		FooterHtml:    site.FooterHtml,
+		StaticBaseUrl: site.StaticBaseUrl,
+	})
 }
 
 func (c *ApiController) UpdateSite() {

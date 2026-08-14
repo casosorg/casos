@@ -8,12 +8,14 @@ const frontendPort = Number(process.env.E2E_FRONTEND_PORT || 8001);
 const baseURL = `http://127.0.0.1:${frontendPort}`;
 const backendURL = `http://127.0.0.1:${backendPort}`;
 const e2eToken = process.env.E2E_TEST_TOKEN || randomUUID();
+const localSetupToken = process.env.E2E_LOCAL_SETUP_TOKEN || randomUUID();
 const e2eDataDir = process.env.E2E_DATA_DIR || path.join(os.tmpdir(), `casos-e2e-${process.pid}`);
 const backendDir = path.resolve(__dirname, "..");
 const browserChannel = process.env.E2E_BROWSER_CHANNEL;
 const videoMode = process.env.E2E_DISABLE_VIDEO ? "off" : "retain-on-failure";
 
 process.env.E2E_TEST_TOKEN = e2eToken;
+process.env.E2E_LOCAL_SETUP_TOKEN = localSetupToken;
 
 module.exports = defineConfig({
   testDir: "./tests/ui",
@@ -55,6 +57,7 @@ module.exports = defineConfig({
         socks5Proxy: process.env.socks5Proxy || "",
         e2eTestMode: "true",
         e2eTestToken: e2eToken,
+        localSetupToken,
       },
     },
     {

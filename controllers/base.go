@@ -5,6 +5,8 @@ import (
 
 	"github.com/beego/beego"
 	"github.com/casdoor/casdoor-go-sdk/casdoorsdk"
+
+	"github.com/casosorg/casos/authn"
 )
 
 type ApiController struct {
@@ -21,8 +23,12 @@ func (c *ApiController) GetSessionClaims() *casdoorsdk.Claims {
 		return nil
 	}
 
-	claims := s.(casdoorsdk.Claims)
-	return &claims
+	claims, ok := authn.SessionClaims(s)
+	if !ok || !authn.ValidateSessionClaims(claims) {
+		c.DelSession("user")
+		return nil
+	}
+	return claims
 }
 
 func (c *ApiController) SetSessionClaims(claims *casdoorsdk.Claims) {

@@ -67,3 +67,51 @@ func TestGetDatabaseDriverNameNormalizesSQLiteAlias(t *testing.T) {
 		t.Fatalf("GetDatabaseDriverName() = %q, want sqlite", got)
 	}
 }
+
+func TestGetAuthMode(t *testing.T) {
+	tests := []struct {
+		name  string
+		value string
+		want  string
+	}{
+		{name: "default", value: "", want: AuthModeLocal},
+		{name: "local", value: "local", want: AuthModeLocal},
+		{name: "normalized Casdoor", value: " CASDOOR ", want: AuthModeCasdoor},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Setenv("authMode", tt.value)
+			t.Setenv("casdoorEndpoint", "")
+			if got := GetAuthMode(); got != tt.want {
+				t.Fatalf("GetAuthMode() = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestGetAuthModePreservesLegacyCasdoorConfig(t *testing.T) {
+	t.Setenv("authMode", "")
+	t.Setenv("casdoorEndpoint", "https://door.example.com")
+	if got := GetAuthMode(); got != AuthModeCasdoor {
+		t.Fatalf("GetAuthMode() = %q, want %q", got, AuthModeCasdoor)
+	}
+}
+
+func TestGetAuthModeRejectsInvalidValue(t *testing.T) {
+	t.Setenv("authMode", "auto")
+	defer func() {
+		if recover() == nil {
+			t.Fatal("GetAuthMode() did not panic for an invalid mode")
+		}
+	}()
+	_ = GetAuthMode()
+}
+
+func TestGetAuthModeSafeRejectsInvalidValue(t *testing.T) {
+	t.Setenv("authMode", "auto")
+	t.Setenv("casdoorEndpoint", "")
+	mode, err := GetAuthModeSafe()
+	if err == nil {
+		t.Fatalf("GetAuthModeSafe() mode = %q, want error", mode)
+	}
+}

@@ -67,7 +67,7 @@ class LanguageSelect extends React.Component {
 
     return (
       <Dropdown menu={{items: languageItems, onClick}}>
-        <div className="select-box" style={{display: languageItems.length === 0 ? "none" : null, cursor: "pointer", ...this.props.style}}>
+        <div className={this.props.className || "select-box"} style={{display: languageItems.length === 0 ? "none" : null, cursor: "pointer", ...this.props.style}}>
           <GlobalOutlined style={{fontSize: "20px"}} />
         </div>
       </Dropdown>

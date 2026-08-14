@@ -1,21 +1,20 @@
 import React, {Component} from "react";
 import {Redirect, Route, Switch, withRouter} from "react-router-dom";
 import {StyleProvider, legacyLogicalPropertiesTransformer} from "@ant-design/cssinjs";
-import {ConfigProvider, FloatButton, Layout} from "antd";
+import {Button, ConfigProvider, FloatButton, Layout, Result, Spin} from "antd";
 import * as Setting from "./Setting";
 import * as AccountBackend from "./backend/AccountBackend";
 import * as SiteBackend from "./backend/SiteBackend";
-import * as Conf from "./Conf";
 import {getShadcnThemeComponents, getShadcnThemeToken} from "./shadcnTheme";
 import ManagementPage from "./ManagementPage";
 import AuthCallback from "./AuthCallback";
 import SigninPage from "./SigninPage";
+import i18next from "i18next";
 
 class App extends Component {
   constructor(props) {
     super(props);
     Setting.initServerUrl();
-    Setting.initCasdoorSdk(Conf.AuthConfig);
 
     let storageThemeAlgorithm = ["default"];
     try {
@@ -32,12 +31,30 @@ class App extends Component {
       themeAlgorithm: storageThemeAlgorithm,
       site: undefined,
       logo: null,
+      signinOptions: undefined,
+      signinOptionsError: "",
     };
   }
 
-  UNSAFE_componentWillMount() {
+  componentDidMount() {
+    this.loadSigninOptions();
     this.getAccount();
     this.loadSite();
+  }
+
+  loadSigninOptions() {
+    AccountBackend.getSigninOptions()
+      .then((res) => {
+        if (res?.status !== "ok") {
+          this.setState({signinOptions: null, signinOptionsError: res?.msg || "Unable to load sign-in options"});
+          return;
+        }
+        if (res.data?.authMode === "casdoor") {
+          Setting.initCasdoorSdk(res.data.authConfig, res.data.oauthState);
+        }
+        this.setState({signinOptions: res.data, signinOptionsError: ""});
+      })
+      .catch((error) => this.setState({signinOptions: null, signinOptionsError: error.message}));
   }
 
   componentDidUpdate() {
@@ -73,10 +90,12 @@ class App extends Component {
   }
 
   getAccount() {
-    AccountBackend.getAccount().then((res) => {
-      const account = res.data;
-      this.setState({account: account});
-    });
+    AccountBackend.getAccount()
+      .then((res) => {
+        const account = res?.status === "ok" ? res.data : null;
+        this.setState({account});
+      })
+      .catch(() => this.setState({account: null}));
   }
 
   signout() {
@@ -106,7 +125,10 @@ class App extends Component {
   };
 
   renderHomeIfSignedIn(component) {
-    if (this.state.account !== null && this.state.account !== undefined) {
+    if (this.state.account === undefined) {
+      return null;
+    }
+    if (this.state.account !== null) {
       return <Redirect to="/" />;
     }
     return component;
@@ -123,11 +145,44 @@ class App extends Component {
   }
 
   renderContent() {
+    if (this.state.signinOptions === undefined) {
+      return (
+        <div style={{display: "flex", alignItems: "center", justifyContent: "center", minHeight: "100vh", width: "100%"}}>
+          <Spin size="large" />
+        </div>
+      );
+    }
+
+    if (this.state.signinOptions === null) {
+      return (
+        <Result
+          status="warning"
+          title={i18next.t("account:Unable to load sign-in options")}
+          subTitle={this.state.signinOptionsError}
+          extra={<Button onClick={() => {
+            this.setState({signinOptions: undefined, signinOptionsError: ""});
+            this.loadSigninOptions();
+          }}>{i18next.t("account:Retry")}</Button>}
+        />
+      );
+    }
+
     return (
       <Layout id="parent-area">
         <Switch>
-          <Route exact path="/callback" component={AuthCallback} />
-          <Route exact path="/signin" render={(props) => this.renderHomeIfSignedIn(<SigninPage {...props} />)} />
+          <Route exact path="/callback" render={(props) => this.state.signinOptions?.authMode === "casdoor" ? <AuthCallback {...props} /> : <Redirect to="/signin" />} />
+          <Route exact path="/signin" render={(props) => this.renderHomeIfSignedIn(
+            <SigninPage
+              options={this.state.signinOptions}
+              error={this.state.signinOptionsError}
+              logo={this.state.logo || Setting.getLogo(this.state.themeAlgorithm, this.state.site?.logoUrl)}
+              onRetry={() => {
+                this.setState({signinOptions: undefined, signinOptionsError: ""});
+                this.loadSigninOptions();
+              }}
+              {...props}
+            />
+          )} />
           <Route path="/" render={(props) => this.renderSigninIfNotSignedIn(
             <ManagementPage
               account={this.state.account}

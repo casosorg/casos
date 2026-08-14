@@ -27,11 +27,15 @@ func (c *ApiController) E2ESignin() {
 
 	claims := &casdoorsdk.Claims{
 		User: casdoorsdk.User{
-			Owner:       "built-in",
+			Owner:       "e2e",
 			Name:        "ci-user",
 			DisplayName: "CI User",
 			IsAdmin:     true,
 		},
+	}
+	if err := c.SessionRegenerateID(); err != nil {
+		c.ResponseError("failed to create session")
+		return
 	}
 	c.SetSessionClaims(claims)
 	logs.Info("E2E test sign-in used for user %s", claims.Name)

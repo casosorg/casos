@@ -34,7 +34,12 @@ jobs:
           node-version: 22
           cache: 'yarn'
           cache-dependency-path: ./web/yarn.lock
-      - run: yarn install && CI=false yarn run build
+      - run: yarn install
+        working-directory: ./web
+      - name: Run front-end unit tests
+        run: yarn run test
+        working-directory: ./web
+      - run: CI=false yarn run build
         working-directory: ./web
       - name: Upload build artifacts
         if: github.repository == 'casosorg/casos' && github.event_name == 'push'

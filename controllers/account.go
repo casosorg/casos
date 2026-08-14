@@ -4,11 +4,26 @@ import (
 	"os"
 
 	"github.com/casdoor/casdoor-go-sdk/casdoorsdk"
+
+	"github.com/casosorg/casos/conf"
 )
 
 func (c *ApiController) Signin() {
+	if conf.IsLocalAuthMode() {
+		c.signinWithPassword()
+		return
+	}
+
 	code := c.Input().Get("code")
 	state := c.Input().Get("state")
+	if code == "" {
+		c.ResponseError("authorization code is required")
+		return
+	}
+	if !c.validateOAuthState(state) {
+		c.ResponseError("invalid OAuth state")
+		return
+	}
 
 	token, err := casdoorsdk.GetOAuthToken(code, state)
 	if err != nil {
@@ -23,13 +38,17 @@ func (c *ApiController) Signin() {
 	}
 
 	claims.AccessToken = token.AccessToken
+	if err = c.SessionRegenerateID(); err != nil {
+		c.ResponseError("failed to create session")
+		return
+	}
 	c.SetSessionClaims(claims)
 
 	c.ResponseOk(claims)
 }
 
 func (c *ApiController) Signout() {
-	c.SetSessionClaims(nil)
+	c.DestroySession()
 
 	c.ResponseOk()
 }

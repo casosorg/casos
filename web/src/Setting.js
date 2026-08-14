@@ -14,7 +14,14 @@ export function initServerUrl() {
   }
 }
 
-export function initCasdoorSdk(config) {
+export function initCasdoorSdk(config, oauthState) {
+  if (!config?.serverUrl) {
+    CasdoorSdk = undefined;
+    return;
+  }
+  if (oauthState) {
+    sessionStorage.setItem("casdoor-state", oauthState);
+  }
   CasdoorSdk = new Sdk(config);
 }
 
@@ -31,7 +38,7 @@ export function getWebSocketUrl(path, params = {}) {
 }
 
 export function getSigninUrl() {
-  return CasdoorSdk.getSigninUrl();
+  return CasdoorSdk?.getSigninUrl() || "";
 }
 
 export function getSignupUrl() {
@@ -43,10 +50,14 @@ export function getUserProfileUrl(userName, account) {
 }
 
 export function getMyProfileUrl(account) {
+  if (isLocalAccount(account)) {return "#";}
   return CasdoorSdk.getMyProfileUrl(account);
 }
 
 export function signin() {
+  if (!CasdoorSdk) {
+    return Promise.resolve({status: "error", msg: "Casdoor is not configured"});
+  }
   return CasdoorSdk.signin(ServerUrl);
 }
 
@@ -105,6 +116,10 @@ export function handleFetchResponse(response) {
 export function isAdminUser(account) {
   if (!account) {return false;}
   return true;
+}
+
+export function isLocalAccount(account) {
+  return account?.owner === "casos-local";
 }
 
 export function getAvatarColor(s) {

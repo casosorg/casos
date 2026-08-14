@@ -56,6 +56,7 @@ import TrivyScanPage from "./TrivyScanPage";
 import LogSearchPage from "./LogSearchPage";
 import TopologyPage from "./TopologyPage";
 import MonitorPage from "./MonitorPage";
+import AccountPage from "./AccountPage";
 import i18next from "i18next";
 
 const {Header, Footer, Content, Sider} = Layout;
@@ -185,7 +186,7 @@ function ManagementPage(props) {
         key: "account",
         icon: <UserOutlined />,
         label: i18next.t("account:My Account"),
-        onClick: () => window.open(Setting.getMyProfileUrl(account), "_blank"),
+        onClick: () => Setting.isLocalAccount(account) ? props.history.push("/account") : window.open(Setting.getMyProfileUrl(account), "_blank"),
       },
       {
         key: "signout",
@@ -260,6 +261,7 @@ function ManagementPage(props) {
     return (
       <Switch>
         <Route exact path={["/", "/dashboard"]} render={(props) => <DashboardPage {...props} />} />
+        <Route exact path="/account" render={(props) => <AccountPage account={account} {...props} />} />
         <Route exact path="/app-store" render={(props) => <AppStorePage {...props} />} />
         <Route exact path="/helm-releases" render={(props) => <HelmReleasePage {...props} />} />
         <Route exact path="/deployments" render={(props) => <DeploymentListPage {...props} />} />

@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"net/http"
 	"os/signal"
 	"syscall"
 
@@ -28,6 +29,9 @@ func main() {
 	object.InitFlag()
 	object.InitAdapter()
 	object.CreateTables()
+	if err := controllers.InitLocalSetup(); err != nil {
+		panic(err)
+	}
 	object.InitSite()
 	if err := object.SeedDefaultPolicies(); err != nil {
 		logs.Warning("casbin seed: %v", err)
@@ -35,7 +39,9 @@ func main() {
 	if err := object.ReloadAllEnforcers(); err != nil {
 		logs.Warning("casbin enforcer init: %v", err)
 	}
-	casdoor.InitCasdoorConfig()
+	if err := casdoor.InitCasdoorConfig(); err != nil {
+		panic(err)
+	}
 	proxy.InitHttpClient()
 
 	srvCfg, err := server.ConfigFromAppConf()
@@ -94,9 +100,11 @@ func main() {
 
 	beego.BConfig.CopyRequestBody = true
 	beego.BConfig.WebConfig.Session.SessionOn = true
-	beego.BConfig.WebConfig.Session.SessionProvider = "file"
-	beego.BConfig.WebConfig.Session.SessionProviderConfig = "./tmp"
-	beego.BConfig.WebConfig.Session.SessionGCMaxLifetime = 3600 * 24 * 365
+	beego.BConfig.WebConfig.Session.SessionName = "casos_session_id"
+	beego.BConfig.WebConfig.Session.SessionProvider = "memory"
+	beego.BConfig.WebConfig.Session.SessionGCMaxLifetime = int64(conf.GetConfigIntDefault("sessionLifetime", 3600*24))
+	beego.BConfig.WebConfig.Session.SessionCookieSameSite = http.SameSiteLaxMode
+	beego.BConfig.WebConfig.Session.SessionDisableHTTPOnly = false
 
 	port := conf.GetConfigIntDefault("httpport", 9000)
 	logs.Info("casos listening on :%d", port)

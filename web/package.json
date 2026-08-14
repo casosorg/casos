@@ -24,6 +24,7 @@
   "scripts": {
     "start": "cross-env PORT=8001 craco start",
     "build": "craco build",
+    "test": "craco test --watchAll=false",
     "ui:test": "playwright test",
     "ui:test:selector:check": "node scripts/select-ui-tests-check.js",
     "ui:test:smoke": "playwright test --grep @smoke",

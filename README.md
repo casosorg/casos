@@ -30,7 +30,8 @@ CasOS is a cloud operating system built on Kubernetes. It embeds the Kubernetes 
 - Dashboard with cluster overview
 - DockerHub image browser
 - Multi-language support (i18n)
-- Authentication via [Casdoor](https://casdoor.org)
+- Built-in local password authentication with first-run administrator setup
+- Optional OAuth2 / OIDC authentication via [Casdoor](https://casdoor.org)
 
 ## Tech Stack
 
@@ -38,7 +39,7 @@ CasOS is a cloud operating system built on Kubernetes. It embeds the Kubernetes 
 |----------|-------------------------------------------|
 | Backend  | Go 1.26+, Beego, MySQL (ORM)              |
 | Frontend | React 18, Ant Design 6, recharts, i18next |
-| Auth     | Casdoor (OAuth2 / OIDC)                   |
+| Auth     | Local password or Casdoor (OAuth2 / OIDC) |
 
 ## Project Structure
 
@@ -69,7 +70,8 @@ casos/
 
 - **Backend**: [Go](https://golang.org/dl/) 1.26+
 - **Frontend**: [Node.js](https://nodejs.org/) 20+ and [Yarn](https://classic.yarnpkg.com/) 1.x
-- A [Casdoor](https://casdoor.org) instance (for authentication)
+
+Casdoor is optional. The default local mode has no external authentication dependency.
 
 Supported platforms: **Linux**, **macOS**, **Windows**
 
@@ -88,12 +90,19 @@ dataSourceName=
 dbName        = casos
 kineEndpoint  =
 
-; Casdoor
-casdoorEndpoint     = https://your-casdoor-instance
-clientId            = <your-client-id>
-clientSecret        = <your-client-secret>
-casdoorOrganization = <your-org>
-casdoorApplication  = <your-app>
+; Authentication: local or casdoor
+authMode = local
+; Optional: set this via an environment variable for unattended deployment.
+; When blank, the generated first-run token is printed to the server log.
+localSetupToken =
+sessionLifetime = 86400
+
+; Required only when authMode=casdoor
+casdoorEndpoint     =
+clientId            =
+clientSecret        =
+casdoorOrganization =
+casdoorApplication  =
 
 ; Optional control-plane SOCKS5 proxy
 ; Leave blank to use environment proxy settings or direct access.
@@ -110,6 +119,33 @@ SQLite is the default and stores CasOS business data in `data/casos.db` and
 Kubernetes state in `data/kine/state.db`. The `data` directory is ignored by
 Git and is writable when running the development command from the repository
 root.
+
+### Authentication
+
+With the default `authMode=local`, open CasOS in a browser on the machine that
+runs it and set the password for the built-in `admin` account; no other step is
+required. The password must contain at least 8 characters and at most 72 bytes.
+CasOS stores only its bcrypt hash in the business database.
+
+First-run setup from another machine requires a one-time setup token: CasOS
+prints one to the server log, or you can fix it through the `localSetupToken`
+environment variable (at least 16 characters) for unattended deployment and
+reverse-proxy setups, where the server cannot tell whether a request is local.
+
+Sessions are held in process memory and expire after `sessionLifetime` seconds
+(24 hours by default), so restarting CasOS requires signing in again. In
+`casdoor` mode, a session also ends once the Casdoor access token expires; there
+is no silent refresh. Do not send local credentials over an untrusted HTTP
+network; terminate HTTPS in front of CasOS for remote access.
+
+To use Casdoor instead, set `authMode=casdoor` and configure all five Casdoor
+settings shown above. CasOS validates that configuration at startup. Local
+accounts remain stored when modes are switched, but sessions created in one
+mode are not accepted in the other mode.
+
+Existing configurations that omit `authMode` but have a non-empty
+`casdoorEndpoint` continue to select Casdoor for upgrade safety. Set the mode
+explicitly when updating the configuration.
 
 > **Breaking change:** `dataDir` used to default to `/var/lib/casos`. It now
 > defaults to `./data`, which is resolved against the working directory of the
