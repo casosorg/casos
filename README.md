@@ -73,6 +73,33 @@ casos/
 
 Supported platforms: **Linux**, **macOS**, **Windows**
 
+## Install
+
+Linux (amd64 or arm64):
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/casosorg/casos/master/scripts/install.sh | bash
+```
+
+Windows PowerShell (x64 or arm64):
+
+```powershell
+irm https://raw.githubusercontent.com/casosorg/casos/master/scripts/install.ps1 | iex
+```
+
+The installer downloads the matching binary from the latest GitHub release,
+verifies it against `SHA256SUMS`, and adds CasOS to your user `PATH`. On Linux,
+open a new shell or run the `source` command printed by the installer before
+running `casos`; the installer also prints the absolute executable path. On
+Windows, the current PowerShell session is updated immediately. Open
+`http://localhost:9000` after starting CasOS. Rerun the command to upgrade. Set
+`CASOS_VERSION` to a release tag such as `v1.32.0` to install that version.
+For a piped Linux install, pass installer variables to `bash`, not to `curl`:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/casosorg/casos/master/scripts/install.sh | CASOS_VERSION=v1.32.0 INSTALL_DIR="$HOME/.local/bin" bash
+```
+
 ## Configuration
 
 Edit `conf/app.conf` with your values:
