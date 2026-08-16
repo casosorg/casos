@@ -7,9 +7,11 @@ import (
 	"os/signal"
 	"runtime"
 	"syscall"
+	"time"
 
 	"github.com/beego/beego"
 	"github.com/beego/beego/logs"
+	"github.com/spf13/cobra"
 	logsapi "k8s.io/component-base/logs/api/v1"
 
 	"github.com/casosorg/casos/casdoor"
@@ -20,6 +22,7 @@ import (
 	"github.com/casosorg/casos/proxy"
 	"github.com/casosorg/casos/routers"
 	"github.com/casosorg/casos/server"
+	"github.com/casosorg/casos/util"
 )
 
 // Build metadata, set through -ldflags "-X main.version=..." when GoReleaser
@@ -37,6 +40,13 @@ func versionString() string {
 }
 
 func main() {
+	doubleClicked := util.IsDoubleClicked()
+	if doubleClicked {
+		// CasOS embeds Cobra-based Kubernetes commands. Cobra's Windows
+		// mousetrap would otherwise terminate the whole process after startup.
+		cobra.MousetrapHelpText = ""
+	}
+
 	// Allow multiple in-process Kubernetes components to reinitialise the global
 	// logging singleton without killing the process.
 	logsapi.ReapplyHandling = logsapi.ReapplyHandlingIgnoreUnchanged
@@ -126,6 +136,19 @@ func main() {
 	beego.BConfig.WebConfig.Session.SessionGCMaxLifetime = 3600 * 24 * 365
 
 	port := conf.GetConfigIntDefault("httpport", 9000)
+	url := fmt.Sprintf("http://localhost:%v/", port)
 	logs.Info("casos listening on :%d", port)
+	if doubleClicked {
+		go func() {
+			if err := util.WaitForCasOS(url, 30*time.Second); err != nil {
+				logs.Warning("CasOS startup: %v", err)
+				return
+			}
+			logs.Info("CasOS started successfully. Open %s in your browser.", url)
+			if err := util.ShowStartupNotice(url); err != nil {
+				logs.Warning("show startup notice: %v", err)
+			}
+		}()
+	}
 	beego.Run(fmt.Sprintf(":%v", port))
 }
