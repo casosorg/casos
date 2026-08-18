@@ -1,10 +1,10 @@
-import React, {useState} from "react";
+import React, {useEffect, useRef, useState} from "react";
 import i18next from "i18next";
 import {Pencil, Plus, RefreshCw, Trash2} from "lucide-react";
 import * as ConfigMapBackend from "@/backend/ConfigMapBackend";
 import * as NamespaceBackend from "@/backend/NamespaceBackend";
+import * as Setting from "@/Setting";
 import {runAction, useResource} from "@/hooks/use-resource";
-import {Badge} from "@/components/ui/badge";
 import {Button} from "@/components/ui/button";
 import {Input} from "@/components/ui/input";
 import {MessageAlert} from "@/components/ui/alert";
@@ -17,10 +17,30 @@ import {KeyValueEditor, fromEntries, toEntries} from "@/components/shared/key-va
 import {RestartDeploymentsDialog} from "@/components/shared/restart-deployments-dialog";
 
 const emptyForm = {namespace: "", name: "", entries: []};
+const CONFIG_MAP_PAGE_SIZE = 20;
 
 function ConfigMapListPage() {
-  const {data: configMaps, loading, error, refresh} = useResource(() => ConfigMapBackend.getConfigMaps(), [], {initialData: []});
+  const [pageIndex, setPageIndex] = useState(0);
+  const [pageTokens, setPageTokens] = useState([""]);
+  const pageToken = pageTokens[pageIndex] ?? "";
+  const {
+    data: configMapPage,
+    loading,
+    error,
+    refresh: refreshPage,
+  } = useResource(
+    () => ConfigMapBackend.getConfigMapPage("", CONFIG_MAP_PAGE_SIZE, pageToken),
+    [pageIndex, pageToken],
+    {initialData: {items: [], continueToken: "", remainingItemCount: null}}
+  );
   const {data: namespaces} = useResource(() => NamespaceBackend.getNamespaces(), [], {initialData: [], toastOnError: false});
+
+  const configMaps = configMapPage?.items ?? [];
+  const hasNextPage = Boolean(configMapPage?.continueToken);
+  const remainingItemCount = configMapPage?.remainingItemCount;
+  const totalRows = Number.isFinite(remainingItemCount)
+    ? pageIndex * CONFIG_MAP_PAGE_SIZE + configMaps.length + remainingItemCount
+    : null;
 
   const [dialogOpen, setDialogOpen] = useState(false);
   const [mode, setMode] = useState("add");
@@ -28,11 +48,23 @@ function ConfigMapListPage() {
   const [form, setForm] = useState(emptyForm);
   const [errors, setErrors] = useState({});
   const [submitting, setSubmitting] = useState(false);
+  const [detailLoading, setDetailLoading] = useState(false);
   const [restartTarget, setRestartTarget] = useState(null);
+  const editRequestRef = useRef(0);
+
+  useEffect(() => () => {
+    editRequestRef.current += 1;
+  }, []);
 
   const namespaceOptions = (namespaces ?? []).map((item) => ({label: item.name, value: item.name}));
 
+  function invalidateEditRequest() {
+    editRequestRef.current += 1;
+    setDetailLoading(false);
+  }
+
   function openAdd() {
+    invalidateEditRequest();
     setMode("add");
     setEditing(null);
     setForm({...emptyForm, namespace: namespaces?.[0]?.name ?? "default"});
@@ -40,12 +72,61 @@ function ConfigMapListPage() {
     setDialogOpen(true);
   }
 
-  function openEdit(record) {
+  function openPreviousPage() {
+    setPageIndex((current) => Math.max(0, current - 1));
+  }
+
+  function openNextPage() {
+    if (!hasNextPage) {
+      return;
+    }
+    setPageTokens((current) => {
+      const next = current.slice(0, pageIndex + 1);
+      next.push(configMapPage.continueToken);
+      return next;
+    });
+    setPageIndex((current) => current + 1);
+  }
+
+  function refreshFromFirstPage() {
+    if (pageIndex === 0) {
+      refreshPage();
+      return;
+    }
+    setPageTokens([""]);
+    setPageIndex(0);
+  }
+
+  async function openEdit(record) {
+    const requestId = ++editRequestRef.current;
     setMode("edit");
     setEditing(record);
-    setForm({namespace: record.namespace, name: record.name, entries: toEntries(record.data)});
+    setForm({namespace: record.namespace, name: record.name, entries: []});
     setErrors({});
     setDialogOpen(true);
+
+    setDetailLoading(true);
+    try {
+      const response = await ConfigMapBackend.getConfigMap(record.namespace, record.name);
+      if (requestId !== editRequestRef.current) {
+        return;
+      }
+      if (response?.status !== "ok") {
+        Setting.showMessage("error", response?.msg ?? "Request failed");
+        return;
+      }
+      const configMap = response.data ?? {};
+      setEditing(configMap);
+      setForm({namespace: configMap.namespace, name: configMap.name, entries: toEntries(configMap.data)});
+    } catch (error) {
+      if (requestId === editRequestRef.current) {
+        Setting.showMessage("error", error.message);
+      }
+    } finally {
+      if (requestId === editRequestRef.current) {
+        setDetailLoading(false);
+      }
+    }
   }
 
   async function handleSubmit() {
@@ -73,7 +154,7 @@ function ConfigMapListPage() {
 
     if (ok) {
       setDialogOpen(false);
-      refresh();
+      refreshFromFirstPage();
       if (mode === "edit") {
         // Pods hold the values they started with, so an edit is only live once
         // the deployments referencing it roll.
@@ -87,7 +168,7 @@ function ConfigMapListPage() {
       successMessage: "ConfigMap deleted",
     });
     if (ok) {
-      refresh();
+      refreshFromFirstPage();
     }
   }
 
@@ -97,16 +178,8 @@ function ConfigMapListPage() {
     {
       key: "data",
       title: "Keys",
-      dataIndex: "data",
-      render: (data) => (
-        <div className="flex flex-wrap gap-1">
-          {Object.keys(data ?? {}).map((key) => (
-            <Badge key={key} variant="muted" className="font-mono">
-              {key}
-            </Badge>
-          ))}
-        </div>
-      ),
+      dataIndex: "dataKeys",
+      render: (count) => `${count ?? 0}`,
     },
     {key: "createdAt", title: i18next.t("general:Created"), dataIndex: "createdAt", width: 190, sortable: true},
     {
@@ -141,16 +214,26 @@ function ConfigMapListPage() {
 
       <DataTable
         title={i18next.t("general:ConfigMaps")}
-        description={`${configMaps?.length ?? 0} config maps`}
+        description={`${totalRows ?? pageIndex * CONFIG_MAP_PAGE_SIZE + configMaps.length} config maps`}
         columns={columns}
         dataSource={configMaps}
         rowKey={(record) => `${record.namespace}/${record.name}`}
         loading={loading}
         searchable
+        pageSize={0}
+        manualPagination={{
+          pageIndex,
+          hasPreviousPage: pageIndex > 0,
+          hasNextPage,
+          onPreviousPage: openPreviousPage,
+          onNextPage: openNextPage,
+          label: totalRows === null ? `Page ${pageIndex + 1}` : `${pageIndex * CONFIG_MAP_PAGE_SIZE + 1}–${pageIndex * CONFIG_MAP_PAGE_SIZE + configMaps.length} of ${totalRows}`,
+          totalRows,
+        }}
         emptyText="No ConfigMaps found"
         toolbar={
           <>
-            <Button variant="outline" size="sm" onClick={() => refresh()} loading={loading}>
+            <Button variant="outline" size="sm" onClick={refreshFromFirstPage} loading={loading}>
               <RefreshCw />
               {i18next.t("general:Refresh")}
             </Button>
@@ -164,10 +247,16 @@ function ConfigMapListPage() {
 
       <FormDialog
         open={dialogOpen}
-        onOpenChange={setDialogOpen}
+        onOpenChange={(open) => {
+          if (!open) {
+            invalidateEditRequest();
+          }
+          setDialogOpen(open);
+        }}
         title={mode === "add" ? "Add ConfigMap" : "Edit ConfigMap"}
         submitText={mode === "add" ? "Create" : "Update"}
-        submitting={submitting}
+        submitting={submitting || detailLoading}
+        submitDisabled={detailLoading}
         onSubmit={handleSubmit}
         size="lg"
       >

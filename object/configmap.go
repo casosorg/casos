@@ -14,6 +14,18 @@ func newClient(cfg *rest.Config) (*kubernetes.Clientset, error) {
 }
 
 func GetConfigMaps(cfg *rest.Config, namespace string) ([]corev1.ConfigMap, error) {
+	list, err := getConfigMaps(cfg, namespace, metav1.ListOptions{})
+	if err != nil {
+		return nil, err
+	}
+	return list.Items, nil
+}
+
+func GetConfigMapPage(cfg *rest.Config, namespace string, limit int64, continueToken string) (*corev1.ConfigMapList, error) {
+	return getConfigMaps(cfg, namespace, metav1.ListOptions{Limit: limit, Continue: continueToken})
+}
+
+func getConfigMaps(cfg *rest.Config, namespace string, options metav1.ListOptions) (*corev1.ConfigMapList, error) {
 	client, err := newClient(cfg)
 	if err != nil {
 		return nil, err
@@ -22,11 +34,11 @@ func GetConfigMaps(cfg *rest.Config, namespace string) ([]corev1.ConfigMap, erro
 	if ns == "" {
 		ns = metav1.NamespaceAll
 	}
-	list, err := client.CoreV1().ConfigMaps(ns).List(context.Background(), metav1.ListOptions{})
+	list, err := client.CoreV1().ConfigMaps(ns).List(context.Background(), options)
 	if err != nil {
 		return nil, err
 	}
-	return list.Items, nil
+	return list, nil
 }
 
 func GetConfigMap(cfg *rest.Config, namespace, name string) (*corev1.ConfigMap, error) {

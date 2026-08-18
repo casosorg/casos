@@ -88,6 +88,7 @@ function SortIcon({state}) {
  *   description     small text under the title
  *   searchable      renders a filter box that matches across all cells
  *   pageSize        rows per page; pass 0 to disable pagination
+ *   manualPagination controlled server-side pagination state and callbacks
  *   emptyText       shown when there is no data and nothing is loading
  *   onRowClick      makes rows interactive
  *   expandable      {rowExpandable(record), expandedRowRender(record)}
@@ -110,6 +111,7 @@ export function DataTable({
   searchable = false,
   searchPlaceholder = "Search...",
   pageSize = 20,
+  manualPagination = null,
   emptyText = "No data",
   emptyIcon,
   onRowClick,
@@ -135,7 +137,7 @@ export function DataTable({
     getCoreRowModel: getCoreRowModel(),
     getSortedRowModel: getSortedRowModel(),
     getFilteredRowModel: getFilteredRowModel(),
-    getPaginationRowModel: pageSize > 0 ? getPaginationRowModel() : undefined,
+    getPaginationRowModel: pageSize > 0 && !manualPagination ? getPaginationRowModel() : undefined,
     getRowId: (record, index) => resolveRowKey(rowKey, record, index),
     // The default filter only sees accessor values, which would silently skip
     // display columns. Matching the whole record keeps a search for an action
@@ -144,13 +146,15 @@ export function DataTable({
       JSON.stringify(row.original ?? {})
         .toLowerCase()
         .includes(String(value).toLowerCase()),
-    initialState: pageSize > 0 ? {pagination: {pageSize}} : undefined,
+    initialState: pageSize > 0 && !manualPagination ? {pagination: {pageSize}} : undefined,
   });
 
   const rows = table.getRowModel().rows;
   const showHeader = Boolean(title || description || toolbar || searchable);
-  const totalRows = table.getFilteredRowModel().rows.length;
-  const showPagination = pageSize > 0 && totalRows > pageSize;
+  const totalRows = manualPagination?.totalRows ?? table.getFilteredRowModel().rows.length;
+  const showPagination = manualPagination
+    ? manualPagination.hasPreviousPage || manualPagination.hasNextPage
+    : pageSize > 0 && totalRows > pageSize;
 
   return (
     <div
@@ -305,28 +309,32 @@ export function DataTable({
       {showPagination && (
         <div className="flex items-center justify-between border-t px-4 py-2.5">
           <span className="text-muted-foreground text-xs">
-            {table.getState().pagination.pageIndex * table.getState().pagination.pageSize + 1}
-            {"–"}
-            {Math.min((table.getState().pagination.pageIndex + 1) * table.getState().pagination.pageSize, totalRows)} of {totalRows}
+            {manualPagination
+              ? manualPagination.label
+              : <>
+                {table.getState().pagination.pageIndex * table.getState().pagination.pageSize + 1}
+                {"–"}
+                {Math.min((table.getState().pagination.pageIndex + 1) * table.getState().pagination.pageSize, totalRows)} of {totalRows}
+              </>}
           </span>
           <div className="flex items-center gap-1">
             <Button
               variant="outline"
               size="icon-sm"
-              onClick={() => table.previousPage()}
-              disabled={!table.getCanPreviousPage()}
+              onClick={manualPagination?.onPreviousPage ?? (() => table.previousPage())}
+              disabled={manualPagination ? !manualPagination.hasPreviousPage : !table.getCanPreviousPage()}
               aria-label="Previous page"
             >
               <ChevronLeft className="size-4" />
             </Button>
             <span className="text-muted-foreground px-2 text-xs tabular-nums">
-              {table.getState().pagination.pageIndex + 1} / {table.getPageCount()}
+              {manualPagination ? `Page ${manualPagination.pageIndex + 1}` : `${table.getState().pagination.pageIndex + 1} / ${table.getPageCount()}`}
             </span>
             <Button
               variant="outline"
               size="icon-sm"
-              onClick={() => table.nextPage()}
-              disabled={!table.getCanNextPage()}
+              onClick={manualPagination?.onNextPage ?? (() => table.nextPage())}
+              disabled={manualPagination ? !manualPagination.hasNextPage : !table.getCanNextPage()}
               aria-label="Next page"
             >
               <ChevronRight className="size-4" />

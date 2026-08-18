@@ -2,6 +2,8 @@ package controllers
 
 import (
 	"encoding/json"
+	"fmt"
+	"strconv"
 
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -13,9 +15,32 @@ type configMapSummary struct {
 	Namespace       string            `json:"namespace"`
 	Name            string            `json:"name"`
 	DataKeys        int               `json:"dataKeys"`
-	Data            map[string]string `json:"data"`
+	Data            map[string]string `json:"data,omitempty"`
 	CreatedAt       string            `json:"createdAt"`
 	ResourceVersion string            `json:"resourceVersion"`
+}
+
+func toListSummary(cm corev1.ConfigMap) configMapSummary {
+	summary := toSummary(cm)
+	summary.Data = nil
+	return summary
+}
+
+type configMapPage struct {
+	Items              []configMapSummary `json:"items"`
+	ContinueToken      string             `json:"continueToken"`
+	RemainingItemCount *int64             `json:"remainingItemCount,omitempty"`
+}
+
+func parseConfigMapLimit(value string) (int64, bool, error) {
+	if value == "" {
+		return 0, false, nil
+	}
+	limit, err := strconv.ParseInt(value, 10, 64)
+	if err != nil || limit < 1 || limit > 100 {
+		return 0, false, fmt.Errorf("limit must be an integer between 1 and 100")
+	}
+	return limit, true, nil
 }
 
 func toSummary(cm corev1.ConfigMap) configMapSummary {
@@ -38,6 +63,28 @@ func (c *ApiController) GetConfigMaps() {
 		return
 	}
 	namespace := c.GetString("namespace")
+	limit, paginated, err := parseConfigMapLimit(c.GetString("limit"))
+	if err != nil {
+		c.ResponseError(err.Error())
+		return
+	}
+	if paginated {
+		page, err := object.GetConfigMapPage(cfg, namespace, limit, c.GetString("continue"))
+		if err != nil {
+			c.ResponseError(err.Error())
+			return
+		}
+		items := make([]configMapSummary, 0, len(page.Items))
+		for _, cm := range page.Items {
+			items = append(items, toListSummary(cm))
+		}
+		c.ResponseOk(configMapPage{
+			Items:              items,
+			ContinueToken:      page.Continue,
+			RemainingItemCount: page.RemainingItemCount,
+		})
+		return
+	}
 	cms, err := object.GetConfigMaps(cfg, namespace)
 	if err != nil {
 		c.ResponseError(err.Error())
