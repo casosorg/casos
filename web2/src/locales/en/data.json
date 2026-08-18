@@ -219,6 +219,7 @@
     "Failed to add local WSL machine": "Failed to add local WSL machine",
     "Failed to load node logs": "Failed to load node logs",
     "Failed to load node tasks": "Failed to load node tasks",
+    "General Settings desc": "Basic machine information",
     "IP address": "IP address",
     "IP address - Tooltip": "The node's reachable IP address.",
     "Local WSL machine added": "Local WSL machine added",

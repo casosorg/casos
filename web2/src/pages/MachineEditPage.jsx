@@ -86,7 +86,7 @@ function MachineEditPage() {
         }
       />
 
-      <Section title={i18next.t("general:General Settings")} description={i18next.t("general:General Settings desc")}>
+      <Section title={i18next.t("general:General Settings")} description={i18next.t("machine:General Settings desc")}>
         <Field label={<LabelWithTip text={i18next.t("general:Name")} tooltip={i18next.t("general:Name - Tooltip")} />} htmlFor="machine-name">
           {/* The name is the record's key on the server, so it is shown but not editable. */}
           <Input id="machine-name" value={machine.name ?? ""} disabled />

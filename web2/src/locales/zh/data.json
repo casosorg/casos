@@ -219,6 +219,7 @@
     "Failed to add local WSL machine": "添加本机 WSL 失败",
     "Failed to load node logs": "加载节点日志失败",
     "Failed to load node tasks": "加载节点任务失败",
+    "General Settings desc": "机器基本信息",
     "IP address": "IP address",
     "IP address - Tooltip": "节点可访问的 IP 地址。",
     "Local WSL machine added": "已添加本机 WSL",
