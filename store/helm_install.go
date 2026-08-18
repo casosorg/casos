@@ -13,7 +13,7 @@ import (
 	"github.com/casosorg/casos/conf"
 )
 
-const defaultHelmInstallTimeout = 20 * time.Minute
+const defaultHelmInstallTimeout = 5 * time.Minute
 
 func helmInstallOperationDeadline(installTimeout time.Duration) time.Duration {
 	return helmChartLoadTimeout + helmCompatibilityTimeout + installTimeout + helmDiagnosticsTimeout
