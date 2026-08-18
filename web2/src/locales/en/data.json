@@ -213,7 +213,7 @@
     "Auth type": "Auth type",
     "Auth type - Tooltip": "Choose password authentication or an SSH private key.",
     "Deploy Node": "Deploy Node",
-    "Deploy worker node\", \"Deploy worker node": "Deploy worker node\", \"Deploy worker node",
+    "Deploy worker node": "Deploy worker node",
     "Deployment failed": "Deployment failed",
     "Edit Machine": "Edit Machine",
     "Failed to add local WSL machine": "Failed to add local WSL machine",

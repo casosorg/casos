@@ -213,7 +213,7 @@
     "Auth type": "Auth type",
     "Auth type - Tooltip": "选择密码认证或 SSH 私钥认证。",
     "Deploy Node": "部署节点",
-    "Deploy worker node\", \"Deploy worker node": "Deploy worker node\", \"Deploy worker node",
+    "Deploy worker node": "部署工作节点",
     "Deployment failed": "部署失败",
     "Edit Machine": "Edit Machine",
     "Failed to add local WSL machine": "添加本机 WSL 失败",
