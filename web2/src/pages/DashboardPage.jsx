@@ -2,7 +2,9 @@ import React, {useMemo} from "react";
 import {useHistory} from "react-router-dom";
 import {useTranslation} from "react-i18next";
 import {Boxes, CheckCircle2, Layers, Network, Server, Settings, TriangleAlert} from "lucide-react";
+import * as AccountBackend from "@/backend/AccountBackend";
 import * as DashboardBackend from "@/backend/DashboardBackend";
+import * as MachineBackend from "@/backend/MachineBackend";
 import {useResource} from "@/hooks/use-resource";
 import {Badge} from "@/components/ui/badge";
 import {Card, CardContent, CardHeader, CardTitle} from "@/components/ui/card";
@@ -13,6 +15,7 @@ import {PageContainer} from "@/components/shared/page-header";
 import {StatCard} from "@/components/shared/stat-card";
 import {Loading} from "@/components/shared/loading";
 import {RadialProgress} from "@/components/shared/radial-progress";
+import {FirstRunChecklist} from "@/components/shared/first-run-checklist";
 import {CHART_COLORS, EchartsWidget} from "@/components/shared/echarts-widget";
 import {getDashboardHealthState} from "@/lib/dashboardHealth";
 
@@ -160,10 +163,18 @@ function GaugeCard({title, percent, tone, primaryValue, primaryLabel, secondaryV
   );
 }
 
-function DashboardPage() {
+function DashboardPage({account, accountUpdatedAt, onOpenAccount}) {
   const history = useHistory();
   const {t} = useTranslation();
   const {data: stats, loading} = useResource(() => DashboardBackend.getDashboard(), [], {initialData: null});
+  const {data: machines} = useResource(() => MachineBackend.getGlobalMachines(), [accountUpdatedAt], {
+    initialData: null,
+    toastOnError: false,
+  });
+  const {data: signinOptions} = useResource(() => AccountBackend.getSigninOptions(), [accountUpdatedAt], {
+    initialData: null,
+    toastOnError: false,
+  });
 
   const podPhase = useMemo(() => donutOption(stats?.podsByPhase, POD_PHASE_COLORS), [stats]);
   const serviceTypes = useMemo(() => donutOption(stats?.servicesByType, SVC_TYPE_COLORS), [stats]);
@@ -247,6 +258,21 @@ function DashboardPage() {
 
   return (
     <PageContainer>
+      <FirstRunChecklist
+        account={account}
+        signinOptions={signinOptions}
+        machines={machines}
+        stats={stats}
+        onAction={(step) => {
+          if (step === "password") {
+            onOpenAccount?.();
+          } else if (step === "machine" || step === "node") {
+            history.push("/machines");
+          } else if (step === "app") {
+            history.push("/app-store");
+          }
+        }}
+      />
       {!clusterHealthy ? (
         <div className="grid gap-2">
           <Alert variant={healthStatus === "unknown" ? "warning" : "destructive"}>

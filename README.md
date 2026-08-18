@@ -137,6 +137,21 @@ casos --version
 A released binary prints its tag, commit and build date; a binary you built
 yourself reports `dev`.
 
+## First run
+
+CasOS needs at least one Kubernetes worker node before it can schedule
+workloads. After signing in, use the dashboard's first-run checklist to finish
+these steps:
+
+1. Change the default `admin` password (`123`) from the account menu.
+2. Add a machine with SSH credentials on the **Machines** page.
+3. Deploy that machine as a worker node. The node must join the cluster and be
+   ready before workloads can run.
+4. Install the first application from the **App Store**.
+
+The checklist derives its state from the cluster, so it remains accurate after
+refreshing the browser or signing in from another session.
+
 ### Uninstall
 
 The uninstaller removes the binary and the `PATH` entry the installer added.

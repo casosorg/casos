@@ -212,7 +212,7 @@ function MachineListPage({account}) {
         rowKey="name"
         loading={loading}
         searchable
-        emptyText="No machines"
+        emptyText={i18next.t("machine:No machines yet")}
         toolbar={
           <>
             <SimpleTooltip title={i18next.t("machine:Add Local WSL - Tooltip")}>

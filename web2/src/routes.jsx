@@ -55,11 +55,15 @@ function NotFound() {
   );
 }
 
-export function AppRoutes({account, onUpdateSite}) {
+export function AppRoutes({account, accountUpdatedAt, onOpenAccount, onUpdateSite}) {
   return (
     <Suspense fallback={<Loading type="page" />}>
       <Switch>
-        <Route exact path={["/", "/dashboard"]} component={DashboardPage} />
+        <Route
+          exact
+          path={["/", "/dashboard"]}
+          render={(props) => <DashboardPage account={account} accountUpdatedAt={accountUpdatedAt} onOpenAccount={onOpenAccount} {...props} />}
+        />
         <Route exact path="/namespaces" component={NamespaceListPage} />
         <Route exact path="/configmaps" component={ConfigMapListPage} />
         <Route exact path="/secrets" component={SecretListPage} />

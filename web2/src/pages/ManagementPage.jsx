@@ -15,6 +15,7 @@ function ManagementPage(props) {
   useTranslation();
 
   const {account, site, themeAlgorithm, logo, uri, onSignout, onUpdateSite, onUpdateAccount, setLogoAndThemeAlgorithm} = props;
+  const [accountUpdatedAt, setAccountUpdatedAt] = useState(0);
 
   const [collapsed, setCollapsed] = useState(() => localStorage.getItem("siderCollapsed") === "true");
   const [accountDialogOpen, setAccountDialogOpen] = useState(false);
@@ -88,6 +89,11 @@ function ManagementPage(props) {
     }
   }
 
+  function handleAccountUpdated() {
+    onUpdateAccount?.();
+    setAccountUpdatedAt(Date.now());
+  }
+
   const sidebarLogo = logo || Setting.getLogo(themeAlgorithm || [], site?.logoUrl);
   const navbarHtml = Setting.getNavbarHtml(themeAlgorithm || [], site?.navbarHtml);
   const footerHtml = Setting.getFooterHtml(themeAlgorithm || [], site?.footerHtml, site);
@@ -116,7 +122,7 @@ function ManagementPage(props) {
         />
 
         <main className="flex min-w-0 flex-1 flex-col">
-          <AppRoutes account={account} onUpdateSite={onUpdateSite} />
+          <AppRoutes account={account} accountUpdatedAt={accountUpdatedAt} onOpenAccount={handleOpenAccount} onUpdateSite={onUpdateSite} />
         </main>
 
         <footer className="text-muted-foreground flex items-center justify-center border-t py-5 text-sm">
@@ -128,7 +134,7 @@ function ManagementPage(props) {
         account={account}
         open={accountDialogOpen}
         onOpenChange={setAccountDialogOpen}
-        onUpdateAccount={onUpdateAccount}
+        onUpdateAccount={handleAccountUpdated}
       />
     </div>
   );

@@ -189,7 +189,7 @@ function NodeListPage() {
         rowKey="name"
         loading={loading}
         searchable
-        emptyText="No nodes registered. Start kubelet on a worker to join the cluster."
+        emptyText={i18next.t("node:No nodes registered. Add a machine and deploy it as a node from Machines.")}
         toolbar={
           <Button variant="outline" size="sm" onClick={() => refresh()} loading={loading}>
             <RefreshCw />

@@ -224,6 +224,7 @@
     "Local WSL machine added": "Local WSL machine added",
     "Local WSL machine refreshed": "Local WSL machine refreshed",
     "Machine owner is required": "Machine owner is required",
+    "No machines yet": "No machines yet. Add a machine to get started.",
     "No node deployment logs": "No node deployment logs.",
     "Node deployment failed": "Node deployment failed",
     "Node deployment logs": "Node deployment logs",
@@ -249,6 +250,25 @@
     "SSH port - Tooltip": "The SSH port used to connect to the node, usually 22.",
     "Username - Tooltip": "The SSH user CasOS uses to connect to the node.",
     "Worker Node": "Worker Node"
+  },
+  "node": {
+    "No nodes registered. Add a machine and deploy it as a node from Machines.": "No nodes registered. Add a machine, then deploy it as a node from Machines."
+  },
+  "onboarding": {
+    "First-run checklist": "First-run checklist",
+    "{{completed}} of 4 complete": "{{completed}} of 4 complete",
+    "Complete these steps to get a working CasOS cluster.": "Complete these steps to get a working CasOS cluster.",
+    "Change the default password": "Change the default password",
+    "Use a unique password for the built-in admin account.": "Use a unique password for the built-in admin account.",
+    "Open account settings": "Open account settings",
+    "Add a machine": "Add a machine",
+    "Add an SSH-accessible machine before deploying it as a node.": "Add an SSH-accessible machine before deploying it as a node.",
+    "Open Machines": "Open Machines",
+    "Deploy a machine as a node": "Deploy a machine as a node",
+    "A node is required before CasOS can schedule workloads.": "A node is required before CasOS can schedule workloads.",
+    "Install your first app": "Install your first app",
+    "Install an app from the App Store after a node is ready.": "Install an app from the App Store after a node is ready.",
+    "Open App Store": "Open App Store"
   },
   "policy": {
     "Add Rule": "Add Rule",
