@@ -2,13 +2,16 @@ package routers
 
 import (
 	"bytes"
+	"compress/gzip"
 	"io"
 	"io/fs"
 	"mime"
 	"net/http"
 	"path"
 	"strings"
+	"time"
 
+	"github.com/beego/beego"
 	"github.com/beego/beego/context"
 	webassets "github.com/casosorg/casos/web"
 	web2assets "github.com/casosorg/casos/web2"
@@ -86,14 +89,55 @@ func StaticFilter(ctx *context.Context) {
 	// honouring range and conditional requests whenever the asset can seek —
 	// which both the embedded and the on-disk file systems can.
 	if seeker, ok := file.(io.ReadSeeker); ok {
-		http.ServeContent(ctx.ResponseWriter, ctx.Request, name, info.ModTime(), seeker)
+		serveAssetContent(ctx, name, info.ModTime(), seeker)
 		return
 	}
 	content, err := io.ReadAll(file)
 	if err != nil {
 		return
 	}
-	http.ServeContent(ctx.ResponseWriter, ctx.Request, name, info.ModTime(), bytes.NewReader(content))
+	serveAssetContent(ctx, name, info.ModTime(), bytes.NewReader(content))
+}
+
+// serveAssetContent enables Beego's gzip setting for frontend text assets while
+// preserving ServeContent's conditional request handling for every other case.
+// Range and HEAD requests stay uncompressed because their response semantics
+// depend on the original byte representation and length.
+func serveAssetContent(ctx *context.Context, name string, modTime time.Time, content io.ReadSeeker) {
+	if shouldGzipAsset(ctx.Request, name) {
+		ctx.ResponseWriter.Header().Set("Content-Encoding", "gzip")
+		ctx.ResponseWriter.Header().Add("Vary", "Accept-Encoding")
+		ctx.ResponseWriter.Header().Del("Content-Length")
+		gz := gzip.NewWriter(ctx.ResponseWriter)
+		http.ServeContent(&gzipResponseWriter{Writer: gz, ResponseWriter: ctx.ResponseWriter}, ctx.Request, name, modTime, content)
+		// ServeContent writes no body for conditional responses such as 304;
+		// closing gzip in that case would create an invalid response body.
+		if ctx.ResponseWriter.Status == http.StatusOK {
+			_ = gz.Close()
+		}
+		return
+	}
+	http.ServeContent(ctx.ResponseWriter, ctx.Request, name, modTime, content)
+}
+
+func shouldGzipAsset(req *http.Request, name string) bool {
+	if !beego.BConfig.EnableGzip || req == nil || req.Method != http.MethodGet || req.Header.Get("Range") != "" {
+		return false
+	}
+	extension := strings.ToLower(path.Ext(name))
+	if extension != ".js" && extension != ".css" && extension != ".html" {
+		return false
+	}
+	return context.ParseEncoding(req) == "gzip"
+}
+
+type gzipResponseWriter struct {
+	io.Writer
+	http.ResponseWriter
+}
+
+func (w *gzipResponseWriter) Write(b []byte) (int, error) {
+	return w.Writer.Write(b)
 }
 
 func openAsset(name string) (fs.File, error) {

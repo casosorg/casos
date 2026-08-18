@@ -144,6 +144,7 @@ func main() {
 	beego.InsertFilter("/api/*", beego.BeforeRouter, routers.ApiFilter)
 
 	beego.BConfig.CopyRequestBody = true
+	beego.BConfig.EnableGzip = true
 	beego.BConfig.WebConfig.Session.SessionOn = true
 	beego.BConfig.WebConfig.Session.SessionProvider = "file"
 	beego.BConfig.WebConfig.Session.SessionProviderConfig = "./tmp"
