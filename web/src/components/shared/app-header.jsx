@@ -1,6 +1,6 @@
 import * as React from "react";
 import i18next from "i18next";
-import {Globe, LogOut, Moon, PanelLeft, PanelLeftClose, Sun, User} from "lucide-react";
+import {Globe, LogOut, Moon, PanelLeft, PanelLeftClose, SlidersHorizontal, Sparkles, Sun, User} from "lucide-react";
 import * as Setting from "@/Setting";
 import {Button} from "@/components/ui/button";
 import {Avatar, AvatarFallback, AvatarImage} from "@/components/ui/avatar";
@@ -13,6 +13,26 @@ import {
 } from "@/components/ui/dropdown-menu";
 import {SimpleTooltip} from "@/components/ui/tooltip";
 import {BreadcrumbBar} from "@/components/shared/breadcrumb-bar";
+import {useUiMode} from "@/hooks/use-ui-mode";
+
+/**
+ * The one control that decides how much of Kubernetes the rest of the UI shows.
+ * It stays in the header rather than in the account menu because a reader who
+ * lands in simple mode and needs a page that is not in the rail has to be able
+ * to find the way out without hunting through a dropdown.
+ */
+function UiModeToggle() {
+  const {advanced, toggleMode} = useUiMode();
+  const label = advanced ? i18next.t("simple:Simple mode") : i18next.t("simple:Advanced mode");
+  return (
+    <SimpleTooltip title={advanced ? i18next.t("simple:Switch back to the simplified interface") : i18next.t("simple:Show every Kubernetes page")}>
+      <Button variant="ghost" size="sm" onClick={toggleMode} className="gap-1.5">
+        {advanced ? <Sparkles className="size-4" /> : <SlidersHorizontal className="size-4" />}
+        <span className="hidden md:inline">{label}</span>
+      </Button>
+    </SimpleTooltip>
+  );
+}
 
 function ThemeToggle({themeAlgorithm, onChange}) {
   const isDark = Setting.isDarkTheme(themeAlgorithm);
@@ -120,6 +140,7 @@ export function AppHeader({
 
       <div className="flex items-center gap-0.5 pr-1">
         {navbarHtml ? <div className="flex items-center" dangerouslySetInnerHTML={{__html: navbarHtml}} /> : null}
+        <UiModeToggle />
         <ThemeToggle themeAlgorithm={themeAlgorithm} onChange={onThemeChange} />
         <LanguageSelect />
         <AccountMenu account={account} onOpenAccount={onOpenAccount} onSignout={onSignout} />

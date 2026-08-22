@@ -15,8 +15,12 @@ async function expectOkJson(response) {
 async function signInAsCiUser(page) {
   expect(e2eToken).toBeTruthy();
 
+  // These specs drive the full Kubernetes surface, which is advanced mode. A
+  // fresh browser starts in simple mode, so the opt-in is explicit rather than
+  // whatever the default happens to be.
   await page.addInitScript(() => {
     localStorage.setItem("language", "en");
+    localStorage.setItem("uiMode", "advanced");
   });
 
   const signin = await page.context().request.post(API_E2E_SIGNIN, {

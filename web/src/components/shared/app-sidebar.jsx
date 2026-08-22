@@ -3,7 +3,8 @@ import {Link} from "react-router-dom";
 import i18next from "i18next";
 import {ChevronDown} from "lucide-react";
 import {cn} from "@/lib/utils";
-import {navGroups} from "@/nav";
+import {getNavGroups, navGroups} from "@/nav";
+import {useUiMode} from "@/hooks/use-ui-mode";
 import {SimpleTooltip} from "@/components/ui/tooltip";
 
 const OPEN_KEYS_STORAGE = "siderMenuOpenKeys";
@@ -57,6 +58,9 @@ function NavLink({to, active, collapsed, icon: Icon, label, nested = false}) {
  * the icon links straight to the group's first page instead.
  */
 export function AppSidebar({collapsed, selectedKey, openKeys, onOpenKeysChange, logo}) {
+  const {mode} = useUiMode();
+  const groups = getNavGroups(mode);
+
   function toggleGroup(key) {
     onOpenKeysChange(openKeys.includes(key) ? openKeys.filter((item) => item !== key) : [...openKeys, key]);
   }
@@ -79,7 +83,7 @@ export function AppSidebar({collapsed, selectedKey, openKeys, onOpenKeysChange, 
       </div>
 
       <nav className="scrollbar-thin flex-1 space-y-0.5 overflow-y-auto p-2">
-        {navGroups.map((group) => {
+        {groups.map((group) => {
           if (!group.children) {
             return (
               <NavLink

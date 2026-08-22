@@ -5,6 +5,7 @@ import * as AccountBackend from "@/backend/AccountBackend";
 import * as SiteBackend from "@/backend/SiteBackend";
 import {Toaster} from "@/components/ui/sonner";
 import {TooltipProvider} from "@/components/ui/tooltip";
+import {UiModeProvider} from "@/hooks/use-ui-mode";
 import ManagementPage from "@/pages/ManagementPage";
 import AuthCallback from "@/pages/AuthCallback";
 import SigninPage from "@/pages/SigninPage";
@@ -128,38 +129,40 @@ class App extends Component {
   render() {
     return (
       <TooltipProvider>
-        <Toaster />
-        <Switch>
-          <Route exact path="/callback" component={AuthCallback} />
-          <Route
-            exact
-            path="/signin"
-            render={(props) =>
-              this.renderHomeIfSignedIn(
-                <SigninPage logo={this.state.logo} themeAlgorithm={this.state.themeAlgorithm} site={this.state.site} {...props} />
-              )
-            }
-          />
-          <Route
-            path="/"
-            render={(props) =>
-              this.renderSigninIfNotSignedIn(
-                <ManagementPage
-                  account={this.state.account}
-                  uri={this.state.uri}
-                  site={this.state.site}
-                  themeAlgorithm={this.state.themeAlgorithm}
-                  logo={this.state.logo}
-                  onSignout={this.signout}
-                  onUpdateSite={this.onUpdateSite}
-                  onUpdateAccount={this.onUpdateAccount}
-                  setLogoAndThemeAlgorithm={this.setLogoAndThemeAlgorithm}
-                  {...props}
-                />
-              )
-            }
-          />
-        </Switch>
+        <UiModeProvider>
+          <Toaster />
+          <Switch>
+            <Route exact path="/callback" component={AuthCallback} />
+            <Route
+              exact
+              path="/signin"
+              render={(props) =>
+                this.renderHomeIfSignedIn(
+                  <SigninPage logo={this.state.logo} themeAlgorithm={this.state.themeAlgorithm} site={this.state.site} {...props} />
+                )
+              }
+            />
+            <Route
+              path="/"
+              render={(props) =>
+                this.renderSigninIfNotSignedIn(
+                  <ManagementPage
+                    account={this.state.account}
+                    uri={this.state.uri}
+                    site={this.state.site}
+                    themeAlgorithm={this.state.themeAlgorithm}
+                    logo={this.state.logo}
+                    onSignout={this.signout}
+                    onUpdateSite={this.onUpdateSite}
+                    onUpdateAccount={this.onUpdateAccount}
+                    setLogoAndThemeAlgorithm={this.setLogoAndThemeAlgorithm}
+                    {...props}
+                  />
+                )
+              }
+            />
+          </Switch>
+        </UiModeProvider>
       </TooltipProvider>
     );
   }

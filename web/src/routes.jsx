@@ -40,6 +40,12 @@ const AppStorePage = lazy(() => import("@/pages/AppStorePage"));
 const HelmReleasePage = lazy(() => import("@/pages/HelmReleasePage"));
 const MonitorPage = lazy(() => import("@/pages/MonitorPage"));
 
+// Simple mode's combined pages. They are routes of their own rather than a
+// rendering mode of the pages they wrap, so a link keeps working after a switch
+// to advanced mode.
+const DevicesPage = lazy(() => import("@/pages/simple/DevicesPage"));
+const HealthPage = lazy(() => import("@/pages/simple/HealthPage"));
+
 function NotFound() {
   return (
     <ResultScreen
@@ -96,6 +102,8 @@ export function AppRoutes({account, accountUpdatedAt, onOpenAccount, onUpdateSit
         <Route exact path="/app-store" component={AppStorePage} />
         <Route exact path="/helm-releases" component={HelmReleasePage} />
         <Route exact path="/monitor" component={MonitorPage} />
+        <Route exact path="/devices" render={(props) => <DevicesPage account={account} {...props} />} />
+        <Route exact path="/health" component={HealthPage} />
         <Route path="" component={NotFound} />
       </Switch>
     </Suspense>

@@ -50,8 +50,17 @@ const ROUTES = [
   "/machines",
   "/sites",
   "/sites/site-built-in",
+  // Simple mode's combined pages. They are ordinary routes, so they are walked
+  // here with everything else rather than in a mode-specific spec.
+  "/devices",
+  "/health",
   "/no-such-page",
 ];
+
+// Simple mode swaps the home page, the App Store and the navigation rail for
+// different components, so those three are walked a second time with the mode
+// flipped — a crash in either one is invisible from the other.
+const SIMPLE_MODE_ROUTES = ["/dashboard", "/app-store", "/helm-releases", "/devices", "/health"];
 
 // A rendered screen always carries the shell's own chrome; anything shorter
 // than this means React unmounted the tree.
@@ -75,12 +84,53 @@ test("every route renders without a React crash @smoke", async({page}) => {
   const blank = [];
   for (const route of ROUTES) {
     await page.goto(route);
+    // The shell renders nothing until the account request resolves, and a first
+    // visit also downloads that route's own chunk. Waiting for the shell keeps
+    // the walk independent of how long either takes.
+    await page.getByTestId("management-layout").waitFor({state: "attached"});
     await page.waitForTimeout(SETTLE_MS);
     const rendered = (await page.locator("body").innerText()).trim();
     if (rendered.length < MIN_RENDERED_CHARS) {
       blank.push(`${route} rendered ${rendered.length} chars`);
     }
   }
+
+  expect(crashes, `React crashed on:\n${crashes.join("\n")}`).toEqual([]);
+  expect(blank, `Routes that rendered nothing:\n${blank.join("\n")}`).toEqual([]);
+});
+
+test("simple mode renders its own screens without a React crash @smoke", async({page}) => {
+  test.setTimeout(120_000);
+  await signInAsCiUser(page);
+  await page.addInitScript(() => localStorage.setItem("uiMode", "simple"));
+
+  const crashes = [];
+  page.on("pageerror", (error) => crashes.push(`pageerror: ${error.message}`));
+  page.on("console", (message) => {
+    const text = message.text();
+    if (message.type() === "error" && text.includes("The above error occurred")) {
+      crashes.push(text.split("\n")[0]);
+    }
+  });
+
+  const blank = [];
+  for (const route of SIMPLE_MODE_ROUTES) {
+    await page.goto(route);
+    // The shell renders nothing until the account request resolves, and a first
+    // visit also downloads that route's own chunk. Waiting for the shell keeps
+    // the walk independent of how long either takes.
+    await page.getByTestId("management-layout").waitFor({state: "attached"});
+    await page.waitForTimeout(SETTLE_MS);
+    const rendered = (await page.locator("body").innerText()).trim();
+    if (rendered.length < MIN_RENDERED_CHARS) {
+      blank.push(`${route} rendered ${rendered.length} chars`);
+    }
+  }
+
+  // The rail is the one thing that must differ: seven plain-language entries
+  // and none of the advanced groups.
+  await expect(page.getByRole("link", {name: "App Store"})).toBeVisible();
+  await expect(page.getByRole("button", {name: "Workloads"})).toHaveCount(0);
 
   expect(crashes, `React crashed on:\n${crashes.join("\n")}`).toEqual([]);
   expect(blank, `Routes that rendered nothing:\n${blank.join("\n")}`).toEqual([]);

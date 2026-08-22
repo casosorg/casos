@@ -15,6 +15,7 @@ import {Field, FormDialog} from "@/components/shared/form-dialog";
 import {PageContainer} from "@/components/shared/page-header";
 import {SearchSelect, SimpleSelect} from "@/components/shared/simple-select";
 import {KeyValueEditor, fromEntries, toEntries} from "@/components/shared/key-value-editor";
+import {clusterNodeAddress, serviceAccessUrls} from "@/lib/appAccess";
 
 const SERVICE_TYPES = ["ClusterIP", "NodePort", "LoadBalancer", "ExternalName"].map((type) => ({label: type, value: type}));
 const PROTOCOLS = ["TCP", "UDP", "SCTP"].map((protocol) => ({label: protocol, value: protocol}));
@@ -54,30 +55,6 @@ function rowsToRequest(rows) {
   }));
 }
 
-// A NodePort service is reached through any node's address; a LoadBalancer
-// through the addresses the controller assigned it. The scheme is inferred the
-// same way the old UI did: port 443, or a port named for HTTPS.
-function accessUrls(record, nodeIP) {
-  if (record.type !== "NodePort" && record.type !== "LoadBalancer") {
-    return [];
-  }
-  const isLoadBalancer = record.type === "LoadBalancer";
-  const ports = (record.ports ?? []).filter((port) => (isLoadBalancer ? port.port : port.nodePort));
-  const addresses = isLoadBalancer ? (record.loadBalancerAddresses ?? []) : nodeIP ? [nodeIP] : [];
-
-  const urls = [];
-  addresses.forEach((address) => {
-    ports.forEach((port) => {
-      const exposed = isLoadBalancer ? port.port : port.nodePort;
-      const host = address.includes(":") ? `[${address}]` : address;
-      const portName = String(port.name ?? "").toLowerCase();
-      const scheme = port.port === 443 || portName.includes("https") || portName.includes("websecure") ? "https" : "http";
-      urls.push(`${scheme}://${host}:${exposed}`);
-    });
-  });
-  return urls;
-}
-
 function ServiceListPage() {
   const {data: services, loading, error, refresh} = useResource(() => ServiceBackend.getServices(), [], {initialData: []});
   const {data: namespaces} = useResource(() => NamespaceBackend.getNamespaces(), [], {initialData: [], toastOnError: false});
@@ -91,8 +68,7 @@ function ServiceListPage() {
   const [submitting, setSubmitting] = useState(false);
 
   const namespaceOptions = (namespaces ?? []).map((item) => ({label: item.name, value: item.name}));
-  const nodeIP =
-    (nodes ?? []).find((node) => node.externalIP)?.externalIP ?? (nodes ?? []).find((node) => node.internalIP)?.internalIP ?? null;
+  const nodeIP = clusterNodeAddress(nodes);
 
   function openAdd() {
     setMode("add");
@@ -201,7 +177,7 @@ function ServiceListPage() {
       key: "accessUrl",
       title: "Access URL",
       render: (_, record) => {
-        const urls = accessUrls(record, nodeIP);
+        const urls = serviceAccessUrls(record, nodeIP);
         if (urls.length === 0) {
           return null;
         }

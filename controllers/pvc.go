@@ -18,6 +18,7 @@ type pvcSummary struct {
 	AccessMode       string `json:"accessMode"`
 	Storage          string `json:"storage"`
 	VolumeName       string `json:"volumeName"`
+	HelmRelease      string `json:"helmRelease,omitempty"`
 	CreatedAt        string `json:"createdAt"`
 	ResourceVersion  string `json:"resourceVersion"`
 }
@@ -43,6 +44,7 @@ func toPvcSummary(p corev1.PersistentVolumeClaim) pvcSummary {
 		AccessMode:       accessMode,
 		Storage:          storage,
 		VolumeName:       p.Spec.VolumeName,
+		HelmRelease:      helmReleaseOf(p.ObjectMeta),
 		CreatedAt:        p.CreationTimestamp.UTC().Format("2006-01-02 15:04:05"),
 		ResourceVersion:  p.ResourceVersion,
 	}

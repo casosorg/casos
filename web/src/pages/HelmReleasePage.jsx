@@ -1,7 +1,12 @@
 import React, {useEffect, useState} from "react";
 import {useTranslation} from "react-i18next";
 import {CircleArrowUp, History, RefreshCw, RotateCcw, ScrollText, Trash2} from "lucide-react";
+import {useHistory} from "react-router-dom";
 import * as HelmBackend from "@/backend/HelmBackend";
+import * as IngressBackend from "@/backend/IngressBackend";
+import * as NodeBackend from "@/backend/NodeBackend";
+import * as PvcBackend from "@/backend/PvcBackend";
+import * as ServiceBackend from "@/backend/ServiceBackend";
 import * as Setting from "@/Setting";
 import {Badge} from "@/components/ui/badge";
 import {Button} from "@/components/ui/button";
@@ -15,6 +20,11 @@ import {ResourceSheet} from "@/components/shared/resource-sheet";
 import {SimpleSelect} from "@/components/shared/simple-select";
 import {AiDots, Loading} from "@/components/shared/loading";
 import {HelmInstallDialog} from "@/components/shared/helm-install-dialog";
+import {AppCardList} from "@/components/shared/app-card-list";
+import {PageHeader} from "@/components/shared/page-header";
+import {useResource} from "@/hooks/use-resource";
+import {useUiMode} from "@/hooks/use-ui-mode";
+import {appResourcesOf, groupAppResources} from "@/lib/appAccess";
 
 function releaseKey(release) {
   return `${release.namespace}/${release.name}`;
@@ -100,6 +110,8 @@ function StatusBadge({status, description}) {
 
 export default function HelmReleasePage() {
   const {t} = useTranslation();
+  const {advanced} = useUiMode();
+  const router = useHistory();
   const [namespace, setNamespace] = useState("all");
   const [releases, setReleases] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -118,6 +130,15 @@ export default function HelmReleasePage() {
   const [operationLogs, setOperationLogs] = useState([]);
   const [operationLoading, setOperationLoading] = useState(false);
   const [operationError, setOperationError] = useState(null);
+
+  // Only simple mode draws an app's address and disks, so the three lists
+  // behind them are not requested in advanced mode, where the same objects
+  // have list pages of their own.
+  const perAppResources = {initialData: [], enabled: !advanced, toastOnError: false};
+  const {data: services} = useResource(() => ServiceBackend.getServices(), [advanced], perAppResources);
+  const {data: ingresses} = useResource(() => IngressBackend.getIngresses(), [advanced], perAppResources);
+  const {data: pvcs} = useResource(() => PvcBackend.getPvcs(), [advanced], perAppResources);
+  const {data: nodes} = useResource(() => NodeBackend.getNodes(), [advanced], perAppResources);
 
   // A background refresh leaves the table alone: it is the page keeping itself
   // current, not the operator asking for something, and a spinner every few
@@ -390,34 +411,68 @@ export default function HelmReleasePage() {
       ? t("helm:Release stuck in a pending status", {status: logsReleaseStatus})
       : null;
 
+  const appResources = groupAppResources({services, ingresses, pvcs, nodes});
+
   return (
     <PageContainer>
       {error ? <MessageAlert title={error} /> : null}
 
-      <DataTable
-        title={t("helm:Helm Releases")}
-        description={`${releases.length} releases`}
-        columns={columns}
-        dataSource={releases}
-        rowKey="name"
-        loading={loading}
-        searchable
-        emptyText={t("helm:No releases")}
-        toolbar={
-          <>
-            <SimpleSelect
-              value={namespace}
-              onChange={setNamespace}
-              options={[{value: "all", label: t("helm:All namespaces")}]}
-              className="w-44"
-            />
-            <Button variant="outline" size="sm" onClick={() => fetchReleases()} loading={loading}>
-              <RefreshCw />
-              {t("general:Refresh")}
-            </Button>
-          </>
-        }
-      />
+      {advanced ? (
+        <DataTable
+          title={t("helm:Helm Releases")}
+          description={`${releases.length} releases`}
+          columns={columns}
+          dataSource={releases}
+          rowKey="name"
+          loading={loading}
+          searchable
+          emptyText={t("helm:No releases")}
+          toolbar={
+            <>
+              <SimpleSelect
+                value={namespace}
+                onChange={setNamespace}
+                options={[{value: "all", label: t("helm:All namespaces")}]}
+                className="w-44"
+              />
+              <Button variant="outline" size="sm" onClick={() => fetchReleases()} loading={loading}>
+                <RefreshCw />
+                {t("general:Refresh")}
+              </Button>
+            </>
+          }
+        />
+      ) : (
+        <>
+          <PageHeader
+            title={t("simple:My Apps")}
+            description={t("simple:Everything you have installed, with the address it answers on.")}
+            actions={
+              <>
+                <Button variant="outline" onClick={() => fetchReleases()} loading={loading}>
+                  <RefreshCw />
+                  {t("general:Refresh")}
+                </Button>
+                <Button onClick={() => router.push("/app-store")}>{t("simple:Install an app")}</Button>
+              </>
+            }
+          />
+          <AppCardList
+            releases={releases}
+            resources={(release) => appResourcesOf(appResources, release)}
+            loading={loading}
+            isPending={isPendingRelease}
+            deleteDataFor={deleteDataFor}
+            onDeleteDataChange={(release, checked) =>
+              setDeleteDataFor((previous) => ({...previous, [releaseKey(release)]: checked}))
+            }
+            onOpenLogs={openLogs}
+            onUpgrade={(release) => setUpgradeTarget(helmReleaseUpgradeTarget(release))}
+            onUninstall={handleUninstall}
+            onInstallMore={() => router.push("/app-store")}
+          />
+        </>
+      )}
 
       <ResourceSheet
         open={Boolean(historyRelease)}

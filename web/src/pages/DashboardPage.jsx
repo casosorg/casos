@@ -21,6 +21,8 @@ import {FirstRunChecklist} from "@/components/shared/first-run-checklist";
 import {CategoryDonut, DualCategoryPie, RankedBarChart} from "@/components/shared/charts";
 import {getDashboardHealthState} from "@/lib/dashboardHealth";
 import {getFirstRunChecklist, isFirstRunComplete, markFirstRunChecklistDone, readFirstRunChecklistDone} from "@/lib/firstRunChecklist";
+import {useUiMode} from "@/hooks/use-ui-mode";
+import SimpleHome from "@/pages/simple/SimpleHome";
 
 const POD_PHASE_COLORS = {
   Running: "#3b82f6",
@@ -67,18 +69,22 @@ function GaugeCard({title, percent, tone, primaryValue, primaryLabel, secondaryV
 function DashboardPage({account, accountUpdatedAt, onOpenAccount}) {
   const history = useHistory();
   const {t} = useTranslation();
+  const {advanced} = useUiMode();
   const {data: stats, loading} = useResource(() => DashboardBackend.getDashboard(), [], {initialData: null});
 
   // Setup is a one-time affair, so once it is done these three requests stop
   // being issued and the dashboard goes back to one call per visit.
   const [firstRunDone, setFirstRunDone] = useState(() => readFirstRunChecklistDone());
   const checklistResource = {initialData: null, enabled: !firstRunDone, toastOnError: false};
+  // Simple mode puts the machine and release counts on its home page, so those
+  // two keep being fetched there even once the checklist is out of the way.
+  const countedResource = {initialData: null, enabled: !firstRunDone || !advanced, toastOnError: false};
   const {data: machines, loading: machinesLoading} = useResource(
-    () => MachineBackend.getGlobalMachines(), [accountUpdatedAt], checklistResource);
+    () => MachineBackend.getGlobalMachines(), [accountUpdatedAt, advanced], countedResource);
   const {data: signinOptions, loading: signinOptionsLoading} = useResource(
     () => AccountBackend.getSigninOptions(), [accountUpdatedAt], checklistResource);
   const {data: releases, loading: releasesLoading} = useResource(
-    () => HelmBackend.getHelmReleases(), [accountUpdatedAt], checklistResource);
+    () => HelmBackend.getHelmReleases(), [accountUpdatedAt, advanced], countedResource);
 
   const firstRunSteps = useMemo(
     () => getFirstRunChecklist({account, signinOptions, machines, releases, stats}),
@@ -137,7 +143,7 @@ function DashboardPage({account, accountUpdatedAt, onOpenAccount}) {
         if (step === "password") {
           onOpenAccount?.();
         } else if (step === "machine" || step === "node") {
-          history.push("/machines");
+          history.push(advanced ? "/machines" : "/devices");
         } else if (step === "app") {
           history.push("/app-store");
         }
@@ -147,6 +153,10 @@ function DashboardPage({account, accountUpdatedAt, onOpenAccount}) {
 
   if (loading) {
     return <Loading type="page" />;
+  }
+
+  if (!advanced) {
+    return <SimpleHome stats={stats} releases={releases} machines={machines} checklist={firstRunChecklist} />;
   }
 
   // There is no dashboard to draw without cluster stats, but that is exactly

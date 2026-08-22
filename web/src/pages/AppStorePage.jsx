@@ -16,6 +16,8 @@ import {ConfirmDialog} from "@/components/shared/confirm-dialog";
 import {Field, FormDialog} from "@/components/shared/form-dialog";
 import {Loading} from "@/components/shared/loading";
 import {HelmInstallDialog} from "@/components/shared/helm-install-dialog";
+import {useUiMode} from "@/hooks/use-ui-mode";
+import SimpleAppStore from "@/pages/simple/SimpleAppStore";
 
 const PRESET_REPOS = [
   {name: "ArtifactHub", url: null, desc: "artifacthub.io — 8 000+ charts"},
@@ -144,7 +146,7 @@ function AddRepoDialog({open, onClose, onAdded}) {
   );
 }
 
-export default function AppStorePage() {
+function AdvancedAppStore() {
   const {t} = useTranslation();
   const [source, setSource] = useState(PRESET_REPOS[0]);
   const [query, setQuery] = useState("");
@@ -425,4 +427,12 @@ export default function AppStorePage() {
       />
     </div>
   );
+}
+
+// Simple mode gets a curated shortlist instead of a search over every chart on
+// ArtifactHub; the repository sidebar and the version fields only appear once
+// the reader has asked for advanced mode.
+export default function AppStorePage() {
+  const {advanced} = useUiMode();
+  return advanced ? <AdvancedAppStore /> : <SimpleAppStore />;
 }

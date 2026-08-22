@@ -1,9 +1,12 @@
 import {
+  Activity,
   AppWindow,
   Boxes,
   ClipboardList,
   Cog,
   Gauge,
+  House,
+  Laptop,
   LayoutDashboard,
   Lock,
   Network,
@@ -106,11 +109,38 @@ export const navGroups = [
   },
 ];
 
+/**
+ * Simple mode's navigation: five flat entries named after what a reader wants to
+ * do, not after the Kubernetes object behind it.
+ *
+ * There is deliberately no entry for addresses or for storage. Neither is a
+ * place someone goes — they are things one app has, so they are shown on that
+ * app's card under My Apps. Devices and Health put two of the advanced list
+ * pages behind tabs, so no functionality is lost, only reached differently.
+ */
+export const simpleNavGroups = [
+  {key: "/dashboard", label: "simple:Home", icon: House, path: "/dashboard"},
+  {key: "/app-store", label: "simple:App Store", icon: Store, path: "/app-store"},
+  {key: "/helm-releases", label: "simple:My Apps", icon: Boxes, path: "/helm-releases"},
+  {key: "/devices", label: "simple:Devices", icon: Laptop, path: "/devices"},
+  {key: "/health", label: "simple:Health", icon: Activity, path: "/health"},
+];
+
+export function getNavGroups(mode) {
+  return mode === "advanced" ? navGroups : simpleNavGroups;
+}
+
 /** All leaf entries, flattened, for lookups by first path segment. */
 export const navLeaves = navGroups.flatMap((group) => (group.children ? group.children : [group]));
 
-export function findLeaf(segmentKey) {
-  return navLeaves.find((leaf) => leaf.key === segmentKey);
+// The breadcrumb resolves a URL against every leaf either mode can reach, not
+// just the ones currently in the sidebar: /pods is still reachable by URL in
+// simple mode, and /devices still has a name after a switch to advanced mode.
+// Where both trees name the same route, the current mode's wording wins.
+export function findLeaf(segmentKey, mode) {
+  const preferred = mode === "advanced" ? navLeaves : simpleNavGroups;
+  const fallback = mode === "advanced" ? simpleNavGroups : navLeaves;
+  return preferred.find((leaf) => leaf.key === segmentKey) ?? fallback.find((leaf) => leaf.key === segmentKey);
 }
 
 export function findGroupOf(segmentKey) {

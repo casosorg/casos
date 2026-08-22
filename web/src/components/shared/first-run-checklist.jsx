@@ -4,6 +4,7 @@ import {Button} from "@/components/ui/button";
 import {Card, CardContent, CardDescription, CardHeader, CardTitle} from "@/components/ui/card";
 import {Checkbox} from "@/components/ui/checkbox";
 import {isFirstRunComplete} from "@/lib/firstRunChecklist";
+import {useUiMode} from "@/hooks/use-ui-mode";
 
 const STEP_ICONS = {password: KeyRound, machine: Laptop, node: Network, app: Rocket};
 
@@ -11,7 +12,30 @@ const STEP_ICONS = {password: KeyRound, machine: Laptop, node: Network, app: Roc
 // and stops making them once setup is done, so this renders what it is given.
 export function FirstRunChecklist({steps, onAction}) {
   const {t} = useTranslation();
-  const labels = {
+  const {advanced} = useUiMode();
+  const simpleLabels = {
+    password: {
+      title: t("simple:Set your own password"),
+      description: t("simple:Nobody else should be able to sign in with the password CasOS shipped with."),
+      action: t("simple:Change password"),
+    },
+    machine: {
+      title: t("simple:Add a computer"),
+      description: t("simple:CasOS needs at least one computer it can reach over the network."),
+      action: t("simple:Open Devices"),
+    },
+    node: {
+      title: t("simple:Let that computer run apps"),
+      description: t("simple:Until it joins the cluster there is nowhere for an app to run."),
+      action: t("simple:Open Devices"),
+    },
+    app: {
+      title: t("simple:Install your first app"),
+      description: t("simple:Pick anything from the App Store — CasOS handles the setup."),
+      action: t("simple:Open App Store"),
+    },
+  };
+  const advancedLabels = {
     password: {
       title: t("onboarding:Change the default password"),
       description: t("onboarding:Use a unique password for the built-in admin account."),
@@ -33,6 +57,7 @@ export function FirstRunChecklist({steps, onAction}) {
       action: t("onboarding:Open App Store"),
     },
   };
+  const labels = advanced ? advancedLabels : simpleLabels;
 
   // A finished checklist is not a dashboard widget — it stops being rendered.
   if (!Array.isArray(steps) || steps.length === 0 || isFirstRunComplete(steps)) {

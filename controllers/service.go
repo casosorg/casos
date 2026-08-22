@@ -27,6 +27,7 @@ type serviceSummary struct {
 	Selector              map[string]string `json:"selector"`
 	Ports                 []portSummary     `json:"ports"`
 	LoadBalancerAddresses []string          `json:"loadBalancerAddresses,omitempty"`
+	HelmRelease           string            `json:"helmRelease,omitempty"`
 	CreatedAt             string            `json:"createdAt"`
 	ResourceVersion       string            `json:"resourceVersion"`
 }
@@ -58,6 +59,7 @@ func toSvcSummary(svc corev1.Service) serviceSummary {
 		Selector:              svc.Spec.Selector,
 		Ports:                 ports,
 		LoadBalancerAddresses: loadBalancerAddresses,
+		HelmRelease:           helmReleaseOf(svc.ObjectMeta),
 		CreatedAt:             svc.CreationTimestamp.UTC().Format("2006-01-02 15:04:05"),
 		ResourceVersion:       svc.ResourceVersion,
 	}

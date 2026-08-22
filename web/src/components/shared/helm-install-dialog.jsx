@@ -1,5 +1,6 @@
 import React, {useCallback, useEffect, useRef, useState} from "react";
 import {useTranslation} from "react-i18next";
+import {ChevronDown} from "lucide-react";
 import * as HelmBackend from "@/backend/HelmBackend";
 import * as NamespaceBackend from "@/backend/NamespaceBackend";
 import {
@@ -23,6 +24,9 @@ import {SearchSelect} from "@/components/shared/simple-select";
 import {AiDots} from "@/components/shared/loading";
 import {CodeText} from "@/components/shared/misc";
 import {HelmCompatibilityErrorAlert} from "@/components/shared/helm-compatibility-alert";
+import {Collapsible, CollapsibleContent, CollapsibleTrigger} from "@/components/ui/collapsible";
+import {useUiMode} from "@/hooks/use-ui-mode";
+import {cn} from "@/lib/utils";
 
 const TASK_NOT_FOUND_CODE = "helm_task_not_found";
 const STREAM_IDLE_TIMEOUT = 30 * 1000;
@@ -79,7 +83,9 @@ function ValuesLoadProgress({progress}) {
  */
 export function HelmInstallDialog({open, chart, action = "install", onClose, onInstalled}) {
   const {t} = useTranslation();
+  const {advanced} = useUiMode();
   const isUpgrade = action === "upgrade";
+  const [optionsOpen, setOptionsOpen] = useState(false);
 
   const [namespaces, setNamespaces] = useState([]);
   const [form, setForm] = useState({releaseName: "", namespace: "", repoURL: "", version: ""});
@@ -588,13 +594,88 @@ export function HelmInstallDialog({open, chart, action = "install", onClose, onI
     return "text-neutral-300";
   }
 
+  // Both modes render the same controls; simple mode only shows one of them up
+  // front and folds the rest away, so a reader who never opens the options
+  // still installs with the defaults the backend adapters set.
+  const releaseNameField = (
+    <Field
+      label={advanced ? t("helm:Release name") : t("simple:App name")}
+      htmlFor="helm-release"
+      required
+      error={formErrors.releaseName}
+      hint={advanced ? undefined : t("simple:Lower-case letters, digits and dashes. This is the name the app is listed under.")}
+    >
+      <Input
+        id="helm-release"
+        value={form.releaseName}
+        onChange={(event) => setForm((previous) => ({...previous, releaseName: event.target.value}))}
+        disabled={isUpgrade}
+      />
+    </Field>
+  );
+
+  const namespaceField = (
+    <Field label={advanced ? t("general:Namespaces") : t("simple:Group")} required error={formErrors.namespace}>
+      <SearchSelect
+        value={form.namespace}
+        onChange={(next) => setForm((previous) => ({...previous, namespace: next}))}
+        options={namespaces.map((item) => ({label: item.name, value: item.name}))}
+        disabled={isUpgrade}
+      />
+    </Field>
+  );
+
+  const versionField = (
+    <Field label={t("helm:Version")} htmlFor="helm-version">
+      <Input
+        id="helm-version"
+        value={form.version}
+        onChange={(event) => setForm((previous) => ({...previous, version: event.target.value}))}
+        placeholder={chart.version ?? "latest"}
+      />
+    </Field>
+  );
+
+  const repoField = (
+    <Field label={t("helm:Repo URL")} htmlFor="helm-repo" required error={formErrors.repoURL}>
+      <Input
+        id="helm-repo"
+        value={form.repoURL}
+        onChange={(event) => setForm((previous) => ({...previous, repoURL: event.target.value}))}
+        placeholder="https://example.com/charts"
+      />
+    </Field>
+  );
+
+  const valuesField = (
+    <Field label={t("helm:Values (YAML)")}>
+      {valuesLoading ? (
+        <ValuesLoadProgress progress={valuesProgress} />
+      ) : (
+        <Textarea
+          value={valuesYAML}
+          onChange={(event) => setValuesYAML(event.target.value)}
+          rows={14}
+          spellCheck={false}
+          className="scrollbar-thin resize-y font-mono text-xs"
+        />
+      )}
+    </Field>
+  );
+
   return (
     <Dialog open={open} onOpenChange={(next) => (next ? null : handleClose())}>
       <DialogContent className="sm:max-w-3xl" onInteractOutside={(event) => event.preventDefault()}>
         <DialogHeader>
           <DialogTitle className="flex flex-wrap items-center gap-2">
-            {t(isUpgrade ? "helm:Upgrade" : "helm:Install chart")} <CodeText>{chart.chartName}</CodeText>
-            {chart.repoURL ? <span className="text-muted-foreground text-xs font-normal">{chart.repoURL}</span> : null}
+            {advanced ? (
+              <>
+                {t(isUpgrade ? "helm:Upgrade" : "helm:Install chart")} <CodeText>{chart.chartName}</CodeText>
+                {chart.repoURL ? <span className="text-muted-foreground text-xs font-normal">{chart.repoURL}</span> : null}
+              </>
+            ) : (
+              t(isUpgrade ? "simple:Update {{name}}" : "simple:Install {{name}}", {name: chart.displayName || chart.chartName})
+            )}
           </DialogTitle>
         </DialogHeader>
 
@@ -613,59 +694,47 @@ export function HelmInstallDialog({open, chart, action = "install", onClose, onI
           ) : null}
 
           {!showLog ? (
-            <>
-              <div className="grid gap-3 sm:grid-cols-[1fr_1fr_140px]">
-                <Field label={t("helm:Release name")} htmlFor="helm-release" required error={formErrors.releaseName}>
-                  <Input
-                    id="helm-release"
-                    value={form.releaseName}
-                    onChange={(event) => setForm((previous) => ({...previous, releaseName: event.target.value}))}
-                    disabled={isUpgrade}
-                  />
-                </Field>
-                <Field label={t("general:Namespaces")} required error={formErrors.namespace}>
-                  <SearchSelect
-                    value={form.namespace}
-                    onChange={(next) => setForm((previous) => ({...previous, namespace: next}))}
-                    options={namespaces.map((item) => ({label: item.name, value: item.name}))}
-                    disabled={isUpgrade}
-                  />
-                </Field>
-                <Field label={t("helm:Version")} htmlFor="helm-version">
-                  <Input
-                    id="helm-version"
-                    value={form.version}
-                    onChange={(event) => setForm((previous) => ({...previous, version: event.target.value}))}
-                    placeholder={chart.version ?? "latest"}
-                  />
-                </Field>
-              </div>
-
-              {isUpgrade ? (
-                <Field label={t("helm:Repo URL")} htmlFor="helm-repo" required error={formErrors.repoURL}>
-                  <Input
-                    id="helm-repo"
-                    value={form.repoURL}
-                    onChange={(event) => setForm((previous) => ({...previous, repoURL: event.target.value}))}
-                    placeholder="https://example.com/charts"
-                  />
-                </Field>
-              ) : null}
-
-              <Field label={t("helm:Values (YAML)")}>
+            advanced ? (
+              <>
+                <div className="grid gap-3 sm:grid-cols-[1fr_1fr_140px]">
+                  {releaseNameField}
+                  {namespaceField}
+                  {versionField}
+                </div>
+                {isUpgrade ? repoField : null}
+                {valuesField}
+              </>
+            ) : (
+              <>
+                {releaseNameField}
                 {valuesLoading ? (
-                  <ValuesLoadProgress progress={valuesProgress} />
+                  <p className="text-muted-foreground flex items-center gap-2 text-sm">
+                    <AiDots size="small" />
+                    {t("simple:Getting the app ready, one moment...")}
+                  </p>
                 ) : (
-                  <Textarea
-                    value={valuesYAML}
-                    onChange={(event) => setValuesYAML(event.target.value)}
-                    rows={14}
-                    spellCheck={false}
-                    className="scrollbar-thin resize-y font-mono text-xs"
-                  />
+                  <p className="text-muted-foreground text-sm">
+                    {t("simple:CasOS picks working settings for everything else. Open the advanced options only if you know you need to change something.")}
+                  </p>
                 )}
-              </Field>
-            </>
+                <Collapsible open={optionsOpen} onOpenChange={setOptionsOpen}>
+                  <CollapsibleTrigger asChild>
+                    <Button type="button" variant="ghost" size="sm" className="-ml-2 gap-1.5">
+                      <ChevronDown className={cn("size-4 transition-transform", optionsOpen && "rotate-180")} />
+                      {t("simple:Advanced options")}
+                    </Button>
+                  </CollapsibleTrigger>
+                  <CollapsibleContent className="grid gap-4 pt-3">
+                    <div className="grid gap-3 sm:grid-cols-[1fr_140px]">
+                      {namespaceField}
+                      {versionField}
+                    </div>
+                    {isUpgrade ? repoField : null}
+                    {valuesField}
+                  </CollapsibleContent>
+                </Collapsible>
+              </>
+            )
           ) : (
             <div className="scrollbar-thin h-[340px] overflow-y-auto rounded-lg bg-neutral-950 p-3 font-mono text-xs leading-relaxed">
               {logs.length === 0 && (installing || pollingPaused) ? (
@@ -696,7 +765,11 @@ export function HelmInstallDialog({open, chart, action = "install", onClose, onI
             {closeLabel}
           </Button>
           {!done && !pollingPaused ? (
-            <Button loading={installing} disabled={valuesLoading || Boolean(valuesLoadError)} onClick={handleSubmit}>
+            <Button
+              loading={installing || (!advanced && valuesLoading)}
+              disabled={valuesLoading || Boolean(valuesLoadError)}
+              onClick={handleSubmit}
+            >
               {t(isUpgrade ? "helm:Upgrade" : "helm:Install")}
             </Button>
           ) : null}
