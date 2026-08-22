@@ -4,6 +4,8 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"fmt"
+	"net"
+	"strconv"
 	"strings"
 
 	"helm.sh/helm/v3/pkg/action"
@@ -28,6 +30,11 @@ type helmChartAdapter struct {
 	// generatedValuesPatchFn mints per-install values such as a random secret.
 	// The values preview skips it so the install dialog stays reproducible.
 	generatedValuesPatchFn func(explicitValues map[string]interface{}) (map[string]interface{}, error)
+	// clusterValuesPatchFn builds patches out of cluster state the values
+	// preview cannot know — a node address, a free node port. Like
+	// generatedValuesPatchFn the preview skips it, so the dialog stays
+	// reproducible; unlike it, this one reaches the API server.
+	clusterValuesPatchFn func(cluster clusterContext) (map[string]interface{}, error)
 	// clusterHostBindings publish the cluster addresses into a chart's host
 	// allowlist. The values preview skips them: they depend on cluster state.
 	clusterHostBindings []clusterHostBinding
@@ -57,9 +64,60 @@ type clusterHostBinding struct {
 // clusterContext carries install-time facts the values preview cannot know.
 // nodeIPs is lazy so charts without a binding never trigger the node list call.
 type clusterContext struct {
-	nodeIPs     func() []string
-	releaseName string
-	namespace   string
+	nodeIPs func() []string
+	// usedNodePorts reports every node port already bound anywhere in the
+	// cluster, so an adapter that must pin one does not collide.
+	usedNodePorts func() map[int32]bool
+	// releaseNodePorts maps a Service port of this release to the node port it
+	// already holds, so an upgrade keeps the address users bookmarked.
+	releaseNodePorts func() map[int32]int32
+	releaseName      string
+	namespace        string
+}
+
+// Kubernetes' default --service-node-port-range. Ports outside it are rejected
+// by the apiserver, so an adapter that pins one has to stay inside.
+const (
+	clusterNodePortRangeStart = 30000
+	clusterNodePortRangeEnd   = 32767
+)
+
+// firstNodeIP returns an address a user can reach the cluster on, or "".
+func (cluster clusterContext) firstNodeIP() string {
+	if cluster.nodeIPs == nil {
+		return ""
+	}
+	for _, ip := range cluster.nodeIPs() {
+		if ip != "" {
+			return ip
+		}
+	}
+	return ""
+}
+
+// reserveNodePort returns the node port to publish servicePort on: the one this
+// release already holds if it has one, otherwise the lowest free port in the
+// range. Zero means the cluster could not be read, and the caller should leave
+// the port to Kubernetes rather than guess.
+func (cluster clusterContext) reserveNodePort(servicePort int32) int32 {
+	if cluster.releaseNodePorts != nil {
+		if assigned := cluster.releaseNodePorts()[servicePort]; assigned != 0 {
+			return assigned
+		}
+	}
+	if cluster.usedNodePorts == nil {
+		return 0
+	}
+	used := cluster.usedNodePorts()
+	if used == nil {
+		return 0
+	}
+	for port := int32(clusterNodePortRangeStart); port <= clusterNodePortRangeEnd; port++ {
+		if !used[port] {
+			return port
+		}
+	}
+	return 0
 }
 
 // helmChartAdapterRegistry maps canonical chart names to install adaptations.
@@ -78,13 +136,22 @@ var helmChartAdapterRegistry = map[string]helmChartAdapter{
 	"prometheus":            {valuesPatches: prometheusValuesPatches()},
 	"redis":                 {valuesPatches: redisValuesPatches()},
 	"traefik":               {valuesPatches: traefikValuesPatches()},
-	"vault":                 {valuesPatches: vaultValuesPatches()},
-	"harbor":                {valuesPatches: harborValuesPatches()},
-	"keycloak":              {valuesPatches: nodePortServiceValuesPatch()},
-	"jenkins":               {valuesPatches: jenkinsValuesPatches()},
-	"longhorn":              {valuesPatches: longhornValuesPatches()},
-	"rabbitmq":              {valuesPatches: nodePortServiceValuesPatch()},
-	"gitlab":                {valuesPatches: gitLabValuesPatches()},
+	"vault": {
+		valuesPatches: vaultValuesPatches(),
+		warningFn:     vaultDevModeWarning,
+	},
+	"harbor": {
+		valuesPatches:        harborValuesPatches(),
+		clusterValuesPatchFn: harborClusterValuesPatch,
+	},
+	"keycloak": {valuesPatches: nodePortServiceValuesPatch()},
+	"jenkins":  {valuesPatches: jenkinsValuesPatches()},
+	"longhorn": {valuesPatches: longhornValuesPatches()},
+	"rabbitmq": {valuesPatches: nodePortServiceValuesPatch()},
+	"gitlab": {
+		valuesPatches: gitLabValuesPatches(),
+		warningFn:     gitLabExternalDependencyWarning,
+	},
 	"n8n": {
 		valuesPatches:      nodePortServiceValuesPatch(),
 		chartValuesPatchFn: n8nSecureCookiePatch,
@@ -143,24 +210,97 @@ func metricsServerValuesPatches() map[string]interface{} {
 	}
 }
 
+// vaultValuesPatches also starts Vault in dev mode. A standalone Vault comes up
+// sealed and uninitialised, so its readiness probe never passes: the pod sits at
+// 0/1 for good, CasOS reports the app as broken, and the UI only answers at all
+// because the chart's Service publishes not-ready addresses. Dev mode unseals
+// itself, which is what makes a one-click install usable — at the cost this
+// adapter's warning spells out.
 func vaultValuesPatches() map[string]interface{} {
-	return helmValuePatch([]string{"server", "service"}, map[string]interface{}{"type": "NodePort"})
+	patches := helmValuePatch([]string{"server", "service"}, map[string]interface{}{"type": "NodePort"})
+	server, ok := patches["server"].(map[string]interface{})
+	if !ok {
+		return patches
+	}
+	server["dev"] = map[string]interface{}{"enabled": true}
+	return patches
+}
+
+// vaultDevModeWarning states what dev mode costs, so the install dialog shows
+// why the value is there and when to turn it off.
+func vaultDevModeWarning(values map[string]interface{}) string {
+	if !helmValueIsTrue(helmValueAtPath(values, []string{"server", "dev", "enabled"})) {
+		return ""
+	}
+	return "CasOS starts Vault in dev mode so it comes up unsealed and the web UI is usable right away; dev mode keeps everything in memory and every restart loses all secrets, so turn it off and initialise Vault yourself before storing anything real"
+}
+
+// helmValueIsTrue reports whether a values leaf holds true in either the boolean
+// or the string form Helm accepts for it.
+func helmValueIsTrue(value interface{}) bool {
+	switch typed := value.(type) {
+	case bool:
+		return typed
+	case string:
+		return strings.EqualFold(strings.TrimSpace(typed), "true")
+	}
+	return false
 }
 
 func harborValuesPatches() map[string]interface{} {
-	return map[string]interface{}{
+	return harborExposePatches(0, "")
+}
+
+// harborExposePatches publishes Harbor on a node port. A zero httpNodePort
+// leaves the port for Kubernetes to allocate, which is what the values preview
+// shows; the install pins one so externalURL can name it.
+func harborExposePatches(httpNodePort int32, externalURL string) map[string]interface{} {
+	var httpPort interface{}
+	if httpNodePort > 0 {
+		httpPort = httpNodePort
+	}
+	patches := map[string]interface{}{
 		"expose": map[string]interface{}{
 			"type": "nodePort",
 			"tls":  map[string]interface{}{"enabled": false},
 			"nodePort": map[string]interface{}{
 				"ports": map[string]interface{}{
-					"http":  map[string]interface{}{"nodePort": nil},
+					"http":  map[string]interface{}{"nodePort": httpPort},
 					"https": map[string]interface{}{"nodePort": nil},
 				},
 			},
 		},
 	}
+	if externalURL != "" {
+		patches["externalURL"] = externalURL
+	}
+	return patches
 }
+
+// harborClusterValuesPatch points Harbor at the address users actually reach it
+// on. Harbor is a registry, and externalURL is what it prints in every docker
+// login and docker push command and uses for its own redirects — left at the
+// chart default it advertises https://core.harbor.domain, a name nothing
+// resolves, so the web UI works while the registry cannot be used at all.
+//
+// Naming the port means pinning it, because the URL has to be known before the
+// Service exists. An upgrade reuses the port Harbor already has, so the URL a
+// user bookmarked keeps working.
+func harborClusterValuesPatch(cluster clusterContext) (map[string]interface{}, error) {
+	host := cluster.firstNodeIP()
+	if host == "" {
+		return nil, nil
+	}
+	port := cluster.reserveNodePort(harborHTTPServicePort)
+	if port == 0 {
+		return nil, nil
+	}
+	return harborExposePatches(port, fmt.Sprintf("http://%s", net.JoinHostPort(host, strconv.Itoa(int(port))))), nil
+}
+
+// harborHTTPServicePort is the Service port Harbor's chart publishes over plain
+// HTTP; the node port bound to it is the one externalURL has to name.
+const harborHTTPServicePort = 80
 
 func jenkinsValuesPatches() map[string]interface{} {
 	return helmValuePatch([]string{"controller"}, map[string]interface{}{
@@ -169,11 +309,19 @@ func jenkinsValuesPatches() map[string]interface{} {
 	})
 }
 
+// longhornValuesPatches also confirms deletion up front. Longhorn's uninstall
+// Job refuses to run unless the deleting-confirmation-flag setting is true, and
+// that setting only exists once longhorn-manager has come up — so an operator
+// whose Longhorn never started cannot remove it at all. The Job then fails with
+// BackoffLimitExceeded, and the release wedges in "uninstalling", a state the
+// App Store offers no way to clear.
 func longhornValuesPatches() map[string]interface{} {
-	return helmValuePatch([]string{"service", "ui"}, map[string]interface{}{
+	patches := helmValuePatch([]string{"service", "ui"}, map[string]interface{}{
 		"type":     "NodePort",
 		"nodePort": nil,
 	})
+	patches["defaultSettings"] = map[string]interface{}{"deletingConfirmationFlag": true}
+	return patches
 }
 
 // GitLab 19 enables its Gateway API cert-manager integration by default, but
@@ -189,6 +337,29 @@ func gitLabValuesPatches() map[string]interface{} {
 			"ingress":    map[string]interface{}{"configureCertmanager": false},
 		},
 	}
+}
+
+// gitLabExternalDependencyWarning says what the chart needs before the user
+// spends a click on it. Since chart v10 GitLab dropped its bundled PostgreSQL
+// and Redis and requires external ones, plus object storage for the registry,
+// so a default install cannot succeed — it fails Helm's render with a wall of
+// chart NOTES that reads like an internal error rather than a prerequisite.
+// CasOS has nothing to point those settings at, so this states the requirement
+// rather than inventing a value.
+func gitLabExternalDependencyWarning(values map[string]interface{}) string {
+	if helmValueTrimmedString(helmValueAtPath(values, []string{"global", "psql", "host"})) != "" {
+		return ""
+	}
+	return "GitLab's chart no longer bundles PostgreSQL or Redis: set global.psql.host, global.psql.password.secret and global.redis.host to servers you already run, and configure object storage for the registry, or this install will fail before it creates anything"
+}
+
+// helmValueTrimmedString reads a values leaf that is expected to hold a string.
+func helmValueTrimmedString(value interface{}) string {
+	text, ok := value.(string)
+	if !ok {
+		return ""
+	}
+	return strings.TrimSpace(text)
 }
 
 func prometheusExporterCompatibilityPatch() map[string]interface{} {
@@ -454,6 +625,13 @@ func applyHelmChartAdapter(ch *chart.Chart, values, explicitValues map[string]in
 			return fmt.Errorf("apply Helm chart adapter for %s: %w", ch.Name(), err)
 		}
 		patches = mergedHelmAdapterPatches(patches, generated)
+	}
+	if includeDynamic && adapter.clusterValuesPatchFn != nil {
+		fromCluster, err := adapter.clusterValuesPatchFn(cluster)
+		if err != nil {
+			return fmt.Errorf("apply Helm chart adapter for %s: %w", ch.Name(), err)
+		}
+		patches = mergedHelmAdapterPatches(patches, fromCluster)
 	}
 	for topKey, patch := range patches {
 		if adapterPatchExplicitlyOverridden(explicitValues, topKey, patch) {

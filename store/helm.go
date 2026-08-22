@@ -198,11 +198,88 @@ func newHelmConfig(cfg *rest.Config, namespace string) (*action.Configuration, e
 // binding never reach the API server and charts with several bindings list the
 // nodes a single time.
 func newClusterContext(cfg *rest.Config, releaseName, namespace string) clusterContext {
+	services := memoizedServices(func() []corev1.Service { return getClusterServices(cfg) })
 	return clusterContext{
-		nodeIPs:     memoizedNodeIPs(func() []string { return getClusterNodeIPs(cfg) }),
+		nodeIPs: memoizedNodeIPs(func() []string { return getClusterNodeIPs(cfg) }),
+		usedNodePorts: func() map[int32]bool {
+			return clusterUsedNodePorts(services())
+		},
+		releaseNodePorts: func() map[int32]int32 {
+			return releaseAssignedNodePorts(services(), releaseName, namespace)
+		},
 		releaseName: releaseName,
 		namespace:   namespace,
 	}
+}
+
+// memoizedServices defers the Service listing until an adapter asks for it and
+// keeps the answer, so the two node-port questions share one call.
+func memoizedServices(resolve func() []corev1.Service) func() []corev1.Service {
+	var once sync.Once
+	var services []corev1.Service
+	return func() []corev1.Service {
+		once.Do(func() { services = resolve() })
+		return services
+	}
+}
+
+// getClusterServices lists every Service in the cluster. Returns nil on any
+// failure; the callers treat that as "cannot tell" and leave port selection to
+// Kubernetes rather than risk pinning one that is already taken.
+func getClusterServices(cfg *rest.Config) []corev1.Service {
+	if cfg == nil {
+		return nil
+	}
+	client, err := kubernetes.NewForConfig(cfg)
+	if err != nil {
+		logrus.Warnf("build service client for install adapter: %v", err)
+		return nil
+	}
+	services, err := client.CoreV1().Services("").List(context.Background(), metav1.ListOptions{})
+	if err != nil {
+		logrus.Warnf("list services for install adapter: %v", err)
+		return nil
+	}
+	return services.Items
+}
+
+// clusterUsedNodePorts collects the node ports already bound cluster-wide. A nil
+// result means the Service list could not be read, which is distinct from an
+// empty one: nothing may be pinned on a guess.
+func clusterUsedNodePorts(services []corev1.Service) map[int32]bool {
+	if services == nil {
+		return nil
+	}
+	used := map[int32]bool{}
+	for _, service := range services {
+		for _, port := range service.Spec.Ports {
+			if port.NodePort != 0 {
+				used[port.NodePort] = true
+			}
+		}
+	}
+	return used
+}
+
+// releaseAssignedNodePorts maps a release's Service ports to the node ports they
+// already hold, so an upgrade republishes the app on the address it is already
+// reachable at instead of moving it.
+func releaseAssignedNodePorts(services []corev1.Service, releaseName, namespace string) map[int32]int32 {
+	assigned := map[int32]int32{}
+	for _, service := range services {
+		if namespace != "" && service.Namespace != namespace {
+			continue
+		}
+		if service.Labels["app.kubernetes.io/instance"] != releaseName {
+			continue
+		}
+		for _, port := range service.Spec.Ports {
+			if port.NodePort != 0 && assigned[port.Port] == 0 {
+				assigned[port.Port] = port.NodePort
+			}
+		}
+	}
+	return assigned
 }
 
 // memoizedNodeIPs defers a node lookup until a host binding asks for it and

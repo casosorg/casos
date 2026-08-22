@@ -38,8 +38,16 @@ func (d *NodeDeployer) installNodeBinaries(ctx context.Context, runner NodeDeplo
 	cniVersion := defaultNodeDeployCNIVersion
 
 	d.logStep(nodeDeployPhaseInstalling, "Installing node dependencies and containerd")
-	if _, err := runner.RunRootContext(ctx, "dpkg -s ca-certificates curl iptables socat conntrack ebtables ethtool kmod containerd >/dev/null 2>&1 || (apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y ca-certificates curl iptables socat conntrack ebtables ethtool kmod containerd)"); err != nil {
+	if _, err := runner.RunRootContext(ctx, "dpkg -s ca-certificates curl iptables socat conntrack ebtables ethtool kmod containerd open-iscsi nfs-common >/dev/null 2>&1 || (apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y ca-certificates curl iptables socat conntrack ebtables ethtool kmod containerd open-iscsi nfs-common)"); err != nil {
 		return fmt.Errorf("install packages: %w", err)
+	}
+	// CSI drivers reach volumes through the node's own iSCSI and NFS clients:
+	// Longhorn's manager exits at startup with "please make sure you have
+	// iscsiadm/open-iscsi installed on the host" and crashloops forever, so an
+	// App Store install of it can never come up. Failing to start iscsid costs
+	// only those drivers, not the node, so it is a warning rather than an error.
+	if _, err := runner.RunRootContext(ctx, "systemctl enable --now iscsid"); err != nil {
+		d.logStep(nodeDeployPhaseInstalling, fmt.Sprintf("iscsid did not start, so CSI storage drivers such as Longhorn will not work: %v", err))
 	}
 	if _, err := runner.RunRootContext(ctx, `set -e
 install -d /etc/modules-load.d /etc/sysctl.d
