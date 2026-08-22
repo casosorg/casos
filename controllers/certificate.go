@@ -74,12 +74,25 @@ func (c *ApiController) RequestLECert() {
 		return
 	}
 
-	// Apply defaults from app.conf when not supplied by caller.
+	// Apply defaults from app.conf when not supplied by caller. The port
+	// defaults to the one CasOS actually serves on, so a changed httpport does
+	// not silently point the challenge Ingress at nothing.
 	if req.CasosServiceName == "" {
 		req.CasosServiceName = conf.GetConfigStringDefault("casosServiceName", "casos")
 	}
 	if req.CasosServicePort == 0 {
-		req.CasosServicePort = int32(conf.GetConfigIntDefault("casosServicePort", 20080))
+		req.CasosServicePort = int32(conf.GetConfigIntDefault("casosServicePort", conf.GetConfigIntDefault("httpport", 20080)))
+	}
+
+	srvCfg := getServerConfig()
+	if srvCfg == nil {
+		c.ResponseError("server config not ready")
+		return
+	}
+	backend := object.CasosBackend{
+		ServiceName: req.CasosServiceName,
+		ServicePort: req.CasosServicePort,
+		HostIP:      srvCfg.AdvertiseAddress,
 	}
 
 	key := req.Namespace + "/" + req.IngressName
@@ -96,7 +109,7 @@ func (c *ApiController) RequestLECert() {
 
 	go func() {
 		setCertStatus(key, &certStatus{Status: "verifying"})
-		if err := object.ObtainLECert(cfg, req.Namespace, req.IngressName, req.Domain, req.CasosServiceName, req.CasosServicePort); err != nil {
+		if err := object.ObtainLECert(cfg, req.Namespace, req.IngressName, req.Domain, backend); err != nil {
 			setCertStatus(key, &certStatus{Status: "failed", Error: err.Error()})
 			return
 		}

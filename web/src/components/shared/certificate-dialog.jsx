@@ -46,7 +46,7 @@ export function CertificateDialog({ingress, open, onClose, onUpdated}) {
   const [tab, setTab] = useState("le");
   const [submitting, setSubmitting] = useState(false);
   const [certStatus, setCertStatus] = useState(null);
-  const [leForm, setLeForm] = useState({domain: "", casosServiceName: "", casosServicePort: 20080});
+  const [leForm, setLeForm] = useState({domain: "", casosServiceName: "", casosServicePort: ""});
   const [uploadForm, setUploadForm] = useState({certPEM: "", keyPEM: ""});
   const [errors, setErrors] = useState({});
   const pollTimer = useRef(null);
@@ -70,7 +70,7 @@ export function CertificateDialog({ingress, open, onClose, onUpdated}) {
     setTab("le");
     setErrors({});
     setUploadForm({certPEM: "", keyPEM: ""});
-    setLeForm({domain, casosServiceName: "", casosServicePort: 20080});
+    setLeForm({domain, casosServiceName: "", casosServicePort: ""});
 
     let cancelled = false;
 
@@ -109,7 +109,7 @@ export function CertificateDialog({ingress, open, onClose, onUpdated}) {
       ingressName: ingress.name,
       domain: leForm.domain,
       casosServiceName: leForm.casosServiceName || undefined,
-      casosServicePort: leForm.casosServicePort || 20080,
+      casosServicePort: leForm.casosServicePort || undefined,
     })
       .then((res) => {
         if (res.status === "ok") {
@@ -212,7 +212,7 @@ export function CertificateDialog({ingress, open, onClose, onUpdated}) {
               <AlertDescription>
                 <ul className="list-disc pl-4">
                   <li>The domain must be publicly reachable on port 80 through your Ingress controller.</li>
-                  <li>casos needs its own Service so Let&apos;s Encrypt can reach the challenge endpoint.</li>
+                  <li>The cluster must be able to reach the casos server; the Service the challenge routes to is created for you.</li>
                 </ul>
               </AlertDescription>
             </Alert>
@@ -235,7 +235,7 @@ export function CertificateDialog({ingress, open, onClose, onUpdated}) {
             <Field
               label="casos Service Name"
               htmlFor="cert-service"
-              hint="Kubernetes Service exposing the casos server. Leave blank to use the value from app.conf."
+              hint="Kubernetes Service exposing the casos server, created when it does not exist. Leave blank to use the value from app.conf."
             >
               <Input
                 id="cert-service"
@@ -245,7 +245,7 @@ export function CertificateDialog({ingress, open, onClose, onUpdated}) {
               />
             </Field>
 
-            <Field label="casos Service Port" hint="Port of the casos Service (default 20080).">
+            <Field label="casos Service Port" hint="Port of the casos Service. Leave blank to use the port casos serves on.">
               <NumberInput
                 value={leForm.casosServicePort}
                 onChange={(next) => setLeForm((prev) => ({...prev, casosServicePort: next}))}

@@ -9,13 +9,19 @@ import (
 	"encoding/pem"
 	"errors"
 	"fmt"
+	"net"
 	"sync"
 	"time"
 
 	"golang.org/x/crypto/acme"
 	corev1 "k8s.io/api/core/v1"
+	discoveryv1 "k8s.io/api/discovery/v1"
 	networkingv1 "k8s.io/api/networking/v1"
+	apiequality "k8s.io/apimachinery/pkg/api/equality"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/util/intstr"
+	discoveryv1client "k8s.io/client-go/kubernetes/typed/discovery/v1"
 	"k8s.io/client-go/rest"
 )
 
@@ -90,9 +96,9 @@ func AttachTLSToIngress(cfg *rest.Config, namespace, ingressName, secretName str
 // ObtainLECert runs the full ACME HTTP-01 flow for domain, stores the resulting
 // certificate as a TLS Secret, and attaches it to ingressName.
 //
-// casosServiceName / casosServicePort identify the k8s Service that exposes the
-// casos server, used to create the temporary challenge Ingress.
-func ObtainLECert(cfg *rest.Config, namespace, ingressName, domain, casosServiceName string, casosServicePort int32) error {
+// backend names the k8s Service the temporary challenge Ingress routes to, which
+// is created in namespace when it does not exist yet.
+func ObtainLECert(cfg *rest.Config, namespace, ingressName, domain string, backend CasosBackend) error {
 	accountKey, err := ensureACMEAccountKey(cfg, namespace)
 	if err != nil {
 		return fmt.Errorf("acme account key: %w", err)
@@ -150,7 +156,10 @@ func ObtainLECert(cfg *rest.Config, namespace, ingressName, domain, casosService
 		defer DeleteACMEChallenge(chal.Token)
 
 		tempName := ingressName + "-acme-tmp"
-		if err := createChallengeIngress(cfg, namespace, tempName, domain, casosServiceName, casosServicePort); err != nil {
+		if err := ensureCasosBackend(cfg, namespace, backend); err != nil {
+			return fmt.Errorf("ensure casos backend: %w", err)
+		}
+		if err := createChallengeIngress(cfg, namespace, tempName, domain, backend.ServiceName, backend.ServicePort); err != nil {
 			return fmt.Errorf("create challenge ingress: %w", err)
 		}
 		defer deleteChallengeIngress(cfg, namespace, tempName)
@@ -278,4 +287,161 @@ func deleteChallengeIngress(cfg *rest.Config, namespace, name string) {
 		return
 	}
 	_ = client.NetworkingV1().Ingresses(namespace).Delete(context.Background(), name, metav1.DeleteOptions{})
+}
+
+// CasosBackend describes how the CasOS server is reached from inside the
+// cluster. CasOS runs on the host rather than as a Pod, so nothing creates a
+// Service for it: the ACME HTTP-01 challenge Ingress has no backend to route to
+// until CasOS writes one itself.
+type CasosBackend struct {
+	ServiceName string
+	ServicePort int32
+	// HostIP is the address of the machine running CasOS, as reachable from a
+	// Pod. It becomes the sole endpoint behind ServiceName.
+	HostIP string
+}
+
+const (
+	casosManagedByLabel = "app.kubernetes.io/managed-by"
+	casosManagedByValue = "casos"
+)
+
+// ensureCasosBackend publishes the CasOS server as an ordinary Service in
+// namespace so the challenge Ingress can route to it. The Service carries no
+// selector, so its endpoints are written by hand rather than by the endpoint
+// controller.
+//
+// A Service that CasOS did not create is left untouched: it belongs to whoever
+// made it, and rewriting its endpoints would break what it already points at.
+func ensureCasosBackend(cfg *rest.Config, namespace string, backend CasosBackend) error {
+	if backend.ServiceName == "" || backend.ServicePort <= 0 {
+		return fmt.Errorf("casos service name and port are required")
+	}
+	ip := net.ParseIP(backend.HostIP)
+	if ip == nil {
+		return fmt.Errorf("casos server address %q is not an IP address", backend.HostIP)
+	}
+	// A loopback endpoint resolves to the Pod itself, so the challenge would be
+	// answered by the wrong process and time out with nothing to point at.
+	if ip.IsLoopback() {
+		return fmt.Errorf("casos server address %s is a loopback address that no Pod can reach: set apiserverBind to an address the cluster can route to", ip)
+	}
+	client, err := newClient(cfg)
+	if err != nil {
+		return err
+	}
+
+	services := client.CoreV1().Services(namespace)
+	desired := casosBackendService(namespace, backend)
+	existing, err := services.Get(context.Background(), backend.ServiceName, metav1.GetOptions{})
+	switch {
+	case apierrors.IsNotFound(err):
+		if _, err := services.Create(context.Background(), desired, metav1.CreateOptions{}); err != nil && !apierrors.IsAlreadyExists(err) {
+			return fmt.Errorf("create Service %s/%s: %w", namespace, backend.ServiceName, err)
+		}
+	case err != nil:
+		return fmt.Errorf("get Service %s/%s: %w", namespace, backend.ServiceName, err)
+	default:
+		if existing.Labels[casosManagedByLabel] != casosManagedByValue {
+			return nil
+		}
+		if !apiequality.Semantic.DeepEqual(existing.Spec.Ports, desired.Spec.Ports) {
+			update := existing.DeepCopy()
+			update.Spec.Ports = desired.Spec.Ports
+			if _, err := services.Update(context.Background(), update, metav1.UpdateOptions{}); err != nil {
+				return fmt.Errorf("update Service %s/%s: %w", namespace, backend.ServiceName, err)
+			}
+		}
+	}
+
+	return ensureCasosBackendEndpointSlice(client.DiscoveryV1().EndpointSlices(namespace), namespace, backend, ip)
+}
+
+func casosBackendService(namespace string, backend CasosBackend) *corev1.Service {
+	return &corev1.Service{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      backend.ServiceName,
+			Namespace: namespace,
+			Labels:    map[string]string{casosManagedByLabel: casosManagedByValue},
+		},
+		Spec: corev1.ServiceSpec{
+			Type: corev1.ServiceTypeClusterIP,
+			Ports: []corev1.ServicePort{{
+				Name:       "http",
+				Protocol:   corev1.ProtocolTCP,
+				Port:       backend.ServicePort,
+				TargetPort: intstr.FromInt32(backend.ServicePort),
+			}},
+		},
+	}
+}
+
+func ensureCasosBackendEndpointSlice(slices discoveryv1client.EndpointSliceInterface, namespace string, backend CasosBackend, ip net.IP) error {
+	desired := casosBackendEndpointSlice(namespace, backend, ip)
+	existing, err := slices.Get(context.Background(), backend.ServiceName, metav1.GetOptions{})
+	switch {
+	case apierrors.IsNotFound(err):
+		if _, err := slices.Create(context.Background(), desired, metav1.CreateOptions{}); err != nil && !apierrors.IsAlreadyExists(err) {
+			return fmt.Errorf("create EndpointSlice %s/%s: %w", namespace, backend.ServiceName, err)
+		}
+		return nil
+	case err != nil:
+		return fmt.Errorf("get EndpointSlice %s/%s: %w", namespace, backend.ServiceName, err)
+	}
+	if existing.Labels[casosManagedByLabel] != casosManagedByValue {
+		return nil
+	}
+	if existing.AddressType == desired.AddressType &&
+		apiequality.Semantic.DeepEqual(existing.Endpoints, desired.Endpoints) &&
+		apiequality.Semantic.DeepEqual(existing.Ports, desired.Ports) {
+		return nil
+	}
+	// AddressType is immutable, so an IPv4/IPv6 switch has to replace the slice.
+	if existing.AddressType != desired.AddressType {
+		if err := slices.Delete(context.Background(), backend.ServiceName, metav1.DeleteOptions{}); err != nil && !apierrors.IsNotFound(err) {
+			return fmt.Errorf("delete EndpointSlice %s/%s: %w", namespace, backend.ServiceName, err)
+		}
+		if _, err := slices.Create(context.Background(), desired, metav1.CreateOptions{}); err != nil {
+			return fmt.Errorf("recreate EndpointSlice %s/%s: %w", namespace, backend.ServiceName, err)
+		}
+		return nil
+	}
+	update := existing.DeepCopy()
+	update.Endpoints = desired.Endpoints
+	update.Ports = desired.Ports
+	if _, err := slices.Update(context.Background(), update, metav1.UpdateOptions{}); err != nil {
+		return fmt.Errorf("update EndpointSlice %s/%s: %w", namespace, backend.ServiceName, err)
+	}
+	return nil
+}
+
+func casosBackendEndpointSlice(namespace string, backend CasosBackend, ip net.IP) *discoveryv1.EndpointSlice {
+	addressType := discoveryv1.AddressTypeIPv4
+	if ip.To4() == nil {
+		addressType = discoveryv1.AddressTypeIPv6
+	}
+	return &discoveryv1.EndpointSlice{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      backend.ServiceName,
+			Namespace: namespace,
+			Labels: map[string]string{
+				discoveryv1.LabelServiceName: backend.ServiceName,
+				casosManagedByLabel:          casosManagedByValue,
+			},
+		},
+		AddressType: addressType,
+		Ports: []discoveryv1.EndpointPort{{
+			Name:     ptr("http"),
+			Protocol: ptr(corev1.ProtocolTCP),
+			Port:     ptr(backend.ServicePort),
+		}},
+		Endpoints: []discoveryv1.Endpoint{{
+			Addresses:  []string{ip.String()},
+			Conditions: discoveryv1.EndpointConditions{Ready: ptr(true)},
+		}},
+	}
+}
+
+func ptr[T any](value T) *T {
+	return &value
 }
