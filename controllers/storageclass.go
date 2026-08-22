@@ -2,6 +2,7 @@ package controllers
 
 import (
 	"encoding/json"
+	"fmt"
 
 	corev1 "k8s.io/api/core/v1"
 	storagev1 "k8s.io/api/storage/v1"
@@ -137,6 +138,22 @@ func clearOtherDefaultStorageClasses(cfg *rest.Config, exceptName string) error 
 	return nil
 }
 
+// requireAnotherDefaultStorageClass prevents an update or delete from leaving
+// PVCs with no provisioner. Kubernetes accepts that state, but every new
+// unqualified claim then remains Pending indefinitely.
+func requireAnotherDefaultStorageClass(cfg *rest.Config, exceptName string) error {
+	scs, err := object.GetStorageClasses(cfg)
+	if err != nil {
+		return err
+	}
+	for _, sc := range scs {
+		if sc.Name != exceptName && isDefaultStorageClass(sc) {
+			return nil
+		}
+	}
+	return fmt.Errorf("cannot remove the last default StorageClass; mark another StorageClass as default first")
+}
+
 // AddStorageClass
 // @router /api/add-storageclass [post]
 func (c *ApiController) AddStorageClass() {
@@ -203,6 +220,12 @@ func (c *ApiController) UpdateStorageClass() {
 		c.ResponseError(err.Error())
 		return
 	}
+	if isDefaultStorageClass(*existing) && !req.IsDefault {
+		if err := requireAnotherDefaultStorageClass(cfg, req.Name); err != nil {
+			c.ResponseError(err.Error())
+			return
+		}
+	}
 	reclaimPolicy := corev1.PersistentVolumeReclaimPolicy(req.ReclaimPolicy)
 	if reclaimPolicy == "" {
 		reclaimPolicy = corev1.PersistentVolumeReclaimDelete
@@ -247,6 +270,17 @@ func (c *ApiController) DeleteStorageClass() {
 	if err := json.Unmarshal(c.Ctx.Input.RequestBody, &req); err != nil {
 		c.ResponseError("invalid request body: " + err.Error())
 		return
+	}
+	existing, err := object.GetStorageClass(cfg, req.Name)
+	if err != nil {
+		c.ResponseError(err.Error())
+		return
+	}
+	if isDefaultStorageClass(*existing) {
+		if err := requireAnotherDefaultStorageClass(cfg, req.Name); err != nil {
+			c.ResponseError(err.Error())
+			return
+		}
 	}
 	if err := object.DeleteStorageClass(cfg, req.Name); err != nil {
 		c.ResponseError(err.Error())

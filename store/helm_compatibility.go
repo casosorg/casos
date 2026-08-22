@@ -45,6 +45,9 @@ func validateHelmChartCompatibility(ctx context.Context, cfg *rest.Config, actio
 	dryRun := newHelmCompatibilityDryRun(actionConfig, releaseName, namespace, namespaceExists)
 	rendered, err := dryRun.RunWithContext(ctx, chartToInstall, values)
 	if err == nil {
+		if err := validateHelmManifestStorage(ctx, cfg, rendered.Manifest); err != nil {
+			return err
+		}
 		if namespaceExists {
 			return nil
 		}
@@ -63,9 +66,75 @@ func validateHelmChartCompatibility(ctx context.Context, cfg *rest.Config, actio
 		if validateErr := validateHelmManifestGVKs(ctx, actionConfig, clientRendered.Manifest, chartCRDs); validateErr != nil {
 			return fmt.Errorf("chart %s is not compatible with the target cluster: %w", chartToInstall.Name(), validateErr)
 		}
+		if err := validateHelmManifestStorage(ctx, cfg, clientRendered.Manifest); err != nil {
+			return err
+		}
 		return nil
 	}
 	return fmt.Errorf("render chart %s for compatibility check: %w", chartToInstall.Name(), classifyHelmDryRunError(schema.GroupVersionKind{}, err))
+}
+
+func validateHelmManifestStorage(ctx context.Context, cfg *rest.Config, manifest string) error {
+	if !helmManifestNeedsDefaultStorageClass(manifest) || cfg == nil {
+		return nil
+	}
+	client, err := kubernetes.NewForConfig(cfg)
+	if err != nil {
+		return fmt.Errorf("check default StorageClass: %w", err)
+	}
+	classes, err := client.StorageV1().StorageClasses().List(ctx, metav1.ListOptions{})
+	if err != nil {
+		return fmt.Errorf("check default StorageClass: %w", err)
+	}
+	for _, class := range classes.Items {
+		if class.Annotations["storageclass.kubernetes.io/is-default-class"] == "true" ||
+			class.Annotations["storageclass.beta.kubernetes.io/is-default-class"] == "true" {
+			return nil
+		}
+	}
+	return fmt.Errorf("this chart creates persistent storage without naming a StorageClass, but the cluster has no default StorageClass; mark one as default before installing")
+}
+
+func helmManifestNeedsDefaultStorageClass(manifest string) bool {
+	decoder := utilyaml.NewYAMLOrJSONDecoder(strings.NewReader(manifest), 4096)
+	for {
+		var document map[string]interface{}
+		if err := decoder.Decode(&document); err != nil {
+			return false
+		}
+		if len(document) == 0 {
+			continue
+		}
+		kind, _ := document["kind"].(string)
+		spec, _ := document["spec"].(map[string]interface{})
+		switch kind {
+		case "PersistentVolumeClaim":
+			if helmStorageClassNameEmpty(spec) {
+				return true
+			}
+		case "StatefulSet":
+			claims, _ := spec["volumeClaimTemplates"].([]interface{})
+			for _, claim := range claims {
+				claimMap, _ := claim.(map[string]interface{})
+				claimSpec, _ := claimMap["spec"].(map[string]interface{})
+				if helmStorageClassNameEmpty(claimSpec) {
+					return true
+				}
+			}
+		}
+	}
+}
+
+func helmStorageClassNameEmpty(spec map[string]interface{}) bool {
+	if len(spec) == 0 {
+		return false
+	}
+	name, exists := spec["storageClassName"]
+	if !exists || name == nil {
+		return true
+	}
+	text, _ := name.(string)
+	return strings.TrimSpace(text) == ""
 }
 
 func validateHelmReleaseCompatibility(ctx context.Context, actionConfig *action.Configuration, releaseName, namespace string, chartToInstall *chart.Chart, values map[string]interface{}) error {

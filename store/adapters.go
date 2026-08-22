@@ -18,6 +18,9 @@ import (
 // type) without requiring the user to know chart internals.
 type helmChartAdapter struct {
 	valuesPatches map[string]interface{}
+	// validateFn rejects installs that cannot become usable from chart defaults.
+	// It runs only on install/upgrade, after all adapter patches are applied.
+	validateFn func(values map[string]interface{}, cluster clusterContext) error
 	// chartValuesPatchFn builds patches that depend on the chart's own layout —
 	// where this particular fork keeps a value — and on what the user already
 	// wrote. Its result is deterministic, so unlike generatedValuesPatchFn the
@@ -166,6 +169,26 @@ var helmChartAdapterRegistry = map[string]helmChartAdapter{
 		valuesPatches:       nodePortServiceValuesPatch(),
 		clusterHostBindings: nextcloudTrustedDomainsBinding,
 	},
+	"gitlab-runner": {
+		validateFn: gitLabRunnerValuesValidation,
+		warningFn:  gitLabRunnerConfigurationWarning,
+	},
+	"aws-load-balancer-controller": {
+		validateFn: awsLoadBalancerControllerValuesValidation,
+	},
+	"kafka":        {valuesPatches: kafkaValuesPatches()},
+	"external-dns": {warningFn: externalDNSConfigurationWarning},
+	"mysql":        {valuesPatches: mysqlValuesPatches()},
+	"airflow":      {valuesPatches: airflowValuesPatches()},
+	"elasticsearch": {
+		valuesPatches:        elasticsearchValuesPatches(),
+		clusterValuesPatchFn: elasticsearchClusterValuesPatch,
+	},
+	"cilium": {
+		valuesPatches: ciliumValuesPatches(),
+		validateFn:    ciliumInstallValidation,
+	},
+	"mongodb": {valuesPatches: mongodbValuesPatches()},
 }
 
 // nextcloudTrustedDomainsBinding keeps Nextcloud reachable through the node
@@ -190,6 +213,96 @@ func nodePortServiceValuesPatch() map[string]interface{} {
 	return map[string]interface{}{
 		"service": map[string]interface{}{"type": "NodePort"},
 	}
+}
+
+func kafkaValuesPatches() map[string]interface{} {
+	return map[string]interface{}{
+		"controller": map[string]interface{}{"replicaCount": 1},
+		"service":    map[string]interface{}{"type": "NodePort"},
+	}
+}
+
+func mysqlValuesPatches() map[string]interface{} {
+	return map[string]interface{}{
+		"architecture": "standalone",
+		"primary": map[string]interface{}{
+			"service": map[string]interface{}{"type": "NodePort"},
+		},
+	}
+}
+
+func airflowValuesPatches() map[string]interface{} {
+	return helmValuePatch([]string{"apiServer", "service"}, map[string]interface{}{"type": "NodePort"})
+}
+
+func elasticsearchValuesPatches() map[string]interface{} {
+	return map[string]interface{}{
+		"replicas":           1,
+		"minimumMasterNodes": 1,
+		"antiAffinity":       "soft",
+		"service":            map[string]interface{}{"type": "NodePort"},
+	}
+}
+
+func ciliumValuesPatches() map[string]interface{} {
+	return helmValuePatch([]string{"operator"}, map[string]interface{}{
+		"replicas": 1,
+	})
+}
+
+func elasticsearchClusterValuesPatch(cluster clusterContext) (map[string]interface{}, error) {
+	if cluster.releaseName == "" {
+		return nil, nil
+	}
+	return map[string]interface{}{"clusterName": cluster.releaseName}, nil
+}
+
+func mongodbValuesPatches() map[string]interface{} {
+	return map[string]interface{}{
+		"architecture": "standalone",
+		"service":      map[string]interface{}{"type": "NodePort"},
+	}
+}
+
+func gitLabRunnerValuesValidation(values map[string]interface{}, _ clusterContext) error {
+	if helmValueTrimmedString(values["gitlabUrl"]) == "" {
+		return fmt.Errorf("GitLab Runner requires gitlabUrl before installation")
+	}
+	if helmValueTrimmedString(values["runnerToken"]) == "" &&
+		helmValueTrimmedString(values["runnerRegistrationToken"]) == "" &&
+		helmValueTrimmedString(helmValueAtPath(values, []string{"runners", "secret"})) == "" {
+		return fmt.Errorf("GitLab Runner requires runnerToken, runnerRegistrationToken, or runners.secret before installation")
+	}
+	return nil
+}
+
+func gitLabRunnerConfigurationWarning(values map[string]interface{}) string {
+	if gitLabRunnerValuesValidation(values, clusterContext{}) == nil {
+		return ""
+	}
+	return "GitLab Runner is an agent, not a web app: set gitlabUrl and a runner token (or runners.secret) before installing; it intentionally has no browser Access URL"
+}
+
+func awsLoadBalancerControllerValuesValidation(values map[string]interface{}, _ clusterContext) error {
+	if helmValueTrimmedString(values["clusterName"]) == "" {
+		return fmt.Errorf("AWS Load Balancer Controller requires clusterName and AWS/EKS credentials before installation")
+	}
+	return nil
+}
+
+func externalDNSConfigurationWarning(values map[string]interface{}) string {
+	provider := helmValueTrimmedString(values["provider"])
+	if provider == "" {
+		provider = "the selected DNS provider"
+	}
+	return fmt.Sprintf("ExternalDNS is a controller, not a web app: configure credentials and zones for %s before installing; its HTTP service only exposes metrics", provider)
+}
+
+func ciliumInstallValidation(_ map[string]interface{}, cluster clusterContext) error {
+	if cluster.namespace != "kube-system" {
+		return fmt.Errorf("Cilium is a cluster CNI, not a regular app; install it in kube-system as a planned replacement for the existing CNI")
+	}
+	return nil
 }
 
 func argoCDValuesPatches() map[string]interface{} {
@@ -644,6 +757,15 @@ func applyHelmChartAdapter(ch *chart.Chart, values, explicitValues map[string]in
 	if includeDynamic {
 		if err := applyClusterHostBindings(ch, values, adapter.clusterHostBindings, cluster); err != nil {
 			return fmt.Errorf("apply Helm chart adapter for %s: %w", ch.Name(), err)
+		}
+	}
+	if includeDynamic && adapter.validateFn != nil {
+		coalesced, err := chartutil.CoalesceValues(ch, cloneHelmValues(values))
+		if err != nil {
+			return fmt.Errorf("validate Helm chart adapter for %s: %w", ch.Name(), err)
+		}
+		if err := adapter.validateFn(map[string]interface{}(coalesced), cluster); err != nil {
+			return err
 		}
 	}
 	return nil

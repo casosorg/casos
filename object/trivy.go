@@ -27,7 +27,7 @@ type trivyReport struct {
 type TrivyScanResult struct {
 	Id              int64                `xorm:"pk autoincr" json:"id"`
 	Image           string               `xorm:"varchar(512) notnull index" json:"image"`
-	Status          string               `xorm:"varchar(32) notnull" json:"status"` // pending | done | failed
+	Status          string               `xorm:"varchar(32) notnull" json:"status"` // pending | done | failed | ignored
 	Critical        int                  `json:"critical"`
 	High            int                  `json:"high"`
 	Medium          int                  `json:"medium"`
@@ -40,7 +40,7 @@ type TrivyScanResult struct {
 
 func GetTrivyScanResults() ([]*TrivyScanResult, error) {
 	var results []*TrivyScanResult
-	if err := ormer.Engine.OrderBy("id desc").Find(&results); err != nil {
+	if err := ormer.Engine.Where("status <> ?", "ignored").OrderBy("id desc").Find(&results); err != nil {
 		return nil, err
 	}
 	for _, r := range results {
@@ -64,7 +64,7 @@ func GetTrivyScanResultByImage(image string) (*TrivyScanResult, error) {
 
 func TriggerScan(image string) {
 	existing := &TrivyScanResult{}
-	found, _ := ormer.Engine.Where("image = ? AND status = ?", image, "pending").Get(existing)
+	found, _ := ormer.Engine.Where("image = ? AND status IN (?, ?)", image, "pending", "ignored").Get(existing)
 	if found {
 		return
 	}
@@ -151,6 +151,12 @@ func runScan(id int64, image string) {
 }
 
 func DeleteTrivyScanResult(id int64) error {
-	_, err := ormer.Engine.ID(id).Delete(&TrivyScanResult{})
+	// Deleting a finding is the operator's documented override. Keeping a
+	// hidden tombstone makes that choice durable; physically deleting the row
+	// caused admission to enqueue the same image immediately.
+	override := &TrivyScanResult{Status: "ignored", VulnsJSON: "", ErrorMsg: ""}
+	_, err := ormer.Engine.ID(id).
+		Cols("status", "critical", "high", "medium", "low", "vulns_json", "error_msg").
+		Update(override)
 	return err
 }
