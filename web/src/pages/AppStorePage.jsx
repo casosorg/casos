@@ -1,5 +1,5 @@
-import React, {useCallback, useEffect, useRef, useState} from "react";
-import {Link} from "react-router-dom";
+import React, {useCallback, useEffect, useMemo, useRef, useState} from "react";
+import {Link, useHistory, useParams} from "react-router-dom";
 import {useTranslation} from "react-i18next";
 import {Plus, RefreshCw, Rocket, Search, Store, Trash2} from "lucide-react";
 import * as HelmBackend from "@/backend/HelmBackend";
@@ -21,13 +21,24 @@ import {useUiMode} from "@/hooks/use-ui-mode";
 import SimpleAppStore from "@/pages/simple/SimpleAppStore";
 
 const PRESET_REPOS = [
-  {name: "ArtifactHub", url: null, desc: "artifacthub.io — 8 000+ charts"},
-  {name: "Bitnami", url: "https://charts.bitnami.com/bitnami", desc: "~200 curated charts"},
-  {name: "Rancher", url: "https://charts.rancher.io", desc: "Rancher Charts"},
-  {name: "ingress-nginx", url: "https://kubernetes.github.io/ingress-nginx", desc: "Official ingress-nginx"},
+  {slug: "artifacthub", name: "ArtifactHub", url: null, desc: "artifacthub.io — 8 000+ charts"},
+  {slug: "bitnami", name: "Bitnami", url: "https://charts.bitnami.com/bitnami", desc: "~200 curated charts"},
+  {slug: "rancher", name: "Rancher", url: "https://charts.rancher.io", desc: "Rancher Charts"},
+  {slug: "ingress-nginx", name: "ingress-nginx", url: "https://kubernetes.github.io/ingress-nginx", desc: "Official ingress-nginx"},
 ];
 
 const ARTIFACT_HUB_PAGE_SIZE = 20;
+
+// Each source owns a URL of its own, so a channel can be linked, bookmarked and
+// walked back to with the browser's back button. Repo names are unique, which
+// makes a slug of the name a stable identity even before the repo list loads.
+function repoSlug(name) {
+  return String(name).trim().toLowerCase().replace(/\s+/g, "-");
+}
+
+function sourcePath(slug) {
+  return `/app-store/${encodeURIComponent(slug)}`;
+}
 
 function ChartCard({chart, onInstall}) {
   const {t} = useTranslation();
@@ -126,7 +137,8 @@ function AddRepoDialog({open, onClose, onAdded}) {
 
 function AdvancedAppStore() {
   const {t} = useTranslation();
-  const [source, setSource] = useState(PRESET_REPOS[0]);
+  const history = useHistory();
+  const {sourceSlug} = useParams();
   const [query, setQuery] = useState("");
   const [charts, setCharts] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -134,25 +146,54 @@ function AdvancedAppStore() {
   const [page, setPage] = useState(1);
   const [hasMore, setHasMore] = useState(true);
   const [customRepos, setCustomRepos] = useState([]);
+  const [reposLoaded, setReposLoaded] = useState(false);
   const [addRepoOpen, setAddRepoOpen] = useState(false);
   const [installTarget, setInstallTarget] = useState(null);
   const sentinelRef = useRef(null);
-
-  // ArtifactHub is a search API with server-side paging; a plain repo returns its
-  // whole index at once and is filtered in the browser.
-  const isArtifactHub = !source.url;
 
   const loadCustomRepos = useCallback(() => {
     HelmBackend.getHelmRepos().then((res) => {
       if (res.status === "ok") {
         setCustomRepos(res.data ?? []);
       }
+      setReposLoaded(true);
     });
   }, []);
 
   useEffect(() => {
     loadCustomRepos();
   }, [loadCustomRepos]);
+
+  const customSources = useMemo(
+    () => customRepos.map((repo) => ({...repo, slug: repoSlug(repo.name)})),
+    [customRepos]
+  );
+
+  // Bare /app-store keeps working as the default channel, so older links and the
+  // navigation entry never 404.
+  const activeSlug = sourceSlug ? repoSlug(decodeURIComponent(sourceSlug)) : PRESET_REPOS[0].slug;
+  const source = useMemo(
+    () => PRESET_REPOS.find((repo) => repo.slug === activeSlug) ?? customSources.find((repo) => repo.slug === activeSlug) ?? null,
+    [activeSlug, customSources]
+  );
+
+  // A slug nothing answers to — a stale bookmark, or the repo the URL points at
+  // was just deleted — falls back to the default channel, but only once the
+  // custom repos are known, so a direct link to one is not bounced while loading.
+  useEffect(() => {
+    if (!source && reposLoaded) {
+      history.replace(sourcePath(PRESET_REPOS[0].slug));
+    }
+  }, [source, reposLoaded, history]);
+
+  function selectSource(slug) {
+    setQuery("");
+    history.push(sourcePath(slug));
+  }
+
+  // ArtifactHub is a search API with server-side paging; a plain repo returns its
+  // whole index at once and is filtered in the browser.
+  const isArtifactHub = Boolean(source) && !source.url;
 
   const fetchCharts = useCallback((activeSource, activeQuery, activePage) => {
     setLoading(true);
@@ -183,6 +224,9 @@ function AdvancedAppStore() {
   }, []);
 
   useEffect(() => {
+    if (!source) {
+      return;
+    }
     setCharts([]);
     setPage(1);
     setHasMore(true);
@@ -190,7 +234,7 @@ function AdvancedAppStore() {
   }, [source, query, fetchCharts]);
 
   useEffect(() => {
-    if (page > 1) {
+    if (source && page > 1) {
       fetchCharts(source, query, page);
     }
   }, [page, fetchCharts, source, query]);
@@ -237,7 +281,7 @@ function AdvancedAppStore() {
     }
     return {
       chartName: chart.name,
-      repoURL: source.url,
+      repoURL: source?.url ?? "",
       version: chart.version ?? "",
       displayName: chart.name,
       description: chart.description,
@@ -265,9 +309,6 @@ function AdvancedAppStore() {
           return;
         }
         loadCustomRepos();
-        if (source.id === id) {
-          setSource(PRESET_REPOS[0]);
-        }
       })
       .catch((e) => Setting.showMessage("error", `${t("helm:Delete repo failed")}: ${e.message}`));
   }
@@ -286,14 +327,8 @@ function AdvancedAppStore() {
           {t("helm:Sources")}
         </div>
         {PRESET_REPOS.map((repo) => (
-          <SimpleTooltip key={repo.name} title={repo.desc} side="right">
-            <div
-              onClick={() => {
-                setSource(repo);
-                setQuery("");
-              }}
-              className={sourceClass(source.name === repo.name)}
-            >
+          <SimpleTooltip key={repo.slug} title={repo.desc} side="right">
+            <div onClick={() => selectSource(repo.slug)} className={sourceClass(activeSlug === repo.slug)}>
               {repo.name}
             </div>
           </SimpleTooltip>
@@ -305,15 +340,9 @@ function AdvancedAppStore() {
             <div className="text-muted-foreground px-4 pb-1.5 text-[11px] font-semibold tracking-wider uppercase">
               {t("helm:My Repos")}
             </div>
-            {customRepos.map((repo) => (
-              <div key={repo.id} className={sourceClass(source.id === repo.id)}>
-                <span
-                  className="flex-1 truncate"
-                  onClick={() => {
-                    setSource({...repo, url: repo.url});
-                    setQuery("");
-                  }}
-                >
+            {customSources.map((repo) => (
+              <div key={repo.id} className={sourceClass(activeSlug === repo.slug)}>
+                <span className="flex-1 truncate" onClick={() => selectSource(repo.slug)}>
                   {repo.name}
                 </span>
                 <ConfirmDialog
@@ -347,7 +376,7 @@ function AdvancedAppStore() {
       <div className="flex-1 overflow-y-auto p-5">
         <div className="mb-4 flex items-center gap-3">
           <Store className="size-5" />
-          <h1 className="text-lg font-semibold">{source.name}</h1>
+          <h1 className="text-lg font-semibold">{source?.name ?? ""}</h1>
           <div className="flex-1" />
           <Button variant="outline" size="sm" asChild>
             <Link to="/helm-releases">{t("helm:My Releases")} →</Link>
@@ -367,6 +396,7 @@ function AdvancedAppStore() {
           <Button
             variant="outline"
             loading={loading}
+            disabled={!source}
             onClick={() => {
               setCharts([]);
               setPage(1);
@@ -386,11 +416,11 @@ function AdvancedAppStore() {
           ))}
         </div>
 
-        {loading ? <Loading /> : null}
+        {loading || !source ? <Loading /> : null}
 
         {isArtifactHub && hasMore ? <div ref={sentinelRef} className="h-px" aria-hidden="true" /> : null}
 
-        {!loading && visibleCharts.length === 0 && !error ? (
+        {source && !loading && visibleCharts.length === 0 && !error ? (
           <p className="text-muted-foreground py-16 text-center text-sm">{t("helm:No charts found")}</p>
         ) : null}
       </div>

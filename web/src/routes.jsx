@@ -100,6 +100,7 @@ export function AppRoutes({account, accountUpdatedAt, onOpenAccount, onUpdateSit
         <Route exact path="/machines/:machineName" component={MachineEditPage} />
         <Route exact path="/topology" component={TopologyPage} />
         <Route exact path="/app-store" component={AppStorePage} />
+        <Route exact path="/app-store/:sourceSlug" component={AppStorePage} />
         <Route exact path="/helm-releases" component={HelmReleasePage} />
         <Route exact path="/monitor" component={MonitorPage} />
         <Route exact path="/devices" render={(props) => <DevicesPage account={account} {...props} />} />
