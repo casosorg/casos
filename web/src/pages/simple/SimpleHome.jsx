@@ -1,9 +1,18 @@
 import React from "react";
 import {useHistory} from "react-router-dom";
 import {useTranslation} from "react-i18next";
-import {Activity, ArrowRight, BarChart3, Boxes, CheckCircle2, Laptop, Store, TriangleAlert} from "lucide-react";
+import {Activity, ArrowRight, BarChart3, Boxes, CheckCircle2, ChevronRight, Laptop, Store, TriangleAlert} from "lucide-react";
+import {Badge} from "@/components/ui/badge";
 import {Button} from "@/components/ui/button";
-import {Card, CardContent} from "@/components/ui/card";
+import {
+  Card,
+  CardAction,
+  CardContent,
+  CardDescription,
+  CardFooter,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
 import {Progress} from "@/components/ui/progress";
 import {PageContainer} from "@/components/shared/page-header";
 import {getDashboardHealthState} from "@/lib/dashboardHealth";
@@ -12,48 +21,64 @@ import {cn} from "@/lib/utils";
 
 function ActionCard({icon: Icon, title, description, onClick}) {
   return (
-    <button
-      type="button"
+    <Card
+      role="button"
+      tabIndex={0}
       onClick={onClick}
-      className="bg-card hover:border-ring/50 hover:bg-accent/40 flex items-start gap-3 rounded-xl border p-4 text-left shadow-sm transition-colors"
+      onKeyDown={(event) => {
+        if (event.key === "Enter" || event.key === " ") {
+          event.preventDefault();
+          onClick?.();
+        }
+      }}
+      className="hover:border-ring/60 focus-visible:border-ring focus-visible:ring-ring/50 cursor-pointer transition-colors outline-none focus-visible:ring-[3px]"
     >
-      <span className="bg-primary/10 text-primary flex size-10 shrink-0 items-center justify-center rounded-lg">
-        <Icon className="size-5" />
-      </span>
-      <span className="min-w-0 flex-1">
-        <span className="block text-sm font-semibold">{title}</span>
-        <span className="text-muted-foreground mt-0.5 block text-xs leading-relaxed">{description}</span>
-      </span>
-      <ArrowRight className="text-muted-foreground mt-2.5 size-4 shrink-0" />
-    </button>
-  );
-}
-
-function CountCard({icon: Icon, value, label, onClick}) {
-  return (
-    <Card className="cursor-pointer py-4 transition-colors hover:border-ring/50" onClick={onClick}>
-      <CardContent className="flex items-center gap-3 px-4">
-        <Icon className="text-muted-foreground size-5 shrink-0" />
-        <div className="min-w-0">
-          <div className="text-2xl leading-none font-semibold tabular-nums">{value}</div>
-          <div className="text-muted-foreground mt-1 text-xs">{label}</div>
-        </div>
-      </CardContent>
+      <CardHeader>
+        <span className="bg-muted text-foreground mb-1 flex size-9 items-center justify-center rounded-lg">
+          <Icon className="size-4.5" />
+        </span>
+        <CardTitle className="text-base">{title}</CardTitle>
+        <CardDescription>{description}</CardDescription>
+        <CardAction>
+          <ChevronRight className="text-muted-foreground size-4" />
+        </CardAction>
+      </CardHeader>
     </Card>
   );
 }
 
-function UsageBar({label, used, total, unit, tone}) {
-  const percent = total > 0 ? Math.min(100, Math.round((used / total) * 100)) : 0;
+function CountCard({icon: Icon, value, label, caption, onClick}) {
   return (
-    <div className="grid gap-1.5">
+    <Card
+      onClick={onClick}
+      className="@container/card from-primary/5 to-card dark:bg-card hover:border-ring/60 cursor-pointer gap-0 bg-gradient-to-t transition-colors"
+    >
+      <CardHeader>
+        <CardDescription>{label}</CardDescription>
+        <CardTitle className="text-3xl font-semibold tracking-tight tabular-nums">{value}</CardTitle>
+        <CardAction>
+          <span className="bg-muted text-muted-foreground flex size-8 items-center justify-center rounded-lg">
+            <Icon className="size-4" />
+          </span>
+        </CardAction>
+      </CardHeader>
+      <CardFooter className="text-muted-foreground gap-1 pt-4 text-sm">
+        {caption}
+        <ChevronRight className="size-4" />
+      </CardFooter>
+    </Card>
+  );
+}
+
+function UsageRow({label, percent, detail}) {
+  return (
+    <div className="grid gap-2">
       <div className="flex items-baseline justify-between gap-2">
         <span className="text-sm font-medium">{label}</span>
-        <span className="text-muted-foreground text-xs tabular-nums">
-          {percent}% · {used} / {total} {unit}
-        </span>
+        <span className="text-muted-foreground text-sm tabular-nums">{percent}%</span>
       </div>
-      <Progress value={percent} tone={tone} />
+      <Progress value={percent} className="h-2" />
+      <span className="text-muted-foreground text-xs tabular-nums">{detail}</span>
     </div>
   );
 }
@@ -61,7 +86,7 @@ function UsageBar({label, used, total, unit, tone}) {
 /**
  * Simple mode's home page. It answers the three questions a non-technical
  * reader actually has — is anything broken, what do I have, what do I do next —
- * and leaves the eight stat tiles and five charts to the advanced dashboard.
+ * and leaves the stat tiles and the charts to the advanced dashboard.
  */
 function SimpleHome({stats, releases, machines, checklist}) {
   const history = useHistory();
@@ -100,79 +125,98 @@ function SimpleHome({stats, releases, machines, checklist}) {
     statusAction = {label: t("simple:See what is wrong"), to: "/simple/health"};
   }
 
-  const toneClass = {
-    success: "border-success/40 bg-success/5 text-success",
-    warning: "border-warning/40 bg-warning/5 text-warning",
-    danger: "border-destructive/40 bg-destructive/5 text-destructive",
+  // The status card keeps the neutral card surface and lets one tinted chip
+  // carry the state, rather than washing the whole panel in a colour.
+  const iconClass = {
+    success: "border-success/25 bg-success/10 text-success",
+    warning: "border-warning/30 bg-warning/12 text-warning",
+    danger: "border-destructive/25 bg-destructive/10 text-destructive",
+  }[statusTone];
+
+  const badgeVariant = {success: "success", warning: "warning", danger: "danger"}[statusTone];
+  const badgeLabel = {
+    success: t("simple:Running"),
+    warning: t("simple:Needs attention"),
+    danger: t("simple:Not working"),
   }[statusTone];
 
   const StatusIcon = statusIcon;
   const cpuTotal = stats?.clusterCPUTotalM ?? 0;
   const memTotal = stats?.clusterMemTotalMi ?? 0;
+  const cpuPercent = cpuTotal > 0 ? Math.min(100, Math.round((stats.clusterCPUUsedM / cpuTotal) * 100)) : 0;
+  const memPercent = memTotal > 0 ? Math.min(100, Math.round((stats.clusterMemUsedMi / memTotal) * 100)) : 0;
 
   return (
     <PageContainer>
       {checklist}
 
-      <Card className={cn("py-5", toneClass)}>
-        <CardContent className="flex flex-col gap-4 px-5 sm:flex-row sm:items-center">
-          <StatusIcon className="size-10 shrink-0" />
-          <div className="min-w-0 flex-1">
-            <h2 className="text-xl font-semibold">{statusTitle}</h2>
-            <p className="text-foreground/70 mt-1 text-sm">{statusText}</p>
-          </div>
-          {statusAction ? (
+      <Card>
+        <CardHeader>
+          <span className={cn("mb-1 flex size-11 items-center justify-center rounded-xl border", iconClass)}>
+            <StatusIcon className="size-5.5" />
+          </span>
+          <CardTitle className="text-xl">{statusTitle}</CardTitle>
+          <CardDescription className="text-base">{statusText}</CardDescription>
+          <CardAction>
+            <Badge variant={badgeVariant}>{badgeLabel}</Badge>
+          </CardAction>
+        </CardHeader>
+        {statusAction ? (
+          <CardFooter>
             <Button onClick={() => history.push(statusAction.to)}>
               {statusAction.label}
               <ArrowRight />
             </Button>
-          ) : null}
-        </CardContent>
+          </CardFooter>
+        ) : null}
       </Card>
 
-      <div className="grid gap-3 sm:grid-cols-3">
+      <div className="grid gap-4 sm:grid-cols-3">
         <CountCard
           icon={Boxes}
           value={appCount ?? "—"}
           label={t("simple:Installed apps")}
+          caption={t("simple:My Apps")}
           onClick={() => history.push("/simple/apps")}
         />
         <CountCard
           icon={Laptop}
           value={deviceCount}
           label={t("simple:Computers")}
+          caption={t("simple:Devices")}
           onClick={() => history.push("/simple/devices")}
         />
         <CountCard
           icon={unhealthyPods.length > 0 ? TriangleAlert : CheckCircle2}
           value={unhealthyPods.length}
           label={t("simple:Apps needing attention")}
+          caption={t("simple:Health")}
           onClick={() => history.push("/simple/health")}
         />
       </div>
 
       {cpuTotal > 0 || memTotal > 0 ? (
-        <Card className="py-4">
-          <CardContent className="grid gap-4 px-4 md:grid-cols-2">
-            <UsageBar
+        <Card>
+          <CardHeader>
+            <CardTitle>{t("simple:Usage")}</CardTitle>
+            <CardDescription>{t("simple:How much processing power and memory each app is using.")}</CardDescription>
+          </CardHeader>
+          <CardContent className="grid gap-6 md:grid-cols-2">
+            <UsageRow
               label={t("simple:Processing power in use")}
-              used={(stats.clusterCPUUsedM / 1000).toFixed(1)}
-              total={(cpuTotal / 1000).toFixed(1)}
-              unit={t("simple:cores")}
-              tone="info"
+              percent={cpuPercent}
+              detail={`${(stats.clusterCPUUsedM / 1000).toFixed(1)} / ${(cpuTotal / 1000).toFixed(1)} ${t("simple:cores")}`}
             />
-            <UsageBar
+            <UsageRow
               label={t("simple:Memory in use")}
-              used={Math.round(stats.clusterMemUsedMi / 1024)}
-              total={Math.round(memTotal / 1024)}
-              unit="GB"
-              tone="success"
+              percent={memPercent}
+              detail={`${(stats.clusterMemUsedMi / 1024).toFixed(1)} / ${(memTotal / 1024).toFixed(1)} GB`}
             />
           </CardContent>
         </Card>
       ) : null}
 
-      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <ActionCard
           icon={Store}
           title={t("simple:Install an app")}

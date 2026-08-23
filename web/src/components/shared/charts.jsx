@@ -1,5 +1,19 @@
 import React from "react";
-import {Bar, BarChart, Cell, Pie, PieChart, XAxis, YAxis} from "recharts";
+import {
+  Bar,
+  BarChart,
+  CartesianGrid,
+  Label,
+  LabelList,
+  Pie,
+  PieChart,
+  PolarAngleAxis,
+  PolarRadiusAxis,
+  RadialBar,
+  RadialBarChart,
+  XAxis,
+  YAxis,
+} from "recharts";
 import {
   ChartContainer,
   ChartLegend,
@@ -7,46 +21,35 @@ import {
   ChartTooltip,
   ChartTooltipContent,
 } from "@/components/ui/chart";
+import {cn} from "@/lib/utils";
 
-/**
- * Blue-family multi-hue palette. The theme only ships five --chart-* slots and
- * the dashboard needs more series than that, so the palette is declared here
- * and is deliberately kept legible against both the light and the dark surface.
- */
-export const CHART_COLORS = [
-  "#3b82f6",
-  "#0ea5e9",
-  "#06b6d4",
-  "#14b8a6",
-  "#6366f1",
-  "#8b5cf6",
-  "#2563eb",
-  "#0284c7",
-  "#0891b2",
-  "#0f766e",
-  "#7c3aed",
-  "#38bdf8",
-  "#5eead4",
+// The theme owns the palette. Every mark drawn here cycles through the five
+// --chart-* slots, which are defined once per theme, so a chart follows a light
+// or dark switch instead of carrying colours of its own.
+const CHART_COLORS = [
+  "var(--chart-1)",
+  "var(--chart-2)",
+  "var(--chart-3)",
+  "var(--chart-4)",
+  "var(--chart-5)",
 ];
-
-const RADIAN = Math.PI / 180;
 
 function truncate(value, max) {
   const text = String(value ?? "");
-  return text.length > max ? `${text.slice(0, max - 2)}…` : text;
-}
-
-// The palette lives in the config rather than on the marks so the legend and
-// the tooltip can look a series' colour up by name.
-function paletteConfig(entries, colors, offset = 0) {
-  return Object.fromEntries(entries.map(({name}, index) => [
-    name,
-    {label: name, color: colors?.[name] || CHART_COLORS[(index + offset) % CHART_COLORS.length]},
-  ]));
+  return text.length > max ? `${text.slice(0, max - 1)}…` : text;
 }
 
 function toEntries(data) {
   return Object.entries(data || {}).map(([name, value]) => ({name, value}));
+}
+
+// The palette lives in the config rather than on the marks so the legend and
+// the tooltip can look a series' colour up by name.
+function paletteConfig(entries) {
+  return Object.fromEntries(entries.map(({name}, index) => [
+    name,
+    {label: name, color: CHART_COLORS[index % CHART_COLORS.length]},
+  ]));
 }
 
 // Pie tooltips carry the share as well as the count, which is the number the
@@ -68,42 +71,60 @@ function shareFormatter(total) {
   );
 }
 
+function CenteredTotal({value, label}) {
+  return ({viewBox}) => {
+    if (!viewBox || !("cx" in viewBox)) {
+      return null;
+    }
+    return (
+      <text x={viewBox.cx} y={viewBox.cy} textAnchor="middle" dominantBaseline="middle">
+        <tspan x={viewBox.cx} y={viewBox.cy} className="fill-foreground text-2xl font-semibold tabular-nums">
+          {value}
+        </tspan>
+        <tspan x={viewBox.cx} y={(viewBox.cy || 0) + 22} className="fill-muted-foreground text-xs">
+          {label}
+        </tspan>
+      </text>
+    );
+  };
+}
+
 /**
- * Category breakdown with the legend beside the ring rather than under it, so
- * the chart keeps its height in a short card.
+ * Category breakdown as a donut with the population in the middle and the
+ * legend underneath, so the card reads as one number plus its split.
  */
-export function CategoryDonut({data, colors, className}) {
-  const entries = toEntries(data);
-  if (entries.length === 0) {
+export function CategoryDonut({data, centerLabel, className}) {
+  const plain = toEntries(data);
+  if (plain.length === 0) {
     return null;
   }
-  const config = paletteConfig(entries, colors);
-  const total = entries.reduce((sum, entry) => sum + entry.value, 0);
+  const config = paletteConfig(plain);
+  const total = plain.reduce((sum, entry) => sum + entry.value, 0);
+  // The slice colour rides on the datum rather than on a <Cell> child, which
+  // leaves <Label> as the pie's only child and the centre total free to use it.
+  const entries = plain.map((entry) => ({...entry, fill: config[entry.name].color}));
 
   return (
-    <ChartContainer config={config} className={className}>
+    <ChartContainer config={config} className={cn("mx-auto aspect-square", className)}>
       <PieChart>
-        <ChartTooltip content={<ChartTooltipContent hideLabel nameKey="name" formatter={shareFormatter(total)} />} />
+        <ChartTooltip
+          cursor={false}
+          content={<ChartTooltipContent hideLabel nameKey="name" formatter={shareFormatter(total)} />}
+        />
         <Pie
           data={entries}
           dataKey="value"
           nameKey="name"
-          cx="30%"
-          cy="50%"
-          innerRadius="55%"
-          outerRadius="88%"
-          paddingAngle={2}
+          innerRadius="58%"
+          outerRadius="82%"
+          stroke="var(--card)"
           strokeWidth={2}
         >
-          {entries.map((entry) => (
-            <Cell key={entry.name} fill={config[entry.name].color} className="stroke-background" />
-          ))}
+          {centerLabel ? <Label content={CenteredTotal({value: total, label: centerLabel})} /> : null}
         </Pie>
         <ChartLegend
-          layout="vertical"
-          align="right"
-          verticalAlign="middle"
-          content={<ChartLegendContent nameKey="name" className="flex-col items-start gap-1.5 pt-0" />}
+          content={<ChartLegendContent nameKey="name" />}
+          className="mt-1 flex-wrap gap-x-4 gap-y-1.5"
         />
       </PieChart>
     </ChartContainer>
@@ -112,112 +133,70 @@ export function CategoryDonut({data, colors, className}) {
 
 /**
  * Horizontal bars for a "top N" ranking. A cluster can have hundreds of
- * namespaces, so the caller passes the slice worth looking at.
+ * namespaces, so the caller passes the slice worth looking at. One bar colour
+ * throughout: the categories are a ranking, not five separate series.
  */
-export function RankedBarChart({data, limit = 12, valueLabel, className}) {
+export function RankedBarChart({data, limit = 10, valueLabel, className}) {
   const rows = toEntries(data)
     .sort((a, b) => b.value - a.value)
     .slice(0, limit);
   if (rows.length === 0) {
     return null;
   }
-  const config = {value: {label: valueLabel}};
+  const config = {value: {label: valueLabel, color: "var(--chart-1)"}};
 
   return (
     <ChartContainer config={config} className={className}>
-      <BarChart data={rows} layout="vertical" margin={{top: 8, right: 24, bottom: 8, left: 8}}>
-        <XAxis type="number" allowDecimals={false} tickLine={false} axisLine={false} fontSize={11} />
+      <BarChart accessibilityLayer data={rows} layout="vertical" margin={{left: 4, right: 32}}>
+        <CartesianGrid horizontal={false} />
         <YAxis
-          type="category"
           dataKey="name"
-          width={130}
+          type="category"
+          width={132}
           tickLine={false}
           axisLine={false}
-          fontSize={11}
-          tickFormatter={(value) => truncate(value, 20)}
+          tickMargin={8}
+          tickFormatter={(value) => truncate(value, 18)}
         />
-        <ChartTooltip content={<ChartTooltipContent />} />
-        <Bar dataKey="value" radius={[0, 4, 4, 0]} maxBarSize={26}>
-          {rows.map((row, index) => (
-            <Cell key={row.name} fill={CHART_COLORS[index % CHART_COLORS.length]} />
-          ))}
+        <XAxis dataKey="value" type="number" hide />
+        <ChartTooltip cursor={false} content={<ChartTooltipContent indicator="line" />} />
+        <Bar dataKey="value" fill="var(--color-value)" radius={4} maxBarSize={28}>
+          <LabelList
+            dataKey="value"
+            position="right"
+            offset={8}
+            className="fill-muted-foreground"
+            fontSize={12}
+          />
         </Bar>
       </BarChart>
     </ChartContainer>
   );
 }
 
-// Slice labels sit just outside the ring: the band of a thin donut is narrower
-// than the words that would have to fit in it.
-function renderSliceLabel({cx, cy, midAngle, outerRadius, percent, name}) {
-  // A sliver's label lands on top of its neighbour's; the legend and the
-  // tooltip still carry the name.
-  if (percent < 0.08) {
-    return null;
-  }
-  const x = cx + (outerRadius + 12) * Math.cos(-midAngle * RADIAN);
-  const y = cy + (outerRadius + 12) * Math.sin(-midAngle * RADIAN);
-  return (
-    <text
-      x={x}
-      y={y}
-      fontSize={11}
-      textAnchor={x > cx ? "start" : "end"}
-      dominantBaseline="central"
-      className="fill-muted-foreground"
-    >
-      {truncate(name, 12)}
-    </text>
-  );
-}
-
 /**
- * Two rings side by side, for a pair of breakdowns of the same population —
- * nodes by OS next to nodes by architecture.
+ * Single-percentage gauge. The muted track behind the arc is the background
+ * sector recharts draws, which the chart container already themes.
  */
-export function DualCategoryPie({left, right, className}) {
-  const leftEntries = toEntries(left);
-  const rightEntries = toEntries(right);
-  if (leftEntries.length === 0 && rightEntries.length === 0) {
-    return null;
-  }
-  const config = {...paletteConfig(leftEntries), ...paletteConfig(rightEntries, null, 4)};
-  // Both rings count the same nodes, so one total gives the share for either.
-  const total = Math.max(
-    leftEntries.reduce((sum, entry) => sum + entry.value, 0),
-    rightEntries.reduce((sum, entry) => sum + entry.value, 0));
-
-  const ring = (entries, cx, offset) => (
-    <Pie
-      data={entries}
-      dataKey="value"
-      nameKey="name"
-      cx={cx}
-      cy="45%"
-      innerRadius="26%"
-      outerRadius="52%"
-      strokeWidth={2}
-      labelLine={false}
-      label={renderSliceLabel}
-    >
-      {entries.map((entry, index) => (
-        <Cell
-          key={entry.name}
-          fill={CHART_COLORS[(index + offset) % CHART_COLORS.length]}
-          className="stroke-background"
-        />
-      ))}
-    </Pie>
-  );
+export function RadialGauge({value = 0, label, caption, color = "var(--chart-1)", className}) {
+  const percent = Math.min(100, Math.max(0, Number(value) || 0));
+  const config = {value: {label: label ?? "", color}};
 
   return (
-    <ChartContainer config={config} className={className}>
-      <PieChart>
-        <ChartTooltip content={<ChartTooltipContent hideLabel nameKey="name" formatter={shareFormatter(total)} />} />
-        {ring(leftEntries, "30%", 0)}
-        {ring(rightEntries, "70%", 4)}
-        <ChartLegend content={<ChartLegendContent nameKey="name" className="flex-wrap" />} />
-      </PieChart>
+    <ChartContainer config={config} className={cn("mx-auto aspect-square", className)}>
+      <RadialBarChart
+        data={[{name: "value", value: percent}]}
+        startAngle={90}
+        endAngle={-270}
+        innerRadius="68%"
+        outerRadius="100%"
+      >
+        <PolarAngleAxis type="number" domain={[0, 100]} angleAxisId={0} tick={false} />
+        <RadialBar dataKey="value" angleAxisId={0} background cornerRadius={8} fill={color} />
+        <PolarRadiusAxis tick={false} tickLine={false} axisLine={false}>
+          <Label content={CenteredTotal({value: `${percent}%`, label: caption})} />
+        </PolarRadiusAxis>
+      </RadialBarChart>
     </ChartContainer>
   );
 }

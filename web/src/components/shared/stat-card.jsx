@@ -1,48 +1,59 @@
 import {cn} from "@/lib/utils";
-import {Progress} from "@/components/ui/progress";
+import {Card, CardAction, CardDescription, CardFooter, CardHeader, CardTitle} from "@/components/ui/card";
+
+// `tone` tints the icon chip rather than the number. A wall of these has to
+// read as one surface, and a grid of differently coloured figures does not.
+const TONE_CLASSES = {
+  default: "bg-muted text-muted-foreground border-transparent",
+  success: "border-success/25 bg-success/10 text-success",
+  warning: "border-warning/30 bg-warning/12 text-warning",
+  danger: "border-destructive/25 bg-destructive/10 text-destructive",
+  info: "border-info/25 bg-info/10 text-info",
+};
 
 /**
  * A single number with its label, used across the dashboard and the monitor
- * page. `tone` colours the value itself rather than the card, so a wall of
- * these still reads as one surface.
+ * page. Built on the card's own header slots so the label, the figure and the
+ * icon line up with every other card on the page.
  */
-export function StatCard({label, value, suffix, icon: Icon, tone = "default", hint, percent, className, onClick}) {
-  const toneClass = {
-    default: "text-foreground",
-    success: "text-success",
-    warning: "text-warning",
-    danger: "text-destructive",
-    info: "text-info",
-  }[tone];
-
-  const Wrapper = onClick ? "button" : "div";
+export function StatCard({label, value, suffix, icon: Icon, tone = "default", hint, className, onClick}) {
+  // Most values are a figure or two; a timestamp is not, and at the headline
+  // size it would wrap and drag the whole row of cards taller.
+  const wordy = String(value ?? "").length > 12;
 
   return (
-    <Wrapper
-      type={onClick ? "button" : undefined}
+    <Card
       onClick={onClick}
       className={cn(
-        "bg-card flex flex-col gap-2 rounded-xl border p-4 text-left shadow-sm",
-        onClick && "hover:border-ring/50 transition-colors",
+        "@container/card from-primary/5 to-card dark:bg-card gap-0 bg-gradient-to-t",
+        onClick && "hover:border-ring/60 cursor-pointer transition-colors",
         className
       )}
     >
-      <div className="flex items-center justify-between gap-2">
-        <span className="text-muted-foreground truncate text-xs font-medium">{label}</span>
-        {Icon ? <Icon className="text-muted-foreground size-4 shrink-0" /> : null}
-      </div>
-      <div className="flex items-baseline gap-1">
-        <span className={cn("text-2xl font-semibold tracking-tight tabular-nums", toneClass)}>{value}</span>
-        {suffix ? <span className="text-muted-foreground text-xs">{suffix}</span> : null}
-      </div>
-      {percent !== undefined && percent !== null ? (
-        <Progress
-          value={Math.min(100, Math.max(0, Number(percent) || 0))}
-          tone={percent >= 90 ? "danger" : percent >= 75 ? "warning" : "success"}
-          className="h-1.5"
-        />
+      <CardHeader>
+        <CardDescription className="truncate">{label}</CardDescription>
+        <CardTitle
+          className={cn(
+            "font-semibold tracking-tight tabular-nums",
+            wordy ? "text-xl" : "text-2xl @[16rem]/card:text-3xl"
+          )}
+        >
+          {value}
+          {suffix ? (
+            <span className="text-muted-foreground ml-1.5 text-sm font-normal tracking-normal">{suffix}</span>
+          ) : null}
+        </CardTitle>
+        {Icon ? (
+          <CardAction>
+            <span className={cn("flex size-8 items-center justify-center rounded-lg border", TONE_CLASSES[tone] ?? TONE_CLASSES.default)}>
+              <Icon className="size-4" />
+            </span>
+          </CardAction>
+        ) : null}
+      </CardHeader>
+      {hint ? (
+        <CardFooter className="text-muted-foreground pt-4 text-sm">{hint}</CardFooter>
       ) : null}
-      {hint ? <span className="text-muted-foreground text-xs">{hint}</span> : null}
-    </Wrapper>
+    </Card>
   );
 }

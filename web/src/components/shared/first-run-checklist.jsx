@@ -1,8 +1,10 @@
-import {ArrowRight, KeyRound, Laptop, Network, Rocket} from "lucide-react";
+import {ArrowRight, Check, KeyRound, Laptop, Network, Rocket} from "lucide-react";
 import {useTranslation} from "react-i18next";
 import {Button} from "@/components/ui/button";
-import {Card, CardContent, CardDescription, CardHeader, CardTitle} from "@/components/ui/card";
-import {Checkbox} from "@/components/ui/checkbox";
+import {Card, CardAction, CardContent, CardDescription, CardHeader, CardTitle} from "@/components/ui/card";
+import {Badge} from "@/components/ui/badge";
+import {Progress} from "@/components/ui/progress";
+import {cn} from "@/lib/utils";
 import {isFirstRunComplete} from "@/lib/firstRunChecklist";
 import {useUiMode} from "@/hooks/use-ui-mode";
 
@@ -68,36 +70,47 @@ export function FirstRunChecklist({steps, onAction}) {
 
   return (
     <Card>
-      <CardHeader className="gap-1">
-        <div className="flex items-center justify-between gap-3">
-          <CardTitle className="text-base">{t("onboarding:First-run checklist")}</CardTitle>
-          <span className="text-muted-foreground text-xs tabular-nums">
-            {t("onboarding:{{completed}} of {{total}} complete", {completed, total: steps.length})}
-          </span>
-        </div>
+      <CardHeader>
+        <CardTitle>{t("onboarding:First-run checklist")}</CardTitle>
         <CardDescription>{t("onboarding:Complete these steps to get a working CasOS cluster.")}</CardDescription>
+        <CardAction>
+          <Badge variant="outline" className="tabular-nums">
+            {t("onboarding:{{completed}} of {{total}} complete", {completed, total: steps.length})}
+          </Badge>
+        </CardAction>
       </CardHeader>
-      <CardContent className="grid gap-0">
-        {steps.map((step) => {
-          const Icon = STEP_ICONS[step.key];
-          const label = labels[step.key];
-          return (
-            <div key={step.key} className="flex items-start gap-3 border-b py-3 last:border-b-0">
-              <Checkbox checked={step.done} disabled aria-label={label.title} className="mt-0.5" />
-              <Icon className={step.done ? "text-success mt-0.5 size-4 shrink-0" : "text-info mt-0.5 size-4 shrink-0"} />
-              <div className="min-w-0 flex-1">
-                <p className={step.done ? "text-muted-foreground text-sm line-through" : "text-sm font-medium"}>{label.title}</p>
-                <p className="text-muted-foreground mt-1 text-xs">{label.description}</p>
+      <CardContent className="grid gap-4">
+        <Progress value={(completed / steps.length) * 100} className="h-1.5" />
+        <div className="grid">
+          {steps.map((step) => {
+            const Icon = step.done ? Check : STEP_ICONS[step.key];
+            const label = labels[step.key];
+            return (
+              <div key={step.key} className="flex items-start gap-3 border-b py-3 first:pt-0 last:border-b-0 last:pb-0">
+                <span
+                  className={cn(
+                    "flex size-7 shrink-0 items-center justify-center rounded-full border",
+                    step.done ? "bg-primary text-primary-foreground border-transparent" : "bg-muted text-muted-foreground"
+                  )}
+                >
+                  <Icon className="size-3.5" />
+                </span>
+                <div className="min-w-0 flex-1 space-y-1">
+                  <p className={cn("text-sm leading-none font-medium", step.done && "text-muted-foreground line-through")}>
+                    {label.title}
+                  </p>
+                  <p className="text-muted-foreground text-sm">{label.description}</p>
+                </div>
+                {!step.done && onAction ? (
+                  <Button variant="outline" size="sm" className="shrink-0" onClick={() => onAction(step.key)}>
+                    {label.action}
+                    <ArrowRight />
+                  </Button>
+                ) : null}
               </div>
-              {!step.done && onAction ? (
-                <Button variant="link" size="sm" className="h-auto min-w-0 shrink-0 whitespace-normal px-1 text-right" onClick={() => onAction(step.key)}>
-                  {label.action}
-                  <ArrowRight />
-                </Button>
-              ) : null}
-            </div>
-          );
-        })}
+            );
+          })}
+        </div>
       </CardContent>
     </Card>
   );

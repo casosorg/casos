@@ -1,7 +1,7 @@
 import React, {useEffect, useMemo, useState} from "react";
 import {useHistory} from "react-router-dom";
 import {useTranslation} from "react-i18next";
-import {ArrowRight, Boxes, CheckCircle2, Layers, Network, Server, Settings, TriangleAlert} from "lucide-react";
+import {ArrowRight, Boxes, CheckCircle2, Layers, Network, Server, TriangleAlert} from "lucide-react";
 import * as AccountBackend from "@/backend/AccountBackend";
 import * as DashboardBackend from "@/backend/DashboardBackend";
 import * as HelmBackend from "@/backend/HelmBackend";
@@ -9,60 +9,63 @@ import * as MachineBackend from "@/backend/MachineBackend";
 import {useResource} from "@/hooks/use-resource";
 import {Badge} from "@/components/ui/badge";
 import {Button} from "@/components/ui/button";
-import {Card, CardContent, CardHeader, CardTitle} from "@/components/ui/card";
-import {Alert, AlertTitle, MessageAlert} from "@/components/ui/alert";
+import {
+  Card,
+  CardAction,
+  CardContent,
+  CardDescription,
+  CardFooter,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
+import {Alert, AlertDescription, AlertTitle, MessageAlert} from "@/components/ui/alert";
 import {Progress} from "@/components/ui/progress";
 import {DataTable} from "@/components/shared/data-table";
 import {PageContainer} from "@/components/shared/page-header";
 import {StatCard} from "@/components/shared/stat-card";
 import {Loading} from "@/components/shared/loading";
-import {RadialProgress} from "@/components/shared/radial-progress";
 import {FirstRunChecklist} from "@/components/shared/first-run-checklist";
-import {CategoryDonut, DualCategoryPie, RankedBarChart} from "@/components/shared/charts";
+import {CategoryDonut, RadialGauge, RankedBarChart} from "@/components/shared/charts";
 import {getDashboardHealthState} from "@/lib/dashboardHealth";
 import {getFirstRunChecklist, isFirstRunComplete, markFirstRunChecklistDone, readFirstRunChecklistDone} from "@/lib/firstRunChecklist";
 import {useUiMode} from "@/hooks/use-ui-mode";
 import SimpleHome from "@/pages/simple/SimpleHome";
 
-const POD_PHASE_COLORS = {
-  Running: "#3b82f6",
-  Pending: "#0ea5e9",
-  Succeeded: "#14b8a6",
-  Failed: "#6366f1",
-  Unknown: "#8b5cf6",
-};
-
-const SVC_TYPE_COLORS = {
-  ClusterIP: "#3b82f6",
-  NodePort: "#06b6d4",
-  LoadBalancer: "#6366f1",
-  ExternalName: "#14b8a6",
-};
-
 function formatMiB(mib) {
-  return mib >= 1024 ? `${(mib / 1024).toFixed(1)} GiB` : `${mib} MiB`;
+  return mib >= 1024 ? `${(mib / 1024).toFixed(1)} GiB` : `${Math.round(mib)} MiB`;
 }
 
-function GaugeCard({title, percent, tone, primaryValue, primaryLabel, secondaryValue, secondaryLabel}) {
+function percentOf(used, total) {
+  return total > 0 ? Math.min(100, Math.round((used / total) * 100)) : 0;
+}
+
+/**
+ * A chart with its title, its subtitle and a closing line, so every panel on
+ * the page has the same three-part shape whatever it draws.
+ */
+function ChartCard({title, description, footer, children, className}) {
   return (
-    <Card className="h-full gap-3 py-4">
-      <CardHeader className="px-4">
-        <CardTitle className="text-sm">{title}</CardTitle>
+    <Card className={className}>
+      <CardHeader>
+        <CardTitle>{title}</CardTitle>
+        {description ? <CardDescription>{description}</CardDescription> : null}
       </CardHeader>
-      <CardContent className="flex items-center justify-center gap-8 px-4 pb-2">
-        <RadialProgress value={percent} tone={tone} label={primaryLabel} />
-        <div className="grid gap-4">
-          <div>
-            <div className={tone === "info" ? "text-info text-2xl font-semibold" : "text-2xl font-semibold"}>{primaryValue}</div>
-            <div className="text-muted-foreground text-sm">{primaryLabel}</div>
-          </div>
-          <div>
-            <div className="text-2xl font-semibold text-violet-500">{secondaryValue}</div>
-            <div className="text-muted-foreground text-sm">{secondaryLabel}</div>
-          </div>
-        </div>
-      </CardContent>
+      <CardContent>{children}</CardContent>
+      {footer ? <CardFooter className="text-muted-foreground text-sm">{footer}</CardFooter> : null}
     </Card>
+  );
+}
+
+function UtilizationRow({label, percent, detail}) {
+  return (
+    <div className="grid gap-2">
+      <div className="flex items-baseline justify-between gap-2">
+        <span className="text-sm font-medium">{label}</span>
+        <span className="text-muted-foreground text-sm tabular-nums">{percent}%</span>
+      </div>
+      <Progress value={percent} className="h-2" />
+      <span className="text-muted-foreground text-xs tabular-nums">{detail}</span>
+    </div>
   );
 }
 
@@ -165,11 +168,19 @@ function DashboardPage({account, accountUpdatedAt, onOpenAccount}) {
     return firstRunChecklist ? <PageContainer>{firstRunChecklist}</PageContainer> : null;
   }
 
-  const nodeReadyRate = stats.nodesTotal > 0 ? Number(((stats.nodesReady / stats.nodesTotal) * 100).toFixed(1)) : 0;
-  const podRunningRate = stats.podsTotal > 0 ? Number(((stats.podsRunning / stats.podsTotal) * 100).toFixed(1)) : 0;
+  const nodesOffline = stats.nodesTotal - stats.nodesReady;
+  const podsOther = stats.podsTotal - stats.podsRunning;
+  const deploymentsUnavailable = stats.deploymentsTotal - stats.deploymentsAvailable;
+  const nodeReadyRate = percentOf(stats.nodesReady, stats.nodesTotal);
+  const podRunningRate = percentOf(stats.podsRunning, stats.podsTotal);
+  const cpuPercent = percentOf(stats.clusterCPUUsedM, stats.clusterCPUTotalM);
+  const memPercent = percentOf(stats.clusterMemUsedMi, stats.clusterMemTotalMi);
   const unhealthyPods = Array.isArray(stats.unhealthyPods) ? stats.unhealthyPods : [];
   const {healthStatus, notReadyNodes, needsNodes} = getDashboardHealthState(stats);
   const clusterHealthy = healthStatus === "healthy";
+  const deploymentsDegraded = deploymentsUnavailable > 0;
+  const hasClusterMetrics = stats.clusterCPUTotalM > 0 || stats.clusterMemTotalMi > 0;
+
   let healthMessage = "";
   if (healthStatus === "unknown") {
     healthMessage = t("dashboard:health data unavailable");
@@ -183,8 +194,6 @@ function DashboardPage({account, accountUpdatedAt, onOpenAccount}) {
     }
     healthMessage = unhealthyDetails.join(", ") || t("dashboard:alert unhealthy cluster");
   }
-  const deploymentsDegraded = stats.deploymentsAvailable < stats.deploymentsTotal;
-  const hasClusterMetrics = stats.clusterCPUTotalM > 0 || stats.clusterMemTotalMi > 0;
 
   const unhealthyColumns = [
     {key: "namespace", title: t("dashboard:col Namespace"), dataIndex: "namespace", width: 180},
@@ -219,13 +228,15 @@ function DashboardPage({account, accountUpdatedAt, onOpenAccount}) {
       );
     }
   } else if (!clusterHealthy) {
+    const listUnhealthy = healthStatus === "unhealthy" && unhealthyPods.length > 0;
     clusterAlert = (
-      <div className="grid gap-2">
+      <div className="grid gap-4">
         <Alert variant={healthStatus === "unknown" ? "warning" : "destructive"}>
           <TriangleAlert />
           <AlertTitle className="line-clamp-none break-words">{healthMessage}</AlertTitle>
+          {listUnhealthy ? <AlertDescription>{t("dashboard:alert inspect pods")}</AlertDescription> : null}
         </Alert>
-        {healthStatus === "unhealthy" && unhealthyPods.length > 0 ? (
+        {listUnhealthy ? (
           <DataTable
             columns={unhealthyColumns}
             dataSource={unhealthyPods}
@@ -251,115 +262,148 @@ function DashboardPage({account, accountUpdatedAt, onOpenAccount}) {
       {firstRunChecklist}
       {clusterAlert}
 
-      <div className="grid grid-cols-2 gap-3 md:grid-cols-4 xl:grid-cols-8">
-        <StatCard label={t("dashboard:stat Nodes total")} value={stats.nodesTotal} icon={Server} tone="info" />
-        <StatCard label={t("dashboard:stat Nodes ready")} value={stats.nodesReady} icon={CheckCircle2} tone="success" />
-        <StatCard label={t("dashboard:stat Pods total")} value={stats.podsTotal} icon={Boxes} tone="info" />
-        <StatCard label={t("dashboard:stat Pods running")} value={stats.podsRunning} icon={Boxes} tone="info" />
-        <StatCard label={t("dashboard:stat Namespaces")} value={stats.namespacesTotal} icon={Settings} />
-        <StatCard label={t("dashboard:stat Services")} value={stats.servicesTotal} icon={Network} />
-        <StatCard label={t("dashboard:stat Deployments total")} value={stats.deploymentsTotal} icon={Layers} />
+      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+        <StatCard
+          label={t("dashboard:stat Nodes ready")}
+          value={stats.nodesReady}
+          suffix={`/ ${stats.nodesTotal}`}
+          icon={Server}
+          tone={nodesOffline > 0 ? "warning" : "success"}
+          hint={nodesOffline > 0
+            ? t("dashboard:alert nodes not ready", {count: nodesOffline})
+            : t("dashboard:hint all nodes ready")}
+        />
+        <StatCard
+          label={t("dashboard:stat Pods running")}
+          value={stats.podsRunning}
+          suffix={`/ ${stats.podsTotal}`}
+          icon={Boxes}
+          tone={unhealthyPods.length > 0 ? "danger" : "success"}
+          hint={unhealthyPods.length > 0
+            ? t("dashboard:alert unhealthy", {count: unhealthyPods.length})
+            : t("dashboard:hint pods other", {n: podsOther})}
+        />
         <StatCard
           label={t("dashboard:stat Deployments available")}
           value={stats.deploymentsAvailable}
           suffix={`/ ${stats.deploymentsTotal}`}
-          icon={CheckCircle2}
+          icon={Layers}
           tone={deploymentsDegraded ? "danger" : "success"}
-          className={deploymentsDegraded ? "border-destructive/40" : undefined}
+          hint={deploymentsDegraded
+            ? t("dashboard:hint deployments degraded", {n: deploymentsUnavailable})
+            : t("dashboard:hint all deployments available")}
+        />
+        <StatCard
+          label={t("dashboard:stat Services")}
+          value={stats.servicesTotal}
+          icon={Network}
+          tone="info"
+          hint={t("dashboard:hint across namespaces", {n: stats.namespacesTotal})}
         />
       </div>
 
       {hasClusterMetrics ? (
-        <div className="grid gap-3 md:grid-cols-2">
-          <Card className="gap-2 py-4">
-            <CardContent className="grid gap-2 px-4">
-              <span className="text-muted-foreground text-sm font-medium">CPU</span>
-              <div className="flex items-center gap-3">
-                <Progress
-                  value={stats.clusterCPUTotalM > 0 ? Math.round((stats.clusterCPUUsedM / stats.clusterCPUTotalM) * 100) : 0}
-                  tone="info"
-                  className="flex-1"
-                />
-                <span className="text-muted-foreground text-xs whitespace-nowrap tabular-nums">
-                  {(stats.clusterCPUUsedM / 1000).toFixed(2)} / {(stats.clusterCPUTotalM / 1000).toFixed(2)} cores
-                </span>
-              </div>
-            </CardContent>
-          </Card>
-
-          <Card className="gap-2 py-4">
-            <CardContent className="grid gap-2 px-4">
-              <span className="text-muted-foreground text-sm font-medium">Memory</span>
-              <div className="flex items-center gap-3">
-                <Progress
-                  value={stats.clusterMemTotalMi > 0 ? Math.round((stats.clusterMemUsedMi / stats.clusterMemTotalMi) * 100) : 0}
-                  tone="success"
-                  className="flex-1"
-                />
-                <span className="text-muted-foreground text-xs whitespace-nowrap tabular-nums">
-                  {formatMiB(stats.clusterMemUsedMi)} / {formatMiB(stats.clusterMemTotalMi)}
-                </span>
-              </div>
-            </CardContent>
-          </Card>
-        </div>
+        <Card>
+          <CardHeader>
+            <CardTitle>{t("dashboard:chart Cluster utilization")}</CardTitle>
+            <CardDescription>{t("dashboard:chart Cluster utilization description")}</CardDescription>
+            <CardAction>
+              <Badge variant="outline">{t("dashboard:label Live")}</Badge>
+            </CardAction>
+          </CardHeader>
+          <CardContent className="grid gap-6 md:grid-cols-2">
+            <UtilizationRow
+              label={t("dashboard:label CPU")}
+              percent={cpuPercent}
+              detail={`${(stats.clusterCPUUsedM / 1000).toFixed(2)} / ${(stats.clusterCPUTotalM / 1000).toFixed(2)} ${t("dashboard:label cores")}`}
+            />
+            <UtilizationRow
+              label={t("dashboard:label Memory")}
+              percent={memPercent}
+              detail={`${formatMiB(stats.clusterMemUsedMi)} / ${formatMiB(stats.clusterMemTotalMi)}`}
+            />
+          </CardContent>
+        </Card>
       ) : null}
 
-      <div className="grid gap-3 xl:grid-cols-[7fr_5fr]">
-        <Card className="gap-3 py-4">
-          <CardHeader className="px-4">
-            <CardTitle className="text-sm">{t("dashboard:chart Pods by namespace")}</CardTitle>
-          </CardHeader>
-          <CardContent className="px-2">
-            <RankedBarChart data={stats.podsByNamespace} valueLabel="Pods" className="aspect-auto h-[280px] w-full" />
-          </CardContent>
-        </Card>
+      <div className="grid gap-4 xl:grid-cols-3">
+        <ChartCard
+          className="xl:col-span-2"
+          title={t("dashboard:chart Pods by namespace")}
+          description={t("dashboard:chart Pods by namespace description")}
+          footer={t("dashboard:hint across namespaces", {n: stats.namespacesTotal})}
+        >
+          <RankedBarChart
+            data={stats.podsByNamespace}
+            valueLabel={t("dashboard:stat Pods total")}
+            className="aspect-auto h-[300px] w-full"
+          />
+        </ChartCard>
 
-        <Card className="gap-3 py-4">
-          <CardHeader className="px-4">
-            <CardTitle className="text-sm">{t("dashboard:chart Pod phase")}</CardTitle>
-          </CardHeader>
-          <CardContent className="px-2">
-            <CategoryDonut data={stats.podsByPhase} colors={POD_PHASE_COLORS} className="aspect-auto h-[280px] w-full" />
-          </CardContent>
-        </Card>
+        <ChartCard title={t("dashboard:chart Pod phase")} description={t("dashboard:chart Pod phase description")}>
+          <CategoryDonut data={stats.podsByPhase} centerLabel={t("dashboard:label Pods")} className="max-h-[280px] w-full" />
+        </ChartCard>
       </div>
 
-      <div className="grid gap-3 xl:grid-cols-[7fr_7fr_10fr]">
-        <GaugeCard
+      <div className="grid gap-4 xl:grid-cols-3">
+        <ChartCard
           title={t("dashboard:chart Node health")}
-          percent={nodeReadyRate}
-          tone="info"
-          primaryValue={stats.nodesReady}
-          primaryLabel={t("dashboard:label Online")}
-          secondaryValue={stats.nodesTotal - stats.nodesReady}
-          secondaryLabel={t("dashboard:label Offline")}
-        />
-        <GaugeCard
+          description={t("dashboard:chart Node health description")}
+          footer={t("dashboard:hint online offline", {online: stats.nodesReady, offline: nodesOffline})}
+        >
+          <RadialGauge
+            value={nodeReadyRate}
+            label={t("dashboard:label Online")}
+            caption={t("dashboard:label Online")}
+            color="var(--chart-1)"
+            className="max-h-[220px] w-full"
+          />
+        </ChartCard>
+
+        <ChartCard
           title={t("dashboard:chart Pod availability")}
-          percent={podRunningRate}
-          tone="info"
-          primaryValue={stats.podsRunning}
-          primaryLabel={t("dashboard:label Running")}
-          secondaryValue={stats.podsTotal - stats.podsRunning}
-          secondaryLabel={t("dashboard:label Other")}
-        />
-        <Card className="gap-3 py-4">
-          <CardHeader className="px-4">
-            <CardTitle className="text-sm">{t("dashboard:chart Service types")}</CardTitle>
-          </CardHeader>
-          <CardContent className="px-2">
-            <CategoryDonut data={stats.servicesByType} colors={SVC_TYPE_COLORS} className="aspect-auto h-[200px] w-full" />
-          </CardContent>
-        </Card>
+          description={t("dashboard:chart Pod availability description")}
+          footer={t("dashboard:hint running other", {running: stats.podsRunning, other: podsOther})}
+        >
+          <RadialGauge
+            value={podRunningRate}
+            label={t("dashboard:label Running")}
+            caption={t("dashboard:label Running")}
+            color="var(--chart-2)"
+            className="max-h-[220px] w-full"
+          />
+        </ChartCard>
+
+        <ChartCard
+          title={t("dashboard:chart Service types")}
+          description={t("dashboard:chart Service types description")}
+        >
+          <CategoryDonut
+            data={stats.servicesByType}
+            centerLabel={t("dashboard:label Services")}
+            className="max-h-[220px] w-full"
+          />
+        </ChartCard>
       </div>
 
-      <Card className="gap-3 py-4">
-        <CardHeader className="px-4">
-          <CardTitle className="text-sm">{t("dashboard:chart Node infra")}</CardTitle>
+      <Card>
+        <CardHeader>
+          <CardTitle>{t("dashboard:chart Node infra")}</CardTitle>
+          <CardDescription>{t("dashboard:chart Node infra description")}</CardDescription>
         </CardHeader>
-        <CardContent className="px-2">
-          <DualCategoryPie left={stats.nodesByOS} right={stats.nodesByArch} className="aspect-auto h-[220px] w-full" />
+        <CardContent className="grid gap-6 sm:grid-cols-2">
+          <div className="grid gap-2">
+            <span className="text-muted-foreground text-center text-sm font-medium">
+              {t("dashboard:label Operating system")}
+            </span>
+            <CategoryDonut data={stats.nodesByOS} centerLabel={t("dashboard:label Nodes")} className="max-h-[200px] w-full" />
+          </div>
+          <div className="grid gap-2">
+            <span className="text-muted-foreground text-center text-sm font-medium">
+              {t("dashboard:label Architecture")}
+            </span>
+            <CategoryDonut data={stats.nodesByArch} centerLabel={t("dashboard:label Nodes")} className="max-h-[200px] w-full" />
+          </div>
         </CardContent>
       </Card>
     </PageContainer>
