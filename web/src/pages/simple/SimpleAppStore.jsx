@@ -50,7 +50,7 @@ function AppCard({app, installed, onInstall}) {
 function SimpleAppStore() {
   const history = useHistory();
   const {t} = useTranslation();
-  const {setMode} = useUiMode();
+  const {switchMode} = useUiMode();
   const [category, setCategory] = useState("all");
   const [query, setQuery] = useState("");
   const [installTarget, setInstallTarget] = useState(null);
@@ -78,7 +78,7 @@ function SimpleAppStore() {
         title={t("simple:App Store")}
         description={t("simple:Pick an app and CasOS installs and configures it for you.")}
         actions={
-          <Button variant="outline" onClick={() => history.push("/helm-releases")}>
+          <Button variant="outline" onClick={() => history.push("/simple/apps")}>
             {t("simple:My Apps")}
           </Button>
         }
@@ -133,7 +133,7 @@ function SimpleAppStore() {
         <p className="text-muted-foreground max-w-md text-xs">
           {t("simple:Advanced mode opens the full catalogue with thousands of apps, custom repositories and every install option.")}
         </p>
-        <Button variant="outline" size="sm" className="mt-1" onClick={() => setMode("advanced")}>
+        <Button variant="outline" size="sm" className="mt-1" onClick={() => switchMode("advanced")}>
           {t("simple:Browse all apps")}
         </Button>
       </div>

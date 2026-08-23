@@ -15,9 +15,9 @@ async function expectOkJson(response) {
 async function signInAsCiUser(page) {
   expect(e2eToken).toBeTruthy();
 
-  // These specs drive the full Kubernetes surface, which is advanced mode. A
-  // fresh browser starts in simple mode, so the opt-in is explicit rather than
-  // whatever the default happens to be.
+  // Every screen is decided by its URL, so this only settles where "/" lands:
+  // these specs drive the full Kubernetes surface, and a fresh browser would
+  // otherwise be sent to simple mode's home.
   await page.addInitScript(() => {
     localStorage.setItem("language", "en");
     localStorage.setItem("uiMode", "advanced");

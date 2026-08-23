@@ -163,7 +163,7 @@ function FilterChip({active, label, count, onClick}) {
 
 export default function HelmReleasePage() {
   const {t} = useTranslation();
-  const {advanced} = useUiMode();
+  const {advanced, resolvePath} = useUiMode();
   const router = useHistory();
   const [namespace, setNamespace] = useState("all");
   const [releases, setReleases] = useState([]);
@@ -529,7 +529,7 @@ export default function HelmReleasePage() {
                 <RefreshCw />
                 {t("general:Refresh")}
               </Button>
-              <Button size="sm" onClick={() => router.push("/app-store")}>
+              <Button size="sm" onClick={() => router.push(resolvePath("/app-store"))}>
                 <Plus />
                 {t("helm:Install")}
               </Button>
@@ -547,7 +547,7 @@ export default function HelmReleasePage() {
                   <RefreshCw />
                   {t("general:Refresh")}
                 </Button>
-                <Button onClick={() => router.push("/app-store")}>
+                <Button onClick={() => router.push(resolvePath("/app-store"))}>
                   <Plus />
                   {t("simple:Install an app")}
                 </Button>
@@ -606,7 +606,7 @@ export default function HelmReleasePage() {
             onOpenLogs={openLogs}
             onUpgrade={(release) => setUpgradeTarget(helmReleaseUpgradeTarget(release))}
             onUninstall={handleUninstall}
-            onInstallMore={() => router.push("/app-store")}
+            onInstallMore={() => router.push(resolvePath("/app-store"))}
           />
         </>
       )}

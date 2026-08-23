@@ -50,17 +50,12 @@ const ROUTES = [
   "/machines",
   "/sites",
   "/sites/site-built-in",
-  // Simple mode's combined pages. They are ordinary routes, so they are walked
-  // here with everything else rather than in a mode-specific spec.
-  "/devices",
-  "/health",
   "/no-such-page",
 ];
 
-// Simple mode swaps the home page, the App Store and the navigation rail for
-// different components, so those three are walked a second time with the mode
-// flipped — a crash in either one is invisible from the other.
-const SIMPLE_MODE_ROUTES = ["/dashboard", "/app-store", "/helm-releases", "/devices", "/health"];
+// Simple mode has URLs of its own, so its screens are a separate walk rather
+// than the same paths with a flag flipped.
+const SIMPLE_MODE_ROUTES = ["/simple", "/simple/app-store", "/simple/apps", "/simple/devices", "/simple/health"];
 
 // A rendered screen always carries the shell's own chrome; anything shorter
 // than this means React unmounted the tree.
@@ -102,7 +97,6 @@ test("every route renders without a React crash @smoke", async({page}) => {
 test("simple mode renders its own screens without a React crash @smoke", async({page}) => {
   test.setTimeout(120_000);
   await signInAsCiUser(page);
-  await page.addInitScript(() => localStorage.setItem("uiMode", "simple"));
 
   const crashes = [];
   page.on("pageerror", (error) => crashes.push(`pageerror: ${error.message}`));

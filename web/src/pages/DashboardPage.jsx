@@ -69,7 +69,7 @@ function GaugeCard({title, percent, tone, primaryValue, primaryLabel, secondaryV
 function DashboardPage({account, accountUpdatedAt, onOpenAccount}) {
   const history = useHistory();
   const {t} = useTranslation();
-  const {advanced} = useUiMode();
+  const {advanced, resolvePath} = useUiMode();
   const {data: stats, loading} = useResource(() => DashboardBackend.getDashboard(), [], {initialData: null});
 
   // Setup is a one-time affair, so once it is done these three requests stop
@@ -143,9 +143,9 @@ function DashboardPage({account, accountUpdatedAt, onOpenAccount}) {
         if (step === "password") {
           onOpenAccount?.();
         } else if (step === "machine" || step === "node") {
-          history.push(advanced ? "/machines" : "/devices");
+          history.push(resolvePath("/machines"));
         } else if (step === "app") {
-          history.push("/app-store");
+          history.push(resolvePath("/app-store"));
         }
       }}
     />

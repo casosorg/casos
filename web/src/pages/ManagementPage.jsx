@@ -2,7 +2,7 @@ import React, {useEffect, useRef, useState} from "react";
 import {useTranslation} from "react-i18next";
 import {withRouter} from "react-router-dom";
 import * as Setting from "@/Setting";
-import {findGroupOf} from "@/nav";
+import {findGroupOf, navKeyForPath} from "@/nav";
 import {AppSidebar, persistOpenKeys, readSavedOpenKeys} from "@/components/shared/app-sidebar";
 import {AppHeader} from "@/components/shared/app-header";
 import {AccountDialog} from "@/components/shared/account-dialog";
@@ -22,8 +22,7 @@ function ManagementPage(props) {
   const wasCollapsedRef = useRef(false);
 
   const currentUri = uri || window.location.pathname;
-  const firstSegment = currentUri.split("/").filter(Boolean)[0] || "dashboard";
-  const selectedKey = `/${firstSegment}`;
+  const selectedKey = navKeyForPath(currentUri);
 
   const [openKeys, setOpenKeys] = useState(() => {
     if (localStorage.getItem("siderCollapsed") === "true") {

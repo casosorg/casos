@@ -66,7 +66,7 @@ function UsageBar({label, used, total, unit, tone}) {
 function SimpleHome({stats, releases, machines, checklist}) {
   const history = useHistory();
   const {t} = useTranslation();
-  const {setMode} = useUiMode();
+  const {switchMode} = useUiMode();
 
   const {healthStatus, needsNodes} = getDashboardHealthState(stats);
   const unhealthyPods = Array.isArray(stats?.unhealthyPods) ? stats.unhealthyPods : [];
@@ -84,7 +84,7 @@ function SimpleHome({stats, releases, machines, checklist}) {
     statusIcon = Laptop;
     statusTitle = t("simple:No computer has joined yet");
     statusText = t("simple:Add a computer before you install anything — that is where your apps will run.");
-    statusAction = {label: t("simple:Add a computer"), to: "/devices"};
+    statusAction = {label: t("simple:Add a computer"), to: "/simple/devices"};
   } else if (healthStatus === "unknown") {
     statusTone = "warning";
     statusIcon = TriangleAlert;
@@ -97,7 +97,7 @@ function SimpleHome({stats, releases, machines, checklist}) {
       ? t("simple:{{n}} apps are not working", {n: unhealthyPods.length})
       : t("simple:Something is not healthy");
     statusText = t("simple:Open Health to see what went wrong and read the messages.");
-    statusAction = {label: t("simple:See what is wrong"), to: "/health"};
+    statusAction = {label: t("simple:See what is wrong"), to: "/simple/health"};
   }
 
   const toneClass = {
@@ -135,19 +135,19 @@ function SimpleHome({stats, releases, machines, checklist}) {
           icon={Boxes}
           value={appCount ?? "—"}
           label={t("simple:Installed apps")}
-          onClick={() => history.push("/helm-releases")}
+          onClick={() => history.push("/simple/apps")}
         />
         <CountCard
           icon={Laptop}
           value={deviceCount}
           label={t("simple:Computers")}
-          onClick={() => history.push("/devices")}
+          onClick={() => history.push("/simple/devices")}
         />
         <CountCard
           icon={unhealthyPods.length > 0 ? TriangleAlert : CheckCircle2}
           value={unhealthyPods.length}
           label={t("simple:Apps needing attention")}
-          onClick={() => history.push("/health")}
+          onClick={() => history.push("/simple/health")}
         />
       </div>
 
@@ -177,25 +177,25 @@ function SimpleHome({stats, releases, machines, checklist}) {
           icon={Store}
           title={t("simple:Install an app")}
           description={t("simple:Pick something from the App Store and CasOS sets it up for you.")}
-          onClick={() => history.push("/app-store")}
+          onClick={() => history.push("/simple/app-store")}
         />
         <ActionCard
           icon={Laptop}
           title={t("simple:Add a computer")}
           description={t("simple:Connect another machine so there is more room to run apps.")}
-          onClick={() => history.push("/devices")}
+          onClick={() => history.push("/simple/devices")}
         />
         <ActionCard
           icon={Activity}
           title={t("simple:Something is broken")}
           description={t("simple:Check usage and read the messages your apps wrote.")}
-          onClick={() => history.push("/health")}
+          onClick={() => history.push("/simple/health")}
         />
         <ActionCard
           icon={BarChart3}
           title={t("simple:Show me everything")}
           description={t("simple:Switch to advanced mode for the full dashboard and every Kubernetes page.")}
-          onClick={() => setMode("advanced")}
+          onClick={() => switchMode("advanced")}
         />
       </div>
     </PageContainer>

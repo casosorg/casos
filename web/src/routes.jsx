@@ -1,5 +1,7 @@
 import React, {Suspense, lazy} from "react";
-import {Route, Switch} from "react-router-dom";
+import {Redirect, Route, Switch} from "react-router-dom";
+import {homePath} from "@/nav";
+import {readUiMode} from "@/hooks/use-ui-mode";
 import {Button} from "@/components/ui/button";
 import {Loading} from "@/components/shared/loading";
 import {ResultScreen} from "@/components/shared/misc";
@@ -65,9 +67,12 @@ export function AppRoutes({account, accountUpdatedAt, onOpenAccount, onUpdateSit
   return (
     <Suspense fallback={<Loading type="page" />}>
       <Switch>
+        {/* "/" is the only address that means "wherever I left off", so it is
+            also the only one that consults the stored preference. */}
+        <Route exact path="/" render={() => <Redirect to={homePath(readUiMode())} />} />
         <Route
           exact
-          path={["/", "/dashboard"]}
+          path="/dashboard"
           render={(props) => <DashboardPage account={account} accountUpdatedAt={accountUpdatedAt} onOpenAccount={onOpenAccount} {...props} />}
         />
         <Route exact path="/namespaces" component={NamespaceListPage} />
@@ -103,8 +108,22 @@ export function AppRoutes({account, accountUpdatedAt, onOpenAccount, onUpdateSit
         <Route exact path="/app-store/:sourceSlug" component={AppStorePage} />
         <Route exact path="/helm-releases" component={HelmReleasePage} />
         <Route exact path="/monitor" component={MonitorPage} />
-        <Route exact path="/devices" render={(props) => <DevicesPage account={account} {...props} />} />
-        <Route exact path="/health" component={HealthPage} />
+
+        {/* Simple mode's own addresses. Each one renders the simplified screen
+            whatever the reader last switched to, so a shared link opens the
+            page its sender was looking at. */}
+        <Route
+          exact
+          path="/simple"
+          render={(props) => <DashboardPage account={account} accountUpdatedAt={accountUpdatedAt} onOpenAccount={onOpenAccount} {...props} />}
+        />
+        <Route exact path="/simple/app-store" component={AppStorePage} />
+        <Route exact path="/simple/apps" component={HelmReleasePage} />
+        <Route exact path="/simple/devices" render={(props) => <DevicesPage account={account} {...props} />} />
+        <Route exact path="/simple/health" component={HealthPage} />
+        <Redirect exact from="/devices" to="/simple/devices" />
+        <Redirect exact from="/health" to="/simple/health" />
+
         <Route path="" component={NotFound} />
       </Switch>
     </Suspense>

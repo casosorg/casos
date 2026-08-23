@@ -1,6 +1,6 @@
 import {Link} from "react-router-dom";
 import i18next from "i18next";
-import {findLeaf} from "@/nav";
+import {findLeaf, homePath, navKeyForPath} from "@/nav";
 import {useUiMode} from "@/hooks/use-ui-mode";
 import {
   Breadcrumb,
@@ -13,8 +13,8 @@ import {
 
 /**
  * Derives the trail from the URL against the shared nav tree, so a page never
- * has to declare its own breadcrumb. A path whose first segment is not in the
- * tree renders nothing rather than an invented label.
+ * has to declare its own breadcrumb. A path that names no nav entry renders
+ * nothing rather than an invented label.
  */
 export function BreadcrumbBar({uri}) {
   const {mode} = useUiMode();
@@ -23,28 +23,29 @@ export function BreadcrumbBar({uri}) {
     return null;
   }
 
-  const rootLeaf = findLeaf(`/${segments[0]}`, mode);
-  if (!rootLeaf) {
+  const navKey = navKeyForPath(uri);
+  const leaf = findLeaf(navKey);
+  if (!leaf) {
     return null;
   }
-  // The dashboard is what the Home crumb already links to; naming it twice
+  const label = i18next.t(leaf.label);
+  // Whatever the URL carries past the nav entry — a chart source, a machine
+  // name — is this page's own subject and becomes the last crumb.
+  const rest = segments.slice(navKey.split("/").filter(Boolean).length);
+
+  // The home page is what the Home crumb already links to; naming it twice
   // reads as a broken trail rather than a short one.
-  if (segments.length === 1 && rootLeaf.path === "/dashboard") {
+  if (rest.length === 0 && leaf.path === homePath(mode)) {
     return (
       <Breadcrumb>
         <BreadcrumbList className="text-xs sm:gap-1.5">
           <BreadcrumbItem>
-            <BreadcrumbPage>{i18next.t(rootLeaf.label)}</BreadcrumbPage>
+            <BreadcrumbPage>{label}</BreadcrumbPage>
           </BreadcrumbItem>
         </BreadcrumbList>
       </Breadcrumb>
     );
   }
-  const rootLabel = i18next.t(rootLeaf.label);
-
-  const lastSegment = segments[segments.length - 1];
-  const lastLeaf = segments.length > 1 ? findLeaf(`/${lastSegment}`, mode) : null;
-  const lastLabel = lastLeaf ? i18next.t(lastLeaf.label) : decodeURIComponent(lastSegment);
 
   return (
     <Breadcrumb>
@@ -55,20 +56,22 @@ export function BreadcrumbBar({uri}) {
           </BreadcrumbLink>
         </BreadcrumbItem>
         <BreadcrumbSeparator />
-        {segments.length === 1 ? (
+        {rest.length === 0 ? (
           <BreadcrumbItem>
-            <BreadcrumbPage>{rootLabel}</BreadcrumbPage>
+            <BreadcrumbPage>{label}</BreadcrumbPage>
           </BreadcrumbItem>
         ) : (
           <>
             <BreadcrumbItem>
               <BreadcrumbLink asChild>
-                <Link to={`/${segments[0]}`}>{rootLabel}</Link>
+                <Link to={navKey}>{label}</Link>
               </BreadcrumbLink>
             </BreadcrumbItem>
             <BreadcrumbSeparator />
             <BreadcrumbItem>
-              <BreadcrumbPage className="max-w-[240px] truncate">{lastLabel}</BreadcrumbPage>
+              <BreadcrumbPage className="max-w-[240px] truncate">
+                {decodeURIComponent(rest[rest.length - 1])}
+              </BreadcrumbPage>
             </BreadcrumbItem>
           </>
         )}

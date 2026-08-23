@@ -109,6 +109,9 @@ export const navGroups = [
   },
 ];
 
+/** Simple mode's pages live under this prefix, so no URL ever serves both modes. */
+export const SIMPLE_PREFIX = "/simple";
+
 /**
  * Simple mode's navigation: five flat entries named after what a reader wants to
  * do, not after the Kubernetes object behind it.
@@ -119,30 +122,86 @@ export const navGroups = [
  * pages behind tabs, so no functionality is lost, only reached differently.
  */
 export const simpleNavGroups = [
-  {key: "/dashboard", label: "simple:Home", icon: House, path: "/dashboard"},
-  {key: "/app-store", label: "simple:App Store", icon: Store, path: "/app-store"},
-  {key: "/helm-releases", label: "simple:My Apps", icon: Boxes, path: "/helm-releases"},
-  {key: "/devices", label: "simple:Devices", icon: Laptop, path: "/devices"},
-  {key: "/health", label: "simple:Health", icon: Activity, path: "/health"},
+  {key: "/simple", label: "simple:Home", icon: House, path: "/simple"},
+  {key: "/simple/app-store", label: "simple:App Store", icon: Store, path: "/simple/app-store"},
+  {key: "/simple/apps", label: "simple:My Apps", icon: Boxes, path: "/simple/apps"},
+  {key: "/simple/devices", label: "simple:Devices", icon: Laptop, path: "/simple/devices"},
+  {key: "/simple/health", label: "simple:Health", icon: Activity, path: "/simple/health"},
 ];
 
 export function getNavGroups(mode) {
   return mode === "advanced" ? navGroups : simpleNavGroups;
 }
 
-/** All leaf entries, flattened, for lookups by first path segment. */
+/** All leaf entries, flattened, for lookups by nav key. */
 export const navLeaves = navGroups.flatMap((group) => (group.children ? group.children : [group]));
 
-// The breadcrumb resolves a URL against every leaf either mode can reach, not
-// just the ones currently in the sidebar: /pods is still reachable by URL in
-// simple mode, and /devices still has a name after a switch to advanced mode.
-// Where both trees name the same route, the current mode's wording wins.
-export function findLeaf(segmentKey, mode) {
-  const preferred = mode === "advanced" ? navLeaves : simpleNavGroups;
-  const fallback = mode === "advanced" ? simpleNavGroups : navLeaves;
-  return preferred.find((leaf) => leaf.key === segmentKey) ?? fallback.find((leaf) => leaf.key === segmentKey);
+export function isSimplePath(pathname) {
+  return pathname === SIMPLE_PREFIX || (pathname ?? "").startsWith(`${SIMPLE_PREFIX}/`);
 }
 
-export function findGroupOf(segmentKey) {
-  return navGroups.find((group) => group.children?.some((child) => child.key === segmentKey));
+/**
+ * The nav entry a URL belongs to: its first segment, or its first two under
+ * /simple. Everything past that — a chart source, a machine name — is the
+ * page's own subject, not another entry.
+ */
+export function navKeyForPath(pathname) {
+  const segments = (pathname || "").split("/").filter(Boolean);
+  if (segments.length === 0) {
+    return "/dashboard";
+  }
+  if (`/${segments[0]}` === SIMPLE_PREFIX) {
+    return segments.length > 1 ? `${SIMPLE_PREFIX}/${segments[1]}` : SIMPLE_PREFIX;
+  }
+  return `/${segments[0]}`;
+}
+
+// Which advanced page each simple page stands in for, so switching mode lands on
+// the same subject rather than dropping the reader on the home page. Read in
+// both directions: the first pair naming a side wins, which is what lets two
+// advanced pages fold into one simple page without making the reverse ambiguous.
+const MODE_COUNTERPARTS = [
+  ["/dashboard", "/simple"],
+  ["/app-store", "/simple/app-store"],
+  ["/helm-releases", "/simple/apps"],
+  ["/machines", "/simple/devices"],
+  ["/nodes", "/simple/devices"],
+  ["/monitor", "/simple/health"],
+  ["/log-search", "/simple/health"],
+];
+
+export function homePath(mode) {
+  return mode === "advanced" ? "/dashboard" : SIMPLE_PREFIX;
+}
+
+/** The path a page shared by both modes should link to from the given mode. */
+export function pathForMode(advancedPath, mode) {
+  if (mode === "advanced") {
+    return advancedPath;
+  }
+  const pair = MODE_COUNTERPARTS.find(([advanced]) => advanced === navKeyForPath(advancedPath));
+  return pair ? pair[1] : advancedPath;
+}
+
+/** Where a URL's reader should land after switching to the other mode. */
+export function counterpartPath(pathname, targetMode) {
+  const key = navKeyForPath(pathname);
+  const pair = targetMode === "advanced"
+    ? MODE_COUNTERPARTS.find(([, simple]) => simple === key)
+    : MODE_COUNTERPARTS.find(([advanced]) => advanced === key);
+  if (!pair) {
+    return homePath(targetMode);
+  }
+  return targetMode === "advanced" ? pair[0] : pair[1];
+}
+
+// Both trees are searched: a nav key belongs to exactly one of them now that
+// simple mode's pages have URLs of their own, and the breadcrumb has to name
+// /pods in either mode.
+export function findLeaf(navKey) {
+  return navLeaves.find((leaf) => leaf.key === navKey) ?? simpleNavGroups.find((leaf) => leaf.key === navKey);
+}
+
+export function findGroupOf(navKey) {
+  return navGroups.find((group) => group.children?.some((child) => child.key === navKey));
 }

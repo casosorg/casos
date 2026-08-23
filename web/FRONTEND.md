@@ -96,6 +96,13 @@ to badge variants), `KeyValueEditor` + `StringListEditor` (+ `toEntries` /
 `AppSidebar` and `BreadcrumbBar`. The old UI kept that mapping in two places and
 they drifted. `src/routes.jsx` holds the route table; every page is lazy-loaded.
 
+Simple mode's pages live under `/simple`, advanced mode's at the plain paths, so
+no URL means two different screens. `useUiMode` reads the mode off the URL rather
+than off storage: the stored `uiMode` is only a preference deciding where `/`
+lands. A page both modes render links through `resolvePath` so a simple-mode
+reader is not bounced into the advanced surface; `nav.js` holds the pairing that
+also decides where the header's mode switch lands.
+
 ## End-to-end tests
 
 ```bash
