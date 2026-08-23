@@ -39,6 +39,9 @@ const (
 // record they both write.
 var localNodeBootstrapMutex sync.Mutex
 
+// The keepalive outlives every bootstrap attempt, so it is started once.
+var wslKeepAliveOnce sync.Once
+
 // StartLocalNodeBootstrap enrolls the CasOS host as a worker node in the
 // background. It is a no-op where that cannot work, so main can call it
 // unconditionally.
@@ -172,11 +175,42 @@ func localWSLNodeMachine(ctx context.Context) (*object.Machine, error) {
 	if _, err = wsl.EnsureSystemd(ctx, distro, func(line string) { logs.Info("wsl setup: %s", line) }); err != nil {
 		return nil, err
 	}
+	startWSLKeepAlive(ctx, distro)
 	result, err := AddLocalWSLMachine(ctx, "admin", distro)
 	if err != nil {
 		return nil, fmt.Errorf("enroll %s: %w", distro, err)
 	}
 	return result.Machine, nil
+}
+
+// startWSLKeepAlive keeps the distro that hosts the worker node running for as
+// long as CasOS does. WSL stops a distro once nothing is attached to it, which
+// takes the kubelet down with it, so without this the node goes NotReady a
+// minute after the deployment finishes.
+func startWSLKeepAlive(ctx context.Context, distro string) {
+	wslKeepAliveOnce.Do(func() {
+		go wsl.KeepAlive(ctx, distro,
+			func(line string) { logs.Info("wsl keepalive: %s", line) },
+			func() { reenrollWSLNode(ctx, distro) })
+	})
+}
+
+// reenrollWSLNode refreshes what a restart of the distro invalidates. The node
+// itself needs nothing, systemd starts the kubelet again, but WSL comes back on
+// a new IP address, so the machine record and the host routes into the cluster
+// both still point at the old one.
+func reenrollWSLNode(ctx context.Context, distro string) {
+	localNodeBootstrapMutex.Lock()
+	defer localNodeBootstrapMutex.Unlock()
+
+	result, err := AddLocalWSLMachine(ctx, "admin", distro)
+	if err != nil {
+		logs.Warning("automatic node setup: re-enrolling %s after its restart failed: %v", distro, err)
+		return
+	}
+	if err = ensureWindowsWSLClusterRoutes(ctx, result.Machine.Ip); err != nil {
+		logs.Warning("automatic node setup: %v", err)
+	}
 }
 
 // localWSLNodeDistro returns the distro to enroll, installing WSL first when
