@@ -92,18 +92,42 @@ function wiredEnvPreview(hint, appName, database) {
   );
 }
 
+// The form the installed app hands back, so an upgrade starts from what is
+// running rather than from the image's defaults: a variable someone typed at
+// install time must survive the move to a newer tag.
+function formOfInstalledApp(app) {
+  return {
+    namespace: app.namespace,
+    name: app.name,
+    serviceType: app.serviceType || "NodePort",
+    ports: (app.ports ?? []).map((port) => ({
+      port: port.containerPort,
+      protocol: port.protocol || "TCP",
+      expose: true,
+    })),
+    volumes: (app.volumes ?? []).map((volume) => ({claimName: volume.claimName, mountPath: volume.mountPath})),
+    env: (app.envVars ?? []).map((item) => ({key: item.name, value: item.value ?? ""})),
+  };
+}
+
 /**
- * Installs a container image as a Deployment, its PVCs and a Service.
+ * Installs a container image as a Deployment, its PVCs and a Service, and
+ * upgrades what it installed.
  *
- * Every field starts from the image's own config — the ports it exposes, the
- * paths it declares as volumes, the env it ships with — so the common case is
- * to read the form rather than fill it. The one thing no image records is that
- * it needs a database at all; where its env names one, the installer offers to
- * create that database alongside and wire the two together.
+ * On install every field starts from the image's own config — the ports it
+ * exposes, the paths it declares as volumes, the env it ships with — so the
+ * common case is to read the form rather than fill it. The one thing no image
+ * records is that it needs a database at all; where its env names one, the
+ * installer offers to create that database alongside and wire the two together.
+ *
+ * On upgrade the same form starts from the running app instead. Its volumes are
+ * shown but not editable: a mount is bound to a claim named after its position
+ * in the list, so re-ordering that list would hand an app someone else's data.
  */
-export function ImageInstallDialog({open, image, onClose, onInstalled}) {
+export function ImageInstallDialog({open, image, action = "install", app, onClose, onInstalled}) {
   const {t} = useTranslation();
-  const repository = repositoryOf(image);
+  const upgrading = action === "upgrade";
+  const repository = upgrading ? (app?.repository ?? "") : repositoryOf(image);
 
   const [tag, setTag] = useState("");
   const [tags, setTags] = useState([]);
@@ -118,25 +142,28 @@ export function ImageInstallDialog({open, image, onClose, onInstalled}) {
   const {data: namespaces} = useResource(() => NamespaceBackend.getNamespaces(), [], {
     initialData: [],
     toastOnError: false,
-    enabled: open,
+    enabled: open && !upgrading,
   });
 
   useEffect(() => {
     if (!open) {
       return;
     }
-    setTag("");
+    setTag(upgrading ? (app?.tag ?? "") : "");
     setTags([]);
     setErrors({});
-    // A different image starts from its own config, never from the last one's.
-    setForm(null);
     setConfig(null);
+    setDatabase(null);
+    // A different image starts from its own config, never from the last one's;
+    // an upgrade starts from the app that is running.
+    setForm(upgrading && app ? formOfInstalledApp(app) : null);
     PodBackend.getDockerHubImageTags(repository).then((res) => {
       if (res.status === "ok") {
         setTags(res.data ?? []);
       }
     });
-  }, [open, repository]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, repository, upgrading, app?.name, app?.namespace]);
 
   // Re-read the config whenever the tag changes: ports, volumes and env all
   // belong to one specific tag, not to the repository.
@@ -159,6 +186,9 @@ export function ImageInstallDialog({open, image, onClose, onInstalled}) {
         }
         const loaded = res.data ?? {};
         setConfig(loaded);
+        if (upgrading) {
+          return;
+        }
         const name = defaultAppName(repository);
         const hint = loaded.database;
         const wired = hint && DATABASE_ENGINES[hint.engine];
@@ -202,7 +232,25 @@ export function ImageInstallDialog({open, image, onClose, onInstalled}) {
     return () => {
       cancelled = true;
     };
-  }, [open, repository, tag]);
+  }, [open, repository, tag, upgrading]);
+
+  // A newer tag can expose a port the installed one did not. Those are offered
+  // unchecked, next to the ports the app already answers on.
+  useEffect(() => {
+    if (!upgrading || !config) {
+      return;
+    }
+    setForm((previous) => {
+      if (!previous) {
+        return previous;
+      }
+      const known = new Set(previous.ports.map((port) => port.port));
+      const added = (config.ports ?? [])
+        .filter((port) => !known.has(port.port))
+        .map((port) => ({...port, expose: false}));
+      return added.length > 0 ? {...previous, ports: [...previous.ports, ...added]} : previous;
+    });
+  }, [config, upgrading]);
 
   const hiddenEnv = useMemo(() => {
     if (!config || !form) {
@@ -235,6 +283,79 @@ export function ImageInstallDialog({open, image, onClose, onInstalled}) {
     updateForm({ports: form.ports.map((port, portIndex) => (portIndex === index ? {...port, expose: checked} : port))});
   }
 
+  function exposedPorts() {
+    return form.ports
+      .filter((port) => port.expose)
+      .map((port) => ({name: `port-${port.port}`, containerPort: port.port, protocol: port.protocol}));
+  }
+
+  async function handleUpgrade(envRows) {
+    const updated = await runAction(
+      ImageBackend.upgradeApp({
+        namespace: app.namespace,
+        name: app.name,
+        image: config.image,
+        serviceType: form.serviceType,
+        ports: exposedPorts(),
+        envVars: envRows.map((row) => ({name: row.key, value: row.value})),
+        volumes: form.volumes.map((volume) => ({mountPath: volume.mountPath})),
+      }),
+      {successMessage: t("image:App updated")}
+    );
+    return Boolean(updated);
+  }
+
+  async function handleInstall(envRows) {
+    const appName = sanitizeName(form.name);
+    let rows = envRows;
+
+    if (database?.enabled) {
+      const engine = DATABASE_ENGINES[database.engine];
+      const databaseName = `${appName}-db`;
+      const created = await runAction(
+        ImageBackend.deployApp({
+          namespace: form.namespace,
+          name: databaseName,
+          owner: appName,
+          component: "database",
+          image: engine.image,
+          replicas: 1,
+          serviceType: "ClusterIP",
+          ports: [{name: "db", containerPort: engine.port, protocol: "TCP"}],
+          envVars: engine
+            .env({...database, rootPassword: randomPassword()})
+            .map((entry) => ({name: entry.key, value: entry.value})),
+          volumes: [{mountPath: engine.mountPath, size: database.size}],
+        }),
+        {successMessage: t("image:Database created")}
+      );
+      if (!created) {
+        return false;
+      }
+
+      const wired = new Map(rows.map((row) => [row.key, row.value]));
+      for (const row of wiredDatabaseEnv(config.database, appName, database)) {
+        wired.set(row.key, row.value);
+      }
+      rows = Array.from(wired, ([key, value]) => ({key, value}));
+    }
+
+    const installed = await runAction(
+      ImageBackend.deployApp({
+        namespace: form.namespace,
+        name: appName,
+        image: config.image,
+        replicas: 1,
+        serviceType: form.serviceType,
+        ports: exposedPorts(),
+        envVars: rows.map((row) => ({name: row.key, value: row.value})),
+        volumes: form.volumes.filter((volume) => volume.mountPath.trim()),
+      }),
+      {successMessage: t("image:App installed")}
+    );
+    return Boolean(installed);
+  }
+
   async function handleSubmit() {
     if (!form || !config) {
       return;
@@ -256,57 +377,11 @@ export function ImageInstallDialog({open, image, onClose, onInstalled}) {
       return;
     }
 
-    const appName = sanitizeName(form.name);
-    let envRows = form.env.filter((row) => row.key.trim());
+    const envRows = form.env.filter((row) => row.key.trim());
     setSubmitting(true);
-
-    if (database?.enabled) {
-      const engine = DATABASE_ENGINES[database.engine];
-      const databaseName = `${appName}-db`;
-      const created = await runAction(
-        ImageBackend.deployApp({
-          namespace: form.namespace,
-          name: databaseName,
-          image: engine.image,
-          replicas: 1,
-          serviceType: "ClusterIP",
-          ports: [{name: "db", containerPort: engine.port, protocol: "TCP"}],
-          envVars: engine
-            .env({...database, rootPassword: randomPassword()})
-            .map((entry) => ({name: entry.key, value: entry.value})),
-          volumes: [{mountPath: engine.mountPath, size: database.size}],
-        }),
-        {successMessage: t("image:Database created")}
-      );
-      if (!created) {
-        setSubmitting(false);
-        return;
-      }
-
-      const wired = new Map(envRows.map((row) => [row.key, row.value]));
-      for (const row of wiredDatabaseEnv(config.database, appName, database)) {
-        wired.set(row.key, row.value);
-      }
-      envRows = Array.from(wired, ([key, value]) => ({key, value}));
-    }
-
-    const installed = await runAction(
-      ImageBackend.deployApp({
-        namespace: form.namespace,
-        name: appName,
-        image: config.image,
-        replicas: 1,
-        serviceType: form.serviceType,
-        ports: form.ports
-          .filter((port) => port.expose)
-          .map((port) => ({name: `port-${port.port}`, containerPort: port.port, protocol: port.protocol})),
-        envVars: envRows.map((row) => ({name: row.key, value: row.value})),
-        volumes: form.volumes.filter((volume) => volume.mountPath.trim()),
-      }),
-      {successMessage: t("image:App installed")}
-    );
+    const done = upgrading ? await handleUpgrade(envRows) : await handleInstall(envRows);
     setSubmitting(false);
-    if (installed) {
+    if (done) {
       onInstalled?.();
       onClose?.();
     }
@@ -318,10 +393,10 @@ export function ImageInstallDialog({open, image, onClose, onInstalled}) {
     <FormDialog
       open={open}
       onOpenChange={(next) => (next ? null : onClose())}
-      title={config?.title || repository}
+      title={upgrading ? app?.name : config?.title || repository}
       description={repository}
       size="lg"
-      submitText={t("helm:Install")}
+      submitText={upgrading ? t("helm:Upgrade") : t("helm:Install")}
       cancelText={t("general:Cancel")}
       submitting={submitting}
       submitDisabled={loading || !form || Boolean(error)}
@@ -346,17 +421,26 @@ export function ImageInstallDialog({open, image, onClose, onInstalled}) {
                 value={form.name}
                 onChange={(event) => updateForm({name: event.target.value})}
                 placeholder="my-app"
+                disabled={upgrading}
               />
             </Field>
             <Field label={t("general:Namespace")} htmlFor="image-install-namespace">
-              <SimpleSelect
-                id="image-install-namespace"
-                value={form.namespace}
-                onChange={(next) => updateForm({namespace: next})}
-                options={(namespaces ?? []).map((item) => ({label: item.name, value: item.name}))}
-              />
+              {upgrading ? (
+                <Input id="image-install-namespace" value={form.namespace} disabled />
+              ) : (
+                <SimpleSelect
+                  id="image-install-namespace"
+                  value={form.namespace}
+                  onChange={(next) => updateForm({namespace: next})}
+                  options={(namespaces ?? []).map((item) => ({label: item.name, value: item.name}))}
+                />
+              )}
             </Field>
-            <Field label={t("image:Tag")} htmlFor="image-install-tag" hint={config.digest ? config.digest.slice(0, 19) : ""}>
+            <Field
+              label={t("image:Tag")}
+              htmlFor="image-install-tag"
+              hint={upgrading ? t("image:Installed tag", {tag: app?.tag ?? ""}) : config.digest ? config.digest.slice(0, 19) : ""}
+            >
               <SimpleSelect
                 id="image-install-tag"
                 value={tag || config.tag}
@@ -387,8 +471,15 @@ export function ImageInstallDialog({open, image, onClose, onInstalled}) {
             </div>
           </Field>
 
-          <Field label={t("image:Storage")} hint={t("image:Prefilled from the paths the image declares as volumes")}>
-            <DeploymentStorageEditor mode="add" value={form.volumes} onChange={(next) => updateForm({volumes: next})} />
+          <Field
+            label={t("image:Storage")}
+            hint={upgrading ? "" : t("image:Prefilled from the paths the image declares as volumes")}
+          >
+            <DeploymentStorageEditor
+              mode={upgrading ? "edit" : "add"}
+              value={form.volumes}
+              onChange={(next) => updateForm({volumes: next})}
+            />
           </Field>
 
           <Field label={t("image:Environment")}>
@@ -478,7 +569,10 @@ export function ImageInstallDialog({open, image, onClose, onInstalled}) {
           ) : null}
 
           <p className="text-muted-foreground text-xs">
-            {t("image:Install summary", {image: config.image, namespace: form.namespace})}
+            {t(upgrading ? "image:Upgrade summary" : "image:Install summary", {
+              image: config.image,
+              namespace: form.namespace,
+            })}
           </p>
         </>
       )}

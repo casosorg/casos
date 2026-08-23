@@ -26,7 +26,7 @@ import {
 export const navGroups = [
   {key: "/dashboard", label: "general:Dashboard", icon: LayoutDashboard, path: "/dashboard"},
   {key: "/app-store", label: "general:App Store", icon: Store, path: "/app-store"},
-  {key: "/helm-releases", label: "helm:Helm Releases", icon: Boxes, path: "/helm-releases"},
+  {key: "/helm-releases", label: "helm:Installed Apps", icon: Boxes, path: "/helm-releases"},
   {
     key: "/workloads",
     label: "general:Workloads",

@@ -16,3 +16,29 @@ export function deployApp(payload) {
     method: "POST", credentials: "include", headers: jsonHeaders(), body: JSON.stringify(payload),
   }).then(r => r.json());
 }
+
+export function getImageApps(namespace = "") {
+  const params = new URLSearchParams();
+  if (namespace) {params.set("namespace", namespace);}
+  return fetch(`${Setting.ServerUrl}/api/get-image-apps?${params}`, {
+    credentials: "include", headers: lang(),
+  }).then(r => r.json());
+}
+
+export function upgradeApp(payload) {
+  return fetch(`${Setting.ServerUrl}/api/upgrade-image-app`, {
+    method: "POST", credentials: "include", headers: jsonHeaders(), body: JSON.stringify(payload),
+  }).then(r => r.json());
+}
+
+export function scaleApp(payload) {
+  return fetch(`${Setting.ServerUrl}/api/scale-image-app`, {
+    method: "POST", credentials: "include", headers: jsonHeaders(), body: JSON.stringify(payload),
+  }).then(r => r.json());
+}
+
+export function uninstallApp(payload) {
+  return fetch(`${Setting.ServerUrl}/api/uninstall-image-app`, {
+    method: "POST", credentials: "include", headers: jsonHeaders(), body: JSON.stringify(payload),
+  }).then(r => r.json());
+}

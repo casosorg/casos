@@ -73,7 +73,9 @@ func buildPodVolumes(deployName string, reqs []volumeRequest) ([]corev1.Volume, 
 }
 
 // ensureDeploymentPVCs creates a PVC for each volume request that does not already exist.
-func ensureDeploymentPVCs(cfg *rest.Config, namespace, deployName string, reqs []volumeRequest) error {
+// labels, when given, stamp the claims with the app that owns them so an
+// uninstall can find the volumes holding that app's data.
+func ensureDeploymentPVCs(cfg *rest.Config, namespace, deployName string, reqs []volumeRequest, labels map[string]string) error {
 	for i, v := range reqs {
 		if v.MountPath == "" {
 			continue
@@ -88,7 +90,7 @@ func ensureDeploymentPVCs(cfg *rest.Config, namespace, deployName string, reqs [
 		}
 		pvcName := pvcNameForVolume(deployName, i)
 		pvc := &corev1.PersistentVolumeClaim{
-			ObjectMeta: metav1.ObjectMeta{Name: pvcName, Namespace: namespace},
+			ObjectMeta: metav1.ObjectMeta{Name: pvcName, Namespace: namespace, Labels: labels},
 			Spec: corev1.PersistentVolumeClaimSpec{
 				AccessModes: []corev1.PersistentVolumeAccessMode{corev1.ReadWriteOnce},
 				Resources: corev1.VolumeResourceRequirements{

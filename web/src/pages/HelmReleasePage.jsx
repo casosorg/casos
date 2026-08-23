@@ -1,10 +1,12 @@
 import React, {useEffect, useState} from "react";
 import {useTranslation} from "react-i18next";
-import {CircleArrowUp, History, Plus, RefreshCw, RotateCcw, ScrollText, Search, Trash2} from "lucide-react";
+import {CircleArrowUp, History, Play, Plus, RefreshCw, RotateCcw, ScrollText, Search, Square, Trash2} from "lucide-react";
 import {useHistory} from "react-router-dom";
 import * as HelmBackend from "@/backend/HelmBackend";
+import * as ImageBackend from "@/backend/ImageBackend";
 import * as IngressBackend from "@/backend/IngressBackend";
 import * as NodeBackend from "@/backend/NodeBackend";
+import * as PodBackend from "@/backend/PodBackend";
 import * as PvcBackend from "@/backend/PvcBackend";
 import * as ServiceBackend from "@/backend/ServiceBackend";
 import * as Setting from "@/Setting";
@@ -22,19 +24,47 @@ import {ResourceSheet} from "@/components/shared/resource-sheet";
 import {SimpleSelect} from "@/components/shared/simple-select";
 import {AiDots, Loading} from "@/components/shared/loading";
 import {HelmInstallDialog} from "@/components/shared/helm-install-dialog";
+import {ImageInstallDialog} from "@/components/shared/image-install-dialog";
+import {PodLogsSheet} from "@/components/shared/pod-logs-sheet";
 import {AppCardList} from "@/components/shared/app-card-list";
 import {PageHeader} from "@/components/shared/page-header";
 import {useResource} from "@/hooks/use-resource";
 import {useUiMode} from "@/hooks/use-ui-mode";
 import {appResourcesOf, groupAppResources} from "@/lib/appAccess";
+import {chartIconUrl} from "@/lib/appCatalog";
 import {cn} from "@/lib/utils";
 
 function releaseKey(release) {
   return `${release.namespace}/${release.name}`;
 }
 
+// An app installed from a container image is listed beside the Helm releases:
+// the two are installed differently, but a reader has one list of apps. The
+// record is shaped like a release so one table, one card and one set of filters
+// serve both, and carries the app itself for the actions that differ.
+function toAppRecord(app) {
+  const shortName = app.repository.split("/").pop();
+  return {
+    kind: "image",
+    name: app.name,
+    namespace: app.namespace,
+    chart: `${app.repository}:${app.tag}`,
+    chartName: app.repository,
+    chartVersion: app.tag,
+    app_version: app.tag,
+    status: app.status,
+    description: app.description,
+    updated: app.createdAt,
+    // Docker Hub only hands out a logo while searching it, so an installed app
+    // falls back to the catalogue's icon for an app of that name.
+    icon: chartIconUrl(shortName),
+    image: app,
+  };
+}
+
 const STATUS_VARIANTS = {
   deployed: "success",
+  stopped: "muted",
   failed: "danger",
   pending: "warning",
   "pending-install": "warning",
@@ -179,6 +209,8 @@ export default function HelmReleasePage() {
   const [historyLoading, setHistoryLoading] = useState(false);
 
   const [upgradeTarget, setUpgradeTarget] = useState(null);
+  const [imageUpgradeTarget, setImageUpgradeTarget] = useState(null);
+  const [logsPod, setLogsPod] = useState(null);
 
   const [logsRelease, setLogsRelease] = useState(null);
   const [operation, setOperation] = useState(null);
@@ -203,12 +235,21 @@ export default function HelmReleasePage() {
       setLoading(true);
       setError(null);
     }
-    return HelmBackend.getHelmReleases(namespace)
-      .then((res) => {
-        if (res.status === "ok") {
-          setReleases(res.data ?? []);
-        } else if (!background) {
-          setError(res.msg);
+    // One list, two installers. Either side failing leaves the other showing:
+    // a broken Helm repository is no reason to hide the apps that are running.
+    return Promise.all([HelmBackend.getHelmReleases(namespace), ImageBackend.getImageApps(namespace)])
+      .then(([helmRes, imageRes]) => {
+        const next = [];
+        if (helmRes.status === "ok") {
+          next.push(...(helmRes.data ?? []));
+        }
+        if (imageRes.status === "ok") {
+          next.push(...(imageRes.data ?? []).map(toAppRecord));
+        }
+        setReleases(next);
+        const failure = helmRes.status === "ok" ? imageRes : helmRes;
+        if (failure.status !== "ok" && !background) {
+          setError(failure.msg);
         }
       })
       .catch((e) => {
@@ -292,11 +333,44 @@ export default function HelmReleasePage() {
     };
   }, [logsRelease]);
 
+  // An image app has no install log to show: nothing recorded the install
+  // beyond the workload itself. What its reader wants is the container output,
+  // so that is what the same button opens.
+  function openAppPodLogs(release) {
+    PodBackend.getPods(release.namespace).then((res) => {
+      if (res.status !== "ok") {
+        Setting.showMessage("error", res.msg);
+        return;
+      }
+      const pods = (res.data ?? []).filter(
+        (pod) => pod.labels?.["app.kubernetes.io/instance"] === release.name && !pod.labels?.["app.kubernetes.io/component"]
+      );
+      const pod = pods.find((item) => item.phase === "Running") ?? pods[0];
+      if (!pod) {
+        Setting.showMessage("error", t("image:This app has no container running yet"));
+        return;
+      }
+      setLogsPod(pod);
+    });
+  }
+
   function openLogs(release) {
+    if (release.kind === "image") {
+      openAppPodLogs(release);
+      return;
+    }
     setOperation(null);
     setOperationLogs([]);
     setOperationError(null);
     setLogsRelease(release);
+  }
+
+  function openUpgrade(release) {
+    if (release.kind === "image") {
+      setImageUpgradeTarget(release.image);
+      return;
+    }
+    setUpgradeTarget(helmReleaseUpgradeTarget(release));
   }
 
   function closeLogs() {
@@ -331,13 +405,26 @@ export default function HelmReleasePage() {
     });
   }
 
+  // Stopping an app is not uninstalling it: the workload scales to zero and
+  // its volumes stay, so starting it again finds everything where it was.
+  function handleToggleRunning(release) {
+    const running = release.status === "stopped";
+    return ImageBackend.scaleApp({namespace: release.namespace, name: release.name, running}).then((res) => {
+      if (res.status !== "ok") {
+        Setting.showMessage("error", res.msg);
+        return;
+      }
+      fetchReleases();
+    });
+  }
+
   function handleUninstall(release) {
     const deleteData = deleteDataFor[releaseKey(release)] ?? false;
-    return HelmBackend.uninstallHelmRelease({
-      releaseName: release.name,
-      namespace: release.namespace,
-      deleteData,
-    }).then((res) => {
+    const uninstalled =
+      release.kind === "image"
+        ? ImageBackend.uninstallApp({namespace: release.namespace, name: release.name, deleteData})
+        : HelmBackend.uninstallHelmRelease({releaseName: release.name, namespace: release.namespace, deleteData});
+    return uninstalled.then((res) => {
       if (res.status === "ok") {
         Setting.showMessage("success", `Uninstalled ${release.name}`);
         fetchReleases();
@@ -369,7 +456,8 @@ export default function HelmReleasePage() {
       dataIndex: "chart",
       render: (value, release) => (
         <span className="flex items-center gap-1.5">
-          {release.chartName || parseChartName(value)}
+          {release.kind === "image" ? <Badge variant="info">{t("image:Image")}</Badge> : null}
+          <span className="truncate">{release.chartName || parseChartName(value)}</span>
           <Badge variant="muted">{release.chartVersion || parseChartVersion(value)}</Badge>
         </span>
       ),
@@ -416,21 +504,30 @@ export default function HelmReleasePage() {
               <ScrollText className="size-4" />
             </Button>
           </SimpleTooltip>
+          {release.kind === "image" ? (
+            <SimpleTooltip title={release.status === "stopped" ? t("image:Start") : t("image:Stop")}>
+              <Button
+                variant="outline"
+                size="icon-sm"
+                onClick={() => handleToggleRunning(release)}
+                aria-label={release.status === "stopped" ? "Start" : "Stop"}
+              >
+                {release.status === "stopped" ? <Play className="size-4" /> : <Square className="size-4" />}
+              </Button>
+            </SimpleTooltip>
+          ) : null}
           <SimpleTooltip title={t("helm:Upgrade")}>
-            <Button
-              variant="outline"
-              size="icon-sm"
-              onClick={() => setUpgradeTarget(helmReleaseUpgradeTarget(release))}
-              aria-label="Upgrade"
-            >
+            <Button variant="outline" size="icon-sm" onClick={() => openUpgrade(release)} aria-label="Upgrade">
               <CircleArrowUp className="size-4" />
             </Button>
           </SimpleTooltip>
-          <SimpleTooltip title={t("helm:History")}>
-            <Button variant="outline" size="icon-sm" onClick={() => openHistory(release)} aria-label="History">
-              <History className="size-4" />
-            </Button>
-          </SimpleTooltip>
+          {release.kind === "image" ? null : (
+            <SimpleTooltip title={t("helm:History")}>
+              <Button variant="outline" size="icon-sm" onClick={() => openHistory(release)} aria-label="History">
+                <History className="size-4" />
+              </Button>
+            </SimpleTooltip>
+          )}
           <ConfirmDialog
             title={t("helm:Uninstall release?")}
             description={`${release.name} (${release.namespace})`}
@@ -509,8 +606,8 @@ export default function HelmReleasePage() {
 
       {advanced ? (
         <DataTable
-          title={t("helm:Helm Releases")}
-          description={`${releases.length} releases`}
+          title={t("helm:Installed Apps")}
+          description={`${releases.length} apps`}
           columns={columns}
           dataSource={releases}
           rowKey="name"
@@ -604,7 +701,8 @@ export default function HelmReleasePage() {
               setDeleteDataFor((previous) => ({...previous, [releaseKey(release)]: checked}))
             }
             onOpenLogs={openLogs}
-            onUpgrade={(release) => setUpgradeTarget(helmReleaseUpgradeTarget(release))}
+            onUpgrade={openUpgrade}
+            onToggleRunning={handleToggleRunning}
             onUninstall={handleUninstall}
             onInstallMore={() => router.push(resolvePath("/app-store"))}
           />
@@ -717,6 +815,19 @@ export default function HelmReleasePage() {
           fetchReleases();
         }}
       />
+
+      <ImageInstallDialog
+        open={Boolean(imageUpgradeTarget)}
+        action="upgrade"
+        app={imageUpgradeTarget}
+        onClose={() => setImageUpgradeTarget(null)}
+        onInstalled={() => {
+          setImageUpgradeTarget(null);
+          fetchReleases();
+        }}
+      />
+
+      <PodLogsSheet pod={logsPod} open={Boolean(logsPod)} onClose={() => setLogsPod(null)} />
     </PageContainer>
   );
 }

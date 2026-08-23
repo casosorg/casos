@@ -1,6 +1,6 @@
 import React from "react";
 import {useTranslation} from "react-i18next";
-import {CircleArrowUp, ExternalLink, Globe, HardDrive, ScrollText, SearchX, Trash2} from "lucide-react";
+import {CircleArrowUp, ExternalLink, Globe, HardDrive, Play, ScrollText, SearchX, Square, Trash2} from "lucide-react";
 import {Badge} from "@/components/ui/badge";
 import {Button} from "@/components/ui/button";
 import {Checkbox} from "@/components/ui/checkbox";
@@ -26,6 +26,7 @@ function displayUrl(url) {
 
 const STATUS_TONE = {
   deployed: {label: "simple:Running", dot: "bg-success", pill: "border-success/25 bg-success/10 text-success", bar: "bg-success/70"},
+  stopped: {label: "simple:Stopped", dot: "bg-muted-foreground", pill: "border-border bg-muted text-muted-foreground", bar: "bg-border"},
   failed: {label: "simple:Not working", dot: "bg-destructive", pill: "border-destructive/25 bg-destructive/10 text-destructive", bar: "bg-destructive/70"},
   superseded: {label: "simple:Replaced", dot: "bg-muted-foreground", pill: "border-border bg-muted text-muted-foreground", bar: "bg-border"},
   uninstalling: {label: "simple:Removing", dot: "bg-info", pill: "border-info/25 bg-info/10 text-info", bar: "bg-info/70"},
@@ -72,7 +73,7 @@ function DetailRow({icon: Icon, empty, children, hasValue}) {
  * its data. Neither is a page of its own in simple mode — a reader thinks "where
  * is my Nextcloud", not "show me every Service in the cluster".
  */
-function AppCard({release, resources, pending, onOpenLogs, onUpgrade, onUninstall, deleteData, onDeleteDataChange}) {
+function AppCard({release, resources, pending, onOpenLogs, onUpgrade, onToggleRunning, onUninstall, deleteData, onDeleteDataChange}) {
   const {t} = useTranslation();
   const chartName = release.chartName || release.chart || release.name;
   const primaryUrl = resources.urls[0] ?? null;
@@ -153,6 +154,18 @@ function AppCard({release, resources, pending, onOpenLogs, onUpgrade, onUninstal
             </a>
           </Button>
         ) : null}
+        {release.kind === "image" ? (
+          <SimpleTooltip title={release.status === "stopped" ? t("image:Start") : t("image:Stop")}>
+            <Button
+              variant="ghost"
+              size="icon-sm"
+              onClick={() => onToggleRunning(release)}
+              aria-label={release.status === "stopped" ? t("image:Start") : t("image:Stop")}
+            >
+              {release.status === "stopped" ? <Play /> : <Square />}
+            </Button>
+          </SimpleTooltip>
+        ) : null}
         <SimpleTooltip title={t("simple:Update")}>
           <Button variant="ghost" size="icon-sm" onClick={() => onUpgrade(release)} aria-label={t("simple:Update")}>
             <CircleArrowUp />
@@ -208,6 +221,7 @@ export function AppCardList({
   onDeleteDataChange,
   onOpenLogs,
   onUpgrade,
+  onToggleRunning,
   onUninstall,
 }) {
   const {t} = useTranslation();
@@ -245,6 +259,7 @@ export function AppCardList({
             onDeleteDataChange={(checked) => onDeleteDataChange(release, checked)}
             onOpenLogs={onOpenLogs}
             onUpgrade={onUpgrade}
+            onToggleRunning={onToggleRunning}
             onUninstall={onUninstall}
           />
         );

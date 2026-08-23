@@ -46,6 +46,10 @@ func InitAPI() {
 	beego.Router("/api/get-docker-hub-image-tags", &controllers.ApiController{}, "GET:GetDockerHubImageTags")
 	beego.Router("/api/get-image-config", &controllers.ApiController{}, "GET:GetImageConfig")
 	beego.Router("/api/deploy-app", &controllers.ApiController{}, "POST:DeployApp")
+	beego.Router("/api/get-image-apps", &controllers.ApiController{}, "GET:GetImageApps")
+	beego.Router("/api/upgrade-image-app", &controllers.ApiController{}, "POST:UpgradeImageApp")
+	beego.Router("/api/uninstall-image-app", &controllers.ApiController{}, "POST:UninstallImageApp")
+	beego.Router("/api/scale-image-app", &controllers.ApiController{}, "POST:ScaleImageApp")
 
 	beego.Router("/api/get-ingresses", &controllers.ApiController{}, "GET:GetIngresses")
 	beego.Router("/api/get-ingress", &controllers.ApiController{}, "GET:GetIngress")

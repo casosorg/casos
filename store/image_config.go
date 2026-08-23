@@ -609,3 +609,23 @@ func firstNonEmpty(values ...string) string {
 	}
 	return ""
 }
+
+// SplitImageRef reports an image reference the way the UI names it: the
+// repository with Docker Hub's implicit host and "library" namespace stripped,
+// and the tag (or digest) on its own.
+func SplitImageRef(ref string) (string, string) {
+	host, repository, tag, digest, err := parseImageRef(ref)
+	if err != nil {
+		return strings.TrimSpace(ref), ""
+	}
+	name := repository
+	if isDockerHubHost(host) {
+		name = strings.TrimPrefix(name, "library/")
+	} else {
+		name = host + "/" + repository
+	}
+	if digest != "" {
+		return name, digest
+	}
+	return name, tag
+}

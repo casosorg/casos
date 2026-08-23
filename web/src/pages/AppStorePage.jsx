@@ -446,7 +446,7 @@ function AdvancedAppStore() {
           <div className="flex-1" />
           <Button variant="outline" size="sm" asChild>
             {isImageSource ? (
-              <Link to="/deployments">{t("image:My Deployments")} →</Link>
+              <Link to="/helm-releases">{t("image:My Apps")} →</Link>
             ) : (
               <Link to="/helm-releases">{t("helm:My Releases")} →</Link>
             )}

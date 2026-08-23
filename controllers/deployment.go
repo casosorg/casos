@@ -190,7 +190,7 @@ func (c *ApiController) AddDeployment() {
 		c.ResponseError(err.Error())
 		return
 	}
-	if err := ensureDeploymentPVCs(cfg, req.Namespace, req.Name, req.Volumes); err != nil {
+	if err := ensureDeploymentPVCs(cfg, req.Namespace, req.Name, req.Volumes, nil); err != nil {
 		c.ResponseError(err.Error())
 		return
 	}
