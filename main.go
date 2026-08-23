@@ -162,6 +162,13 @@ func main() {
 	beego.BConfig.WebConfig.Session.SessionGCMaxLifetime = 3600 * 24 * 365
 
 	port := conf.GetConfigIntDefault("httpport", defaultHTTPPort)
+	// beego.Run exits the process when the port is taken, so the port has to be
+	// free by the time it is called.
+	if stopped, err := util.ReclaimPort("", port); err != nil {
+		logs.Error("web server port: %v", err)
+	} else if stopped != "" {
+		logs.Warning("port %d was held by %s, which has been stopped so the web server can use it", port, stopped)
+	}
 	logs.Info("casos listening on :%d", port)
 	if util.StartedByDoubleClick() {
 		go openWhenReady(port)

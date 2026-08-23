@@ -7,6 +7,8 @@ import (
 	"path/filepath"
 
 	"github.com/beego/beego/logs"
+
+	"github.com/casosorg/casos/util"
 )
 
 // StartWebhookServer generates the webhook TLS cert (if absent) and launches
@@ -32,6 +34,12 @@ func startHTTPSServer(certDir string, port int, handler http.Handler) error {
 	)
 	if err != nil {
 		return fmt.Errorf("load webhook cert: %w", err)
+	}
+
+	if stopped, err := util.ReclaimPort("", port); err != nil {
+		logs.Warning("webhook port: %v", err)
+	} else if stopped != "" {
+		logs.Warning("port %d was held by %s, which has been stopped so the webhook server can use it", port, stopped)
 	}
 
 	srv := &http.Server{

@@ -38,6 +38,15 @@ const (
 // Start launches kine and the apiserver in-process.
 // The returned channel is closed once the apiserver /readyz endpoint responds 200.
 func Start(ctx context.Context, cfg Config) (<-chan struct{}, error) {
+	// Before anything else that binds a port: the usual holder of the apiserver
+	// port is a previous CasOS still running, and stopping it here frees the
+	// rest of the ports this process is about to want as well.
+	if stopped, err := util.ReclaimPort("", cfg.ApiserverPort); err != nil {
+		logrus.Warnf("apiserver port: %v", err)
+	} else if stopped != "" {
+		logrus.Warnf("port %d was held by %s, which has been stopped so the apiserver can use it", cfg.ApiserverPort, stopped)
+	}
+
 	certDir := filepath.Join(cfg.DataDir, "tls")
 	if err := os.MkdirAll(certDir, 0o700); err != nil {
 		return nil, fmt.Errorf("mkdir tls: %w", err)
