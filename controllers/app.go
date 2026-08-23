@@ -23,6 +23,7 @@ type deployAppRequest struct {
 	Replicas    *int32           `json:"replicas"`
 	Ports       []appPortRequest `json:"ports"`
 	EnvVars     []envVarRequest  `json:"envVars"`
+	Volumes     []volumeRequest  `json:"volumes"`
 	ServiceType string           `json:"serviceType"`
 }
 
@@ -34,6 +35,9 @@ type deployAppResult struct {
 // DeployApp creates a Deployment and a matching ClusterIP/NodePort Service in one call.
 // @router /api/deploy-app [post]
 func (c *ApiController) DeployApp() {
+	if c.RequireAdmin() {
+		return
+	}
 	cfg := getAdminRestConfig()
 	if cfg == nil {
 		c.ResponseError("apiserver not ready")
@@ -54,9 +58,15 @@ func (c *ApiController) DeployApp() {
 		Replicas:  req.Replicas,
 		Image:     req.Image,
 		EnvVars:   req.EnvVars,
+		Volumes:   req.Volumes,
 	}
 	depl, err := buildDeployment(deplReq)
 	if err != nil {
+		c.ResponseError(err.Error())
+		return
+	}
+
+	if err := ensureDeploymentPVCs(cfg, req.Namespace, req.Name, req.Volumes); err != nil {
 		c.ResponseError(err.Error())
 		return
 	}

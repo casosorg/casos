@@ -3,6 +3,7 @@ import {Link, useHistory, useParams} from "react-router-dom";
 import {useTranslation} from "react-i18next";
 import {Plus, RefreshCw, Rocket, Search, Store, Trash2} from "lucide-react";
 import * as HelmBackend from "@/backend/HelmBackend";
+import * as PodBackend from "@/backend/PodBackend";
 import * as Setting from "@/Setting";
 import {runAction} from "@/hooks/use-resource";
 import {Badge} from "@/components/ui/badge";
@@ -17,17 +18,24 @@ import {ConfirmDialog} from "@/components/shared/confirm-dialog";
 import {Field, FormDialog} from "@/components/shared/form-dialog";
 import {Loading} from "@/components/shared/loading";
 import {HelmInstallDialog} from "@/components/shared/helm-install-dialog";
+import {ImageInstallDialog} from "@/components/shared/image-install-dialog";
+import {IMAGE_STARTER_APPS} from "@/lib/imageCatalog";
 import {useUiMode} from "@/hooks/use-ui-mode";
 import SimpleAppStore from "@/pages/simple/SimpleAppStore";
 
+// Charts come from a Helm repo or from ArtifactHub's search; the Docker Hub
+// channel is a different kind of source altogether, offering plain container
+// images that the installer turns into a Deployment, its PVCs and a Service.
 const PRESET_REPOS = [
   {slug: "artifacthub", name: "ArtifactHub", url: null, desc: "artifacthub.io — 8 000+ charts"},
+  {slug: "dockerhub", name: "Docker Hub", url: null, kind: "image", desc: "hub.docker.com — any container image"},
   {slug: "bitnami", name: "Bitnami", url: "https://charts.bitnami.com/bitnami", desc: "~200 curated charts"},
   {slug: "rancher", name: "Rancher", url: "https://charts.rancher.io", desc: "Rancher Charts"},
   {slug: "ingress-nginx", name: "ingress-nginx", url: "https://kubernetes.github.io/ingress-nginx", desc: "Official ingress-nginx"},
 ];
 
 const ARTIFACT_HUB_PAGE_SIZE = 20;
+const SEARCH_DEBOUNCE = 350;
 
 // Each source owns a URL of its own, so a channel can be linked, bookmarked and
 // walked back to with the browser's back button. Repo names are unique, which
@@ -38,6 +46,22 @@ function repoSlug(name) {
 
 function sourcePath(slug) {
   return `/app-store/${encodeURIComponent(slug)}`;
+}
+
+function formatPullCount(count) {
+  if (!count) {
+    return "";
+  }
+  if (count >= 1e9) {
+    return `${(count / 1e9).toFixed(1)}B`;
+  }
+  if (count >= 1e6) {
+    return `${(count / 1e6).toFixed(0)}M`;
+  }
+  if (count >= 1e3) {
+    return `${(count / 1e3).toFixed(0)}K`;
+  }
+  return String(count);
 }
 
 function ChartCard({chart, onInstall}) {
@@ -149,6 +173,7 @@ function AdvancedAppStore() {
   const [reposLoaded, setReposLoaded] = useState(false);
   const [addRepoOpen, setAddRepoOpen] = useState(false);
   const [installTarget, setInstallTarget] = useState(null);
+  const [imageTarget, setImageTarget] = useState(null);
   const sentinelRef = useRef(null);
 
   const loadCustomRepos = useCallback(() => {
@@ -191,13 +216,38 @@ function AdvancedAppStore() {
     history.push(sourcePath(slug));
   }
 
+  const isImageSource = source?.kind === "image";
   // ArtifactHub is a search API with server-side paging; a plain repo returns its
   // whole index at once and is filtered in the browser.
-  const isArtifactHub = Boolean(source) && !source.url;
+  const isArtifactHub = Boolean(source) && !isImageSource && !source.url;
 
   const fetchCharts = useCallback((activeSource, activeQuery, activePage) => {
     setLoading(true);
     setError(null);
+
+    // Docker Hub has no browsable index — a bare search ranks base images and CI
+    // artefacts above anything anyone would install — so an empty query shows a
+    // shortlist of known apps and typing hands over to Hub's own search.
+    if (activeSource.kind === "image") {
+      if (!activeQuery.trim()) {
+        setCharts(IMAGE_STARTER_APPS);
+        setHasMore(false);
+        setLoading(false);
+        return;
+      }
+      PodBackend.searchDockerHubImages(activeQuery)
+        .then((res) => {
+          if (res.status !== "ok") {
+            setError(res.msg);
+            return;
+          }
+          setCharts(res.data ?? []);
+          setHasMore(false);
+        })
+        .catch((e) => setError(e.message))
+        .finally(() => setLoading(false));
+      return;
+    }
 
     const remote = !activeSource.url;
     const request = remote
@@ -230,7 +280,10 @@ function AdvancedAppStore() {
     setCharts([]);
     setPage(1);
     setHasMore(true);
-    fetchCharts(source, query, 1);
+    // Both remote channels search per keystroke; a short pause keeps a typed
+    // word from spending one request per letter against a rate-limited API.
+    const timer = setTimeout(() => fetchCharts(source, query, 1), query ? SEARCH_DEBOUNCE : 0);
+    return () => clearTimeout(timer);
   }, [source, query, fetchCharts]);
 
   useEffect(() => {
@@ -268,6 +321,19 @@ function AdvancedAppStore() {
   // names; normalising here keeps the card and the install dialog from each
   // having to know which source they came from.
   function normalize(chart) {
+    if (isImageSource) {
+      // A starter entry names its image and describes itself with a translation
+      // key; a Hub search result carries the description its publisher wrote.
+      const starter = Boolean(chart.image);
+      return {
+        image: starter ? chart.image : chart.name,
+        chartName: starter ? chart.image : chart.name,
+        displayName: chart.name,
+        description: starter ? t(chart.description) : chart.description,
+        version: chart.isOfficial ? t("image:Official") : formatPullCount(chart.pullCount),
+        icon: chart.logoUrl ?? null,
+      };
+    }
     if (isArtifactHub) {
       return {
         chartName: chart.name,
@@ -289,7 +355,7 @@ function AdvancedAppStore() {
     };
   }
 
-  const visibleCharts = (isArtifactHub
+  const visibleCharts = (isArtifactHub || isImageSource
     ? charts
     : charts.filter((chart) => {
       const needle = query.toLowerCase();
@@ -379,7 +445,11 @@ function AdvancedAppStore() {
           <h1 className="text-lg font-semibold">{source?.name ?? ""}</h1>
           <div className="flex-1" />
           <Button variant="outline" size="sm" asChild>
-            <Link to="/helm-releases">{t("helm:My Releases")} →</Link>
+            {isImageSource ? (
+              <Link to="/deployments">{t("image:My Deployments")} →</Link>
+            ) : (
+              <Link to="/helm-releases">{t("helm:My Releases")} →</Link>
+            )}
           </Button>
         </div>
 
@@ -389,7 +459,7 @@ function AdvancedAppStore() {
             <Input
               value={query}
               onChange={(event) => setQuery(event.target.value)}
-              placeholder={t("helm:Search charts")}
+              placeholder={isImageSource ? t("image:Search Docker Hub") : t("helm:Search charts")}
               className="w-72 pl-9"
             />
           </div>
@@ -412,7 +482,11 @@ function AdvancedAppStore() {
 
         <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
           {visibleCharts.map((chart, index) => (
-            <ChartCard key={`${chart.chartName}-${index}`} chart={chart} onInstall={() => setInstallTarget(chart)} />
+            <ChartCard
+              key={`${chart.chartName}-${index}`}
+              chart={chart}
+              onInstall={() => (isImageSource ? setImageTarget(chart.image) : setInstallTarget(chart))}
+            />
           ))}
         </div>
 
@@ -421,7 +495,9 @@ function AdvancedAppStore() {
         {isArtifactHub && hasMore ? <div ref={sentinelRef} className="h-px" aria-hidden="true" /> : null}
 
         {source && !loading && visibleCharts.length === 0 && !error ? (
-          <p className="text-muted-foreground py-16 text-center text-sm">{t("helm:No charts found")}</p>
+          <p className="text-muted-foreground py-16 text-center text-sm">
+            {isImageSource ? t("image:No images found") : t("helm:No charts found")}
+          </p>
         ) : null}
       </div>
 
@@ -432,6 +508,13 @@ function AdvancedAppStore() {
         chart={installTarget}
         onClose={() => setInstallTarget(null)}
         onInstalled={() => setInstallTarget(null)}
+      />
+
+      <ImageInstallDialog
+        open={Boolean(imageTarget)}
+        image={imageTarget}
+        onClose={() => setImageTarget(null)}
+        onInstalled={() => setImageTarget(null)}
       />
     </div>
   );
