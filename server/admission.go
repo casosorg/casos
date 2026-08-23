@@ -125,16 +125,10 @@ func admissionValidateHandler(w http.ResponseWriter, r *http.Request) {
 // recordPodImages keeps the scan cache filled from what actually runs on the
 // cluster, and reports images already known to carry CRITICAL findings.
 //
-// It never denies the pod. The vulnerability gate lives at install time instead
-// (store.ImageVulnerabilityGate): admission cannot tell a first install from a
-// restart, and an image only becomes gate-eligible once its release is
-// installed, so denying here blocked exactly the pods of apps the operator had
-// already been allowed to install. Every recreation after the first scan landed
-// was rejected — a node reboot or a rollout would silently and permanently
-// destroy a working app while Helm still reported it as deployed.
-//
-// Refusing to install a vulnerable image is a decision the operator can act on.
-// Refusing to restart one they are already running only takes the app away.
+// It never denies the pod, and neither does the install path
+// (store.ImageVulnerabilityReporter): a scan finding is information for the
+// operator, who decides whether to run the image. Both places record what is
+// known and let the Trivy scan results page show it.
 func recordPodImages(raw []byte) {
 	var pod corev1.Pod
 	if err := json.Unmarshal(raw, &pod); err != nil {

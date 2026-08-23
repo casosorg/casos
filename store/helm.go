@@ -1571,12 +1571,16 @@ func installHelmChart(cfg *rest.Config, releaseName, namespace, chartName, repoU
 	compatibilityCtx, cancelCompatibility := context.WithTimeout(context.Background(), helmCompatibilityTimeout)
 	attachHelmCapabilities(compatibilityCtx, actionConfig, cfg, helmWarningLog)
 	err = validateHelmChartCompatibility(compatibilityCtx, cfg, actionConfig, releaseName, namespace, ch, vals)
+	var imageWarnings []string
 	if err == nil {
-		err = checkHelmInstallImages(compatibilityCtx, actionConfig, releaseName, namespace, ch, vals)
+		imageWarnings = helmInstallImageWarnings(compatibilityCtx, actionConfig, releaseName, namespace, ch, vals)
 	}
 	cancelCompatibility()
 	if err != nil {
 		return err
+	}
+	for _, warning := range imageWarnings {
+		logrus.Warn(warning)
 	}
 	install := action.NewInstall(actionConfig)
 	configureHelmInstall(install, releaseName, namespace, installTimeout)
@@ -1757,13 +1761,17 @@ func installHelmChartStream(ctx context.Context, lifecycle HelmInstallLifecycle,
 		compatibilityCtx, cancelCompatibility := context.WithTimeout(installCtx, helmCompatibilityTimeout)
 		attachHelmCapabilities(compatibilityCtx, actionConfig, cfg, logFn)
 		err = validateHelmChartCompatibility(compatibilityCtx, cfg, actionConfig, releaseName, namespace, helmChart, vals)
+		var imageWarnings []string
 		if err == nil {
-			err = checkHelmInstallImages(compatibilityCtx, actionConfig, releaseName, namespace, helmChart, vals)
+			imageWarnings = helmInstallImageWarnings(compatibilityCtx, actionConfig, releaseName, namespace, helmChart, vals)
 		}
 		cancelCompatibility()
 		if err != nil {
 			finishWithError(err, "compatibility validation error")
 			return
+		}
+		for _, warning := range imageWarnings {
+			sendWarning(warning)
 		}
 		if err := lifecycle.MarkInstalling(); err != nil {
 			finishWithError(err, "phase transition error")

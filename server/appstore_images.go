@@ -2,7 +2,6 @@ package server
 
 import (
 	"fmt"
-	"strings"
 
 	"github.com/beego/beego/logs"
 
@@ -10,15 +9,16 @@ import (
 	"github.com/casosorg/casos/store"
 )
 
-// InstallImageVulnerabilityGate refuses to install a chart whose images are
-// already known to carry CRITICAL findings.
+// InstallImageVulnerabilityWarnings reports what the scan cache already knows
+// about the images a chart is about to run.
 //
-// It runs before Helm creates anything, so the operator gets a decision they can
-// act on: choose another chart version, or clear the finding from the scan
-// results to override. Images with no scan yet are allowed and queued — the gate
-// reports what is known, and never guesses.
-func InstallImageVulnerabilityGate(images []string) error {
-	var blocked []string
+// It runs before Helm creates anything so the operator sees the finding while
+// they are still choosing, but it never stops the install: the platform's job
+// here is to tell them, not to decide for them. Images with no scan yet are
+// queued and produce no warning — the report says what is known, and never
+// guesses. Full details stay on the Trivy scan results page.
+func InstallImageVulnerabilityWarnings(images []string) []string {
+	var warnings []string
 	for _, image := range images {
 		if image == "" {
 			continue
@@ -33,20 +33,17 @@ func InstallImageVulnerabilityGate(images []string) error {
 			continue
 		}
 		if result.Status == "done" && result.Critical > 0 {
-			blocked = append(blocked, fmt.Sprintf("%s (%d CRITICAL)", image, result.Critical))
+			warnings = append(warnings, fmt.Sprintf(
+				"image %s has %d known CRITICAL vulnerabilities — see the Trivy scan results page for details",
+				image, result.Critical,
+			))
 		}
 	}
-	if len(blocked) == 0 {
-		return nil
-	}
-	return fmt.Errorf(
-		"this app was not installed because its images have known CRITICAL vulnerabilities: %s — install a chart version with updated images, or remove the image from the Trivy scan results to override",
-		strings.Join(blocked, ", "),
-	)
+	return warnings
 }
 
-// RegisterInstallImageVulnerabilityGate hands the gate to the store package,
-// which cannot reach the scan results itself.
-func RegisterInstallImageVulnerabilityGate() {
-	store.ImageVulnerabilityGate = InstallImageVulnerabilityGate
+// RegisterInstallImageVulnerabilityReporter hands the reporter to the store
+// package, which cannot reach the scan results itself.
+func RegisterInstallImageVulnerabilityReporter() {
+	store.ImageVulnerabilityReporter = InstallImageVulnerabilityWarnings
 }
