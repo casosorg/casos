@@ -78,6 +78,7 @@ type HelmReleaseSummary struct {
 	RepoURL      string `json:"repoURL,omitempty"`
 	AppVersion   string `json:"app_version"`
 	Description  string `json:"description"`
+	Icon         string `json:"icon,omitempty"`
 }
 
 const helmRepoURLAnnotation = "casos.org/helm-repository-url"
@@ -1462,13 +1463,14 @@ func oneLineDiagnosticText(text string, maxLen int) string {
 // ---------- Release helpers ----------
 
 func relToSummary(r *release.Release) HelmReleaseSummary {
-	chartStr, chartName, chartVersion, appVersion, repoURL := "", "", "", "", ""
+	chartStr, chartName, chartVersion, appVersion, repoURL, icon := "", "", "", "", "", ""
 	if r.Chart != nil && r.Chart.Metadata != nil {
 		chartName = r.Chart.Metadata.Name
 		chartVersion = r.Chart.Metadata.Version
 		chartStr = chartName + "-" + chartVersion
 		appVersion = r.Chart.Metadata.AppVersion
 		repoURL = helmChartRepoURL(r.Chart)
+		icon = r.Chart.Metadata.Icon
 	}
 	return HelmReleaseSummary{
 		Name:         r.Name,
@@ -1482,6 +1484,7 @@ func relToSummary(r *release.Release) HelmReleaseSummary {
 		RepoURL:      repoURL,
 		AppVersion:   appVersion,
 		Description:  r.Info.Description,
+		Icon:         icon,
 	}
 }
 

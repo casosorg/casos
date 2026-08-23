@@ -12,6 +12,7 @@ import {MessageAlert} from "@/components/ui/alert";
 import {Separator} from "@/components/ui/separator";
 import {SimpleTooltip} from "@/components/ui/tooltip";
 import {cn} from "@/lib/utils";
+import {AppIcon} from "@/components/shared/app-icon";
 import {ConfirmDialog} from "@/components/shared/confirm-dialog";
 import {Field, FormDialog} from "@/components/shared/form-dialog";
 import {Loading} from "@/components/shared/loading";
@@ -28,34 +29,11 @@ const PRESET_REPOS = [
 
 const ARTIFACT_HUB_PAGE_SIZE = 20;
 
-function ChartIcon({icon, name, size = 40}) {
-  const [failed, setFailed] = useState(false);
-  if (icon && !failed) {
-    return (
-      <img
-        src={icon}
-        alt={name}
-        onError={() => setFailed(true)}
-        className="shrink-0 object-contain"
-        style={{width: size, height: size}}
-      />
-    );
-  }
-  return (
-    <div
-      className="bg-muted text-muted-foreground flex shrink-0 items-center justify-center rounded-lg text-lg font-semibold"
-      style={{width: size, height: size}}
-    >
-      {(name || "?")[0].toUpperCase()}
-    </div>
-  );
-}
-
 function ChartCard({chart, onInstall}) {
   const {t} = useTranslation();
   return (
     <div data-testid="chart-card" className="bg-card hover:border-ring/50 flex gap-3 rounded-xl border p-3 shadow-sm transition-colors">
-      <ChartIcon icon={chart.icon} name={chart.displayName} />
+      <AppIcon src={chart.icon} chartName={chart.chartName} name={chart.displayName} />
       <div className="flex min-w-0 flex-1 flex-col gap-1.5">
         <div className="flex items-start gap-2">
           <SimpleTooltip title={chart.displayName} className="max-w-xs">

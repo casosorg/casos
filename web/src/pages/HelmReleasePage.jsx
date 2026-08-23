@@ -1,6 +1,6 @@
 import React, {useEffect, useState} from "react";
 import {useTranslation} from "react-i18next";
-import {CircleArrowUp, History, RefreshCw, RotateCcw, ScrollText, Trash2} from "lucide-react";
+import {CircleArrowUp, History, Plus, RefreshCw, RotateCcw, ScrollText, Search, Trash2} from "lucide-react";
 import {useHistory} from "react-router-dom";
 import * as HelmBackend from "@/backend/HelmBackend";
 import * as IngressBackend from "@/backend/IngressBackend";
@@ -11,8 +11,10 @@ import * as Setting from "@/Setting";
 import {Badge} from "@/components/ui/badge";
 import {Button} from "@/components/ui/button";
 import {Checkbox} from "@/components/ui/checkbox";
+import {Input} from "@/components/ui/input";
 import {MessageAlert} from "@/components/ui/alert";
 import {SimpleTooltip} from "@/components/ui/tooltip";
+import {AppIcon} from "@/components/shared/app-icon";
 import {DataTable} from "@/components/shared/data-table";
 import {ConfirmDialog} from "@/components/shared/confirm-dialog";
 import {PageContainer} from "@/components/shared/page-header";
@@ -25,6 +27,7 @@ import {PageHeader} from "@/components/shared/page-header";
 import {useResource} from "@/hooks/use-resource";
 import {useUiMode} from "@/hooks/use-ui-mode";
 import {appResourcesOf, groupAppResources} from "@/lib/appAccess";
+import {cn} from "@/lib/utils";
 
 function releaseKey(release) {
   return `${release.namespace}/${release.name}`;
@@ -101,11 +104,61 @@ export function helmReleaseUpgradeTarget(release) {
 }
 
 function StatusBadge({status, description}) {
-  const badge = <Badge variant={STATUS_VARIANTS[status] ?? "muted"}>{status}</Badge>;
+  const badge = (
+    <Badge variant={STATUS_VARIANTS[status] ?? "muted"} className="gap-1.5">
+      <span className="size-1.5 rounded-full bg-current" />
+      {status}
+    </Badge>
+  );
   if (status === "failed" && description) {
-    return <SimpleTooltip title={description}>{badge}</SimpleTooltip>;
+    // Badge does not forward a ref; the tooltip anchors to a span of its own.
+    return (
+      <SimpleTooltip title={description}>
+        <span>{badge}</span>
+      </SimpleTooltip>
+    );
   }
   return badge;
+}
+
+// Simple mode sorts an app into one of these, so the reader can ask "what is
+// broken" without knowing that Helm calls it "failed" or "pending-upgrade".
+function statusBucket(release) {
+  if (isPendingRelease(release.status)) {
+    return "updating";
+  }
+  if (release.status === "failed") {
+    return "attention";
+  }
+  if (release.status === "deployed") {
+    return "running";
+  }
+  return "other";
+}
+
+function FilterChip({active, label, count, onClick}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={cn(
+        "inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs transition-colors",
+        active
+          ? "bg-primary text-primary-foreground border-primary font-medium"
+          : "hover:bg-accent text-muted-foreground"
+      )}
+    >
+      {label}
+      <span
+        className={cn(
+          "rounded-full px-1.5 text-[10px] tabular-nums",
+          active ? "bg-primary-foreground/20" : "bg-muted text-muted-foreground"
+        )}
+      >
+        {count}
+      </span>
+    </button>
+  );
 }
 
 export default function HelmReleasePage() {
@@ -116,6 +169,8 @@ export default function HelmReleasePage() {
   const [releases, setReleases] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
+  const [query, setQuery] = useState("");
+  const [bucket, setBucket] = useState("all");
   // Keyed per release so the choice cannot leak from one row's dialog to another.
   const [deleteDataFor, setDeleteDataFor] = useState({});
 
@@ -295,7 +350,19 @@ export default function HelmReleasePage() {
   }
 
   const columns = [
-    {key: "name", title: t("helm:Release name"), dataIndex: "name", sortable: true, className: "font-medium"},
+    {
+      key: "name",
+      title: t("helm:Release name"),
+      dataIndex: "name",
+      sortable: true,
+      minWidth: 220,
+      render: (value, release) => (
+        <span className="flex items-center gap-2.5">
+          <AppIcon src={release.icon} chartName={release.chartName} name={value} size="sm" />
+          <span className="truncate font-medium">{value}</span>
+        </span>
+      ),
+    },
     {
       key: "chart",
       title: t("helm:Chart"),
@@ -413,6 +480,29 @@ export default function HelmReleasePage() {
 
   const appResources = groupAppResources({services, ingresses, pvcs, nodes});
 
+  const counts = {all: releases.length, running: 0, attention: 0, updating: 0, other: 0};
+  releases.forEach((release) => {
+    counts[statusBucket(release)] += 1;
+  });
+  const needle = query.trim().toLowerCase();
+  const visibleReleases = releases.filter((release) => {
+    if (bucket !== "all" && statusBucket(release) !== bucket) {
+      return false;
+    }
+    if (!needle) {
+      return true;
+    }
+    return [release.name, release.chartName, release.chart, release.namespace]
+      .filter(Boolean)
+      .some((field) => field.toLowerCase().includes(needle));
+  });
+  const filters = [
+    {key: "all", label: t("simple:All apps")},
+    {key: "running", label: t("simple:Running")},
+    {key: "attention", label: t("simple:Needs attention")},
+    {key: "updating", label: t("simple:Updating")},
+  ].filter((filter) => filter.key === "all" || (counts[filter.key] ?? 0) > 0);
+
   return (
     <PageContainer>
       {error ? <MessageAlert title={error} /> : null}
@@ -439,6 +529,10 @@ export default function HelmReleasePage() {
                 <RefreshCw />
                 {t("general:Refresh")}
               </Button>
+              <Button size="sm" onClick={() => router.push("/app-store")}>
+                <Plus />
+                {t("helm:Install")}
+              </Button>
             </>
           }
         />
@@ -453,15 +547,58 @@ export default function HelmReleasePage() {
                   <RefreshCw />
                   {t("general:Refresh")}
                 </Button>
-                <Button onClick={() => router.push("/app-store")}>{t("simple:Install an app")}</Button>
+                <Button onClick={() => router.push("/app-store")}>
+                  <Plus />
+                  {t("simple:Install an app")}
+                </Button>
               </>
             }
           />
+
+          {releases.length > 0 ? (
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <div className="relative w-full sm:max-w-xs">
+                <Search className="text-muted-foreground pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2" />
+                <Input
+                  value={query}
+                  onChange={(event) => setQuery(event.target.value)}
+                  placeholder={t("simple:Search apps")}
+                  className="pl-9"
+                />
+              </div>
+              <div className="flex flex-wrap gap-1.5">
+                {filters.map((filter) => (
+                  <FilterChip
+                    key={filter.key}
+                    label={filter.label}
+                    count={counts[filter.key] ?? 0}
+                    active={bucket === filter.key}
+                    onClick={() => setBucket(filter.key)}
+                  />
+                ))}
+              </div>
+            </div>
+          ) : null}
+
           <AppCardList
-            releases={releases}
+            releases={visibleReleases}
             resources={(release) => appResourcesOf(appResources, release)}
             loading={loading}
             isPending={isPendingRelease}
+            emptyTitle={releases.length > 0 ? t("simple:No app here matches that.") : undefined}
+            emptyAction={
+              releases.length > 0 ? (
+                <Button
+                  variant="outline"
+                  onClick={() => {
+                    setQuery("");
+                    setBucket("all");
+                  }}
+                >
+                  {t("simple:Show all apps")}
+                </Button>
+              ) : undefined
+            }
             deleteDataFor={deleteDataFor}
             onDeleteDataChange={(release, checked) =>
               setDeleteDataFor((previous) => ({...previous, [releaseKey(release)]: checked}))
@@ -484,11 +621,11 @@ export default function HelmReleasePage() {
         {historyLoading ? (
           <Loading />
         ) : (
-          <ol className="relative grid gap-5 border-l pl-5">
+          <ol className="relative grid gap-3 border-l pl-5">
             {history.map((revision) => (
-              <li key={revision.revision} className="relative">
+              <li key={revision.revision} className="bg-card relative rounded-lg border p-3 shadow-sm">
                 <span
-                  className={`absolute -left-[27px] top-1.5 size-2.5 rounded-full ${
+                  className={`ring-background absolute top-4 -left-[27px] size-2.5 rounded-full ring-4 ${
                     revision.status === "deployed"
                       ? "bg-success"
                       : revision.status === "failed"
@@ -530,7 +667,7 @@ export default function HelmReleasePage() {
           <>
             {operationError ? <MessageAlert title={operationError} /> : null}
             {operation ? (
-              <div className="flex flex-wrap items-center gap-2">
+              <div className="bg-muted/40 flex flex-wrap items-center gap-2 rounded-lg border px-3 py-2">
                 <Badge variant="muted">{operation.operation}</Badge>
                 <Badge variant={OPERATION_STATUS_VARIANTS[operation.status] ?? "muted"}>{operation.status}</Badge>
                 <Badge variant="muted">{operation.phase}</Badge>

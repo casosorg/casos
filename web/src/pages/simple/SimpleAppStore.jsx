@@ -9,28 +9,17 @@ import {Badge} from "@/components/ui/badge";
 import {Button} from "@/components/ui/button";
 import {Input} from "@/components/ui/input";
 import {PageContainer, PageHeader} from "@/components/shared/page-header";
+import {AppIcon} from "@/components/shared/app-icon";
 import {HelmInstallDialog} from "@/components/shared/helm-install-dialog";
-import {APP_CATALOG, APP_CATEGORIES, appTileColor} from "@/lib/appCatalog";
+import {APP_CATALOG, APP_CATEGORIES} from "@/lib/appCatalog";
 import {cn} from "@/lib/utils";
-
-function AppTile({app}) {
-  return (
-    <span
-      className="flex size-11 shrink-0 items-center justify-center rounded-xl text-lg font-semibold text-white"
-      style={{backgroundColor: appTileColor(app.chartName)}}
-      aria-hidden="true"
-    >
-      {app.name[0].toUpperCase()}
-    </span>
-  );
-}
 
 function AppCard({app, installed, onInstall}) {
   const {t} = useTranslation();
   return (
     <div className="bg-card hover:border-ring/50 flex h-full flex-col gap-3 rounded-xl border p-4 shadow-sm transition-colors">
       <div className="flex items-start gap-3">
-        <AppTile app={app} />
+        <AppIcon src={app.icon} chartName={app.chartName} name={app.name} />
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2">
             <span className="truncate text-sm font-semibold">{app.name}</span>
