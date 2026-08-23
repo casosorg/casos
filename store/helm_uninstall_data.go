@@ -34,10 +34,8 @@ func helmUninstallTimeout() time.Duration {
 	return timeout
 }
 
-// helmReleaseClaimLabels name the labels a chart uses to stamp its release onto
-// the PersistentVolumeClaims it creates: the current Helm convention first, then
-// the pre-3.x label older charts still emit.
-var helmReleaseClaimLabels = []string{"app.kubernetes.io/instance", "release"}
+// Include legacy labels still used by older charts.
+var helmReleaseClaimLabels = []string{"app.kubernetes.io/instance", "release", "app"}
 
 // helmReleaseClaimNames lists the PersistentVolumeClaims that belong to a
 // release. Claims are matched by label rather than by reading the release
