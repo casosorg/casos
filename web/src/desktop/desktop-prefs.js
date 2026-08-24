@@ -6,7 +6,16 @@
 
 const LAYOUT_KEY = "desktopLayout";
 const WALLPAPER_KEY = "desktopWallpaper";
+const CUSTOM_WALLPAPER_KEY = "desktopCustomWallpaper";
 const DOCK_KEY = "desktopDockHidden";
+const DOCK_MODE_KEY = "desktopDockMode";
+const TOUR_KEY = "desktopTourSeen";
+
+/** The two shapes the launcher strip can take, as sealos's app bar toggle does. */
+export const DOCK_MODE = {DOCK: "dock", BAR: "bar"};
+
+/** The key a wallpaper of the reader's own is filed under. */
+export const CUSTOM_WALLPAPER = "custom";
 
 export const WALLPAPERS = [
   {
@@ -51,9 +60,73 @@ export function isLightWallpaper(key) {
 export function readWallpaper() {
   try {
     const stored = localStorage.getItem(WALLPAPER_KEY);
+    if (stored === CUSTOM_WALLPAPER) {
+      return readCustomWallpaper() ? CUSTOM_WALLPAPER : WALLPAPERS[0].key;
+    }
     return WALLPAPERS.some((paper) => paper.key === stored) ? stored : WALLPAPERS[0].key;
   } catch {
     return WALLPAPERS[0].key;
+  }
+}
+
+/** The reader's own wallpaper: an address, or an image they dropped in. */
+export function readCustomWallpaper() {
+  try {
+    return localStorage.getItem(CUSTOM_WALLPAPER_KEY) || "";
+  } catch {
+    return "";
+  }
+}
+
+export function writeCustomWallpaper(source) {
+  try {
+    if (source) {
+      localStorage.setItem(CUSTOM_WALLPAPER_KEY, source);
+    } else {
+      localStorage.removeItem(CUSTOM_WALLPAPER_KEY);
+    }
+  } catch {
+    // An image too large for storage simply does not persist.
+  }
+}
+
+/** What to paint the desktop with, whichever kind of wallpaper is chosen. */
+export function wallpaperStyle(key, custom) {
+  if (key === CUSTOM_WALLPAPER && custom) {
+    return {backgroundImage: `url(${JSON.stringify(custom)})`, backgroundSize: "cover", backgroundPosition: "center"};
+  }
+  return WALLPAPERS.find((paper) => paper.key === key)?.style ?? WALLPAPERS[0].style;
+}
+
+export function readDockMode() {
+  try {
+    return localStorage.getItem(DOCK_MODE_KEY) === DOCK_MODE.BAR ? DOCK_MODE.BAR : DOCK_MODE.DOCK;
+  } catch {
+    return DOCK_MODE.DOCK;
+  }
+}
+
+export function writeDockMode(mode) {
+  try {
+    localStorage.setItem(DOCK_MODE_KEY, mode);
+  } catch {
+    // Ignored for the same reason as above.
+  }
+}
+
+export function readTourSeen() {
+  try {
+    return localStorage.getItem(TOUR_KEY) === "true";
+  } catch {
+    return true;
+  }
+}
+
+export function writeTourSeen(seen) {
+  try {
+    localStorage.setItem(TOUR_KEY, String(seen));
+  } catch {
+    // A tour that shows twice is better than one that crashes the desktop.
   }
 }
 

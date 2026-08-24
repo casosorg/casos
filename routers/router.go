@@ -29,6 +29,8 @@ func InitAPI() {
 	beego.Router("/api/delete-node", &controllers.ApiController{}, "POST:DeleteNode")
 	beego.Router("/api/get-worker-kubeconfig", &controllers.ApiController{}, "GET:GetWorkerKubeconfig")
 
+	beego.Router("/api/get-events", &controllers.ApiController{}, "GET:GetEvents")
+
 	beego.Router("/api/get-namespaces", &controllers.ApiController{}, "GET:GetNamespaces")
 	beego.Router("/api/get-namespace", &controllers.ApiController{}, "GET:GetNamespace")
 	beego.Router("/api/add-namespace", &controllers.ApiController{}, "POST:AddNamespace")

@@ -189,12 +189,43 @@ browser address bar.
 | `desktop-icons.jsx` | The icon grid and the folder icons drag into |
 | `app-launcher.jsx` | Launchpad: every app, searchable, with the pin that puts one on the desktop |
 | `desktop-topbar.jsx` | Search, cluster vitals, notifications, account controls |
-| `desktop-prefs.js` | What persists in localStorage: arrangement, wallpaper, dock state |
+| `notification-center.jsx` | The bell: cluster warnings and standing conditions, with read state |
+| `desktop-tour.jsx` | The first-run spotlight tour |
+| `desktop-prefs.js` | What persists in localStorage: arrangement, wallpaper, dock mode and state, tour |
 | `use-installed-apps.js` | Installed releases that have an address, as icons |
+| `app-sdk.js` | The desktop half of the app SDK: the postMessage channel apps in frames talk over |
+| `use-app-sdk.js` | What the desktop answers with — session, language, quota, host config, event bus |
 
 An installed app becomes an icon only once it has a reachable address (the
 Ingress or Service its release owns), and opens in an iframe. Apps that refuse
 framing still have the window header's open-in-browser button.
+
+The dock has two shapes, switched from the desktop's right-click menu and
+forced to the second below 768px: the floating dock, and a task bar across the
+bottom edge that a maximized window stops above.
+
+### The app SDK
+
+An app hosted in a window is a separate document, so it learns about the desktop
+by asking. `web/public/casos-app-sdk.js` is served at `/casos-app-sdk.js` and
+needs no build step:
+
+```html
+<script src="https://<casos-host>/casos-app-sdk.js"></script>
+<script>
+  const session = await casosApp.getSession();
+  await casosApp.openApp({appKey: "system-pods"});
+</script>
+```
+
+`getSession`, `getLanguage`, `getWorkspaceQuota`, `getHostConfig`, `getApps`,
+`openApp`, `closeApp`, `showMessage`, and an event bus in both directions. The
+wire protocol is the one sealos's client SDK speaks and `window.sealosApp` is
+aliased to the same object, so an app written for that desktop runs unchanged.
+
+Only the origins of apps this cluster installed may use the channel — an app's
+own origin is the proof the operator put it there. Nothing in the session is
+cluster credentials: it carries identity and workspace, not a kubeconfig.
 
 `useUiMode` treats the desktop as a mode: entering it stores `uiMode=desktop`, so
 `/` lands there next time, and leaving it returns to whichever page mode the

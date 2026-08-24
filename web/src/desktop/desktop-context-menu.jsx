@@ -1,16 +1,35 @@
 import React, {useEffect, useRef, useState} from "react";
 import i18next from "i18next";
-import {Check, Image as ImageIcon, LayoutPanelLeft, PanelBottom, RotateCcw, XSquare} from "lucide-react";
+import {Check, Compass, Image as ImageIcon, LayoutPanelLeft, PanelBottom, PanelBottomDashed, Plus, RotateCcw, XSquare} from "lucide-react";
 import {cn} from "@/lib/utils";
-import {WALLPAPERS} from "@/desktop/desktop-prefs";
+import {CUSTOM_WALLPAPER, DOCK_MODE, WALLPAPERS} from "@/desktop/desktop-prefs";
+
+/** Larger than this and the browser refuses to keep it in local storage. */
+const MAX_WALLPAPER_BYTES = 4 * 1024 * 1024;
 
 /**
  * The desktop's right-click menu. Everything here is a property of the desktop
  * itself — the wallpaper, the dock, the arrangement — which is why none of it
  * is in the account menu.
  */
-export function DesktopContextMenu({position, wallpaper, dockHidden, onClose, onPickWallpaper, onToggleDock, onResetLayout, onCloseAllWindows, onExitDesktop}) {
+export function DesktopContextMenu({
+  position,
+  wallpaper,
+  customWallpaper,
+  dockHidden,
+  dockMode,
+  onClose,
+  onPickWallpaper,
+  onPickCustomWallpaper,
+  onToggleDock,
+  onToggleDockMode,
+  onResetLayout,
+  onCloseAllWindows,
+  onStartTour,
+  onExitDesktop,
+}) {
   const ref = useRef(null);
+  const fileRef = useRef(null);
   const [showWallpapers, setShowWallpapers] = useState(false);
 
   useEffect(() => {
@@ -38,7 +57,25 @@ export function DesktopContextMenu({position, wallpaper, dockHidden, onClose, on
 
   // Menus opened near the right or bottom edge would otherwise run off screen.
   const left = Math.min(position.x, window.innerWidth - 240);
-  const top = Math.min(position.y, window.innerHeight - 260);
+  const top = Math.min(position.y, window.innerHeight - 320);
+
+  function handleFile(event) {
+    const file = event.target.files?.[0];
+    event.target.value = "";
+    if (!file) {
+      return;
+    }
+    if (file.size > MAX_WALLPAPER_BYTES) {
+      window.alert(i18next.t("desktop:Pick an image under 4 MB."));
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = () => {
+      onPickCustomWallpaper(String(reader.result));
+      onClose();
+    };
+    reader.readAsDataURL(file);
+  }
 
   return (
     <div
@@ -68,8 +105,29 @@ export function DesktopContextMenu({position, wallpaper, dockHidden, onClose, on
               {paper.key === wallpaper && <Check className="absolute inset-0 m-auto size-4 text-white drop-shadow" />}
             </button>
           ))}
+          <button
+            type="button"
+            title={i18next.t("desktop:Use my own image")}
+            onClick={() => fileRef.current?.click()}
+            className={cn(
+              "text-muted-foreground relative flex h-10 items-center justify-center rounded-md border border-dashed",
+              wallpaper === CUSTOM_WALLPAPER ? "ring-primary ring-2" : "hover:bg-accent"
+            )}
+            style={customWallpaper ? {backgroundImage: `url(${JSON.stringify(customWallpaper)})`, backgroundSize: "cover", backgroundPosition: "center"} : undefined}
+          >
+            {!customWallpaper && <Plus className="size-4" />}
+          </button>
+          <input ref={fileRef} type="file" accept="image/*" className="hidden" onChange={handleFile} />
         </div>
       )}
+      <MenuItem
+        icon={dockMode === DOCK_MODE.BAR ? PanelBottomDashed : PanelBottom}
+        label={dockMode === DOCK_MODE.BAR ? i18next.t("desktop:Use the dock") : i18next.t("desktop:Use a task bar")}
+        onClick={() => {
+          onToggleDockMode();
+          onClose();
+        }}
+      />
       <MenuItem
         icon={PanelBottom}
         label={dockHidden ? i18next.t("desktop:Show dock") : i18next.t("desktop:Hide dock")}
@@ -95,6 +153,14 @@ export function DesktopContextMenu({position, wallpaper, dockHidden, onClose, on
         }}
       />
       <div className="bg-border my-1 h-px" />
+      <MenuItem
+        icon={Compass}
+        label={i18next.t("onboarding:Show me around")}
+        onClick={() => {
+          onClose();
+          onStartTour();
+        }}
+      />
       <MenuItem
         icon={LayoutPanelLeft}
         label={i18next.t("desktop:Management view")}

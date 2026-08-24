@@ -8,7 +8,16 @@ import {signInAsCiUser} from "./e2e-helpers.js";
  * minimize, find — so a regression in any of them is worth a red run.
  */
 
-async function openDesktop(page) {
+async function openDesktop(page, {tour = false} = {}) {
+  // The first-run tour covers the desktop with a spotlight overlay. Every test
+  // but the one about the tour wants what is underneath it.
+  await page.addInitScript((seen) => {
+    // Seed only what the desktop has not decided for itself, so a dismissal
+    // made during the test survives the next navigation.
+    if (window.localStorage.getItem("desktopTourSeen") === null) {
+      window.localStorage.setItem("desktopTourSeen", seen);
+    }
+  }, String(!tour));
   await page.goto("/desktop");
   await page.getByTestId("desktop-icons").waitFor();
 }
@@ -57,4 +66,47 @@ test("the launcher finds an app that is not on the desktop @smoke", async({page}
 
   await launcher.getByTestId("desktop-icon-system-secrets").click();
   await expect(page.getByTestId("desktop-window-system-secrets")).toBeVisible();
+});
+
+test("the first-run tour points at the desktop and then gets out of the way", async({page}) => {
+  await signInAsCiUser(page);
+  await openDesktop(page, {tour: true});
+
+  const tour = page.getByTestId("desktop-tour");
+  await expect(tour).toBeVisible();
+
+  await tour.getByRole("button", {name: "Skip"}).click();
+  await expect(tour).toBeHidden();
+
+  // Having been dismissed, it stays dismissed on the next visit.
+  await page.reload();
+  await page.getByTestId("desktop-icons").waitFor();
+  await expect(page.getByTestId("desktop-tour")).toBeHidden();
+});
+
+test("the desktop switches between a dock and a task bar", async({page}) => {
+  await signInAsCiUser(page);
+  await openDesktop(page);
+
+  await expect(page.getByTestId("desktop-dock")).toBeVisible();
+
+  await page.getByTestId("desktop-icons").click({button: "right"});
+  await page.getByTestId("desktop-context-menu").getByRole("button", {name: "Use a task bar"}).click();
+
+  await expect(page.getByTestId("desktop-appbar")).toBeVisible();
+  await expect(page.getByTestId("desktop-dock")).toBeHidden();
+
+  // A window launched from the task bar is the same window the dock launches.
+  await page.getByTestId("dock-icon-system-app-store").click();
+  await expect(page.getByTestId("desktop-window-system-app-store")).toBeVisible();
+});
+
+test("the notification centre reports what the cluster recorded", async({page}) => {
+  await signInAsCiUser(page);
+  await openDesktop(page);
+
+  await page.getByTestId("desktop-notifications").click();
+  const panel = page.getByRole("dialog");
+  await expect(panel.getByRole("tab", {name: /Unread/})).toBeVisible();
+  await expect(panel.getByRole("tab", {name: "All"})).toBeVisible();
 });

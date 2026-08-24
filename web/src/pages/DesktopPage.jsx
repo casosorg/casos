@@ -3,7 +3,7 @@ import {useTranslation} from "react-i18next";
 import * as DashboardBackend from "@/backend/DashboardBackend";
 import * as Setting from "@/Setting";
 import {AccountDialog} from "@/components/shared/account-dialog";
-import {AppDock} from "@/desktop/app-dock";
+import {APP_BAR_HEIGHT, AppDock} from "@/desktop/app-dock";
 import {AppFrame} from "@/desktop/app-frame";
 import {AppLauncher} from "@/desktop/app-launcher";
 import {AppWindow} from "@/desktop/app-window";
@@ -13,27 +13,58 @@ import {DesktopContextMenu} from "@/desktop/desktop-context-menu";
 import {DesktopIcons} from "@/desktop/desktop-icons";
 import {DesktopProvider, useDesktop} from "@/desktop/desktop-store";
 import {DesktopTopBar} from "@/desktop/desktop-topbar";
+import {DesktopTour} from "@/desktop/desktop-tour";
 import {
-  WALLPAPERS,
+  CUSTOM_WALLPAPER,
+  DOCK_MODE,
   isLightWallpaper,
+  readCustomWallpaper,
   readDockHidden,
+  readDockMode,
   readLayout,
+  readTourSeen,
   readWallpaper,
   reconcileLayout,
+  wallpaperStyle,
+  writeCustomWallpaper,
   writeDockHidden,
+  writeDockMode,
   writeLayout,
+  writeTourSeen,
   writeWallpaper,
 } from "@/desktop/desktop-prefs";
+import {useAppSdk} from "@/desktop/use-app-sdk";
 import {useInstalledApps} from "@/desktop/use-installed-apps";
+import {useIsNarrow} from "@/hooks/use-screen";
 import {useUiMode} from "@/hooks/use-ui-mode";
 import {useResource} from "@/hooks/use-resource";
 
 /** The windows themselves, plus the icons and dock that launch them. */
-function DesktopShell({apps, stats, wallpaper, light, dockHidden, onToggleDock, onPickWallpaper, onExitDesktop, topBarProps}) {
+function DesktopShell({
+  apps,
+  account,
+  stats,
+  wallpaper,
+  customWallpaper,
+  light,
+  dockHidden,
+  dockMode,
+  onToggleDock,
+  onToggleDockMode,
+  onPickWallpaper,
+  onPickCustomWallpaper,
+  onExitDesktop,
+  topBarProps,
+}) {
   const {processes, openApp, closeAll} = useDesktop();
   const [launcherOpen, setLauncherOpen] = useState(false);
   const [menuPosition, setMenuPosition] = useState(null);
+  const [tourOpen, setTourOpen] = useState(() => !readTourSeen());
   const [layout, setLayout] = useState(() => reconcileLayout(readLayout(), apps, DEFAULT_DESKTOP_KEYS));
+  const narrow = useIsNarrow();
+  const barMode = narrow || dockMode === DOCK_MODE.BAR;
+
+  useAppSdk({apps, account, stats});
 
   // Installed apps arrive after the first paint, and uninstalled ones stop
   // arriving; either way the arrangement is re-read against what exists now.
@@ -56,7 +87,7 @@ function DesktopShell({apps, stats, wallpaper, light, dockHidden, onToggleDock, 
     <div
       data-testid="desktop"
       className="fixed inset-0 flex flex-col overflow-hidden bg-cover bg-center"
-      style={WALLPAPERS.find((paper) => paper.key === wallpaper)?.style}
+      style={wallpaperStyle(wallpaper, customWallpaper)}
       onContextMenu={(event) => {
         // Only the desktop itself takes over the browser menu; inside a window
         // the reader still gets the browser's own.
@@ -82,7 +113,7 @@ function DesktopShell({apps, stats, wallpaper, light, dockHidden, onToggleDock, 
       </div>
 
       {processes.map((process) => (
-        <AppWindow key={process.pid} process={process}>
+        <AppWindow key={process.pid} process={process} narrow={narrow} bottomInset={barMode && !dockHidden ? APP_BAR_HEIGHT : 0}>
           <AppFrame process={process} />
         </AppWindow>
       ))}
@@ -90,6 +121,7 @@ function DesktopShell({apps, stats, wallpaper, light, dockHidden, onToggleDock, 
       <AppDock
         apps={apps}
         hidden={dockHidden}
+        mode={barMode ? DOCK_MODE.BAR : dockMode}
         onToggleHidden={onToggleDock}
         onOpenLauncher={() => setLauncherOpen(true)}
       />
@@ -106,13 +138,26 @@ function DesktopShell({apps, stats, wallpaper, light, dockHidden, onToggleDock, 
       <DesktopContextMenu
         position={menuPosition}
         wallpaper={wallpaper}
+        customWallpaper={customWallpaper}
         dockHidden={dockHidden}
+        dockMode={dockMode}
         onClose={() => setMenuPosition(null)}
         onPickWallpaper={onPickWallpaper}
+        onPickCustomWallpaper={onPickCustomWallpaper}
         onToggleDock={onToggleDock}
+        onToggleDockMode={onToggleDockMode}
         onResetLayout={resetLayout}
         onCloseAllWindows={closeAll}
+        onStartTour={() => setTourOpen(true)}
         onExitDesktop={onExitDesktop}
+      />
+
+      <DesktopTour
+        open={tourOpen}
+        onClose={() => {
+          setTourOpen(false);
+          writeTourSeen(true);
+        }}
       />
     </div>
   );
@@ -133,7 +178,9 @@ function DesktopPage(props) {
   const [accountDialogOpen, setAccountDialogOpen] = useState(false);
   const [accountUpdatedAt, setAccountUpdatedAt] = useState(0);
   const [wallpaper, setWallpaper] = useState(readWallpaper);
+  const [customWallpaper, setCustomWallpaper] = useState(readCustomWallpaper);
   const [dockHidden, setDockHidden] = useState(readDockHidden);
+  const [dockMode, setDockMode] = useState(readDockMode);
 
   const {apps: installedApps} = useInstalledApps();
   const {data: stats} = useResource(() => DashboardBackend.getDashboard(), [], {
@@ -180,19 +227,35 @@ function DesktopPage(props) {
     <DesktopProvider value={desktopValue}>
       <DesktopShell
         apps={apps}
+        account={account}
         stats={stats}
         wallpaper={wallpaper}
+        customWallpaper={customWallpaper}
         light={isLightWallpaper(wallpaper)}
         dockHidden={dockHidden}
+        dockMode={dockMode}
         onToggleDock={() => {
           setDockHidden((hidden) => {
             writeDockHidden(!hidden);
             return !hidden;
           });
         }}
+        onToggleDockMode={() => {
+          setDockMode((mode) => {
+            const next = mode === DOCK_MODE.BAR ? DOCK_MODE.DOCK : DOCK_MODE.BAR;
+            writeDockMode(next);
+            return next;
+          });
+        }}
         onPickWallpaper={(key) => {
           setWallpaper(key);
           writeWallpaper(key);
+        }}
+        onPickCustomWallpaper={(source) => {
+          setCustomWallpaper(source);
+          writeCustomWallpaper(source);
+          setWallpaper(CUSTOM_WALLPAPER);
+          writeWallpaper(CUSTOM_WALLPAPER);
         }}
         onExitDesktop={exitDesktop}
         topBarProps={topBarProps}

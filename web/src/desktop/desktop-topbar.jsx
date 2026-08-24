@@ -1,9 +1,8 @@
 import React, {useMemo, useState} from "react";
 import i18next from "i18next";
-import {Bell, Cpu, Globe, LayoutPanelLeft, LogOut, MemoryStick, Moon, Search, Sun, TriangleAlert, User} from "lucide-react";
+import {Cpu, Globe, LayoutPanelLeft, LogOut, MemoryStick, Moon, Search, Sun, User} from "lucide-react";
 import * as Setting from "@/Setting";
 import {Avatar, AvatarFallback, AvatarImage} from "@/components/ui/avatar";
-import {Popover, PopoverContent, PopoverTrigger} from "@/components/ui/popover";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -12,6 +11,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import {cn} from "@/lib/utils";
+import {NotificationCenter} from "@/desktop/notification-center";
 import {tintClass} from "@/desktop/registry";
 
 function percent(used, total) {
@@ -97,49 +97,6 @@ function AppSearch({apps, onOpenApp}) {
   );
 }
 
-/** Whatever the cluster is currently unhappy about. */
-function Notifications({stats}) {
-  const notReady = Math.max((stats?.nodesTotal ?? 0) - (stats?.nodesReady ?? 0), 0);
-  const unhealthy = stats?.unhealthyPods ?? [];
-  const count = notReady + unhealthy.length;
-
-  return (
-    <Popover>
-      <PopoverTrigger asChild>
-        <button
-          type="button"
-          aria-label={i18next.t("desktop:Notifications")}
-          className="relative flex size-8 items-center justify-center rounded-lg text-white/90 hover:bg-white/15"
-        >
-          <Bell className="size-4" />
-          {count > 0 && <span className="bg-destructive absolute top-1 right-1 size-2 rounded-full" />}
-        </button>
-      </PopoverTrigger>
-      <PopoverContent align="end" className="w-80 p-0">
-        <div className="border-b px-3 py-2 text-sm font-medium">{i18next.t("desktop:Notifications")}</div>
-        <div className="max-h-72 overflow-auto p-1.5">
-          {count === 0 && <p className="text-muted-foreground px-2 py-6 text-center text-sm">{i18next.t("desktop:Nothing needs attention")}</p>}
-          {notReady > 0 && (
-            <div className="flex items-start gap-2 rounded-md px-2 py-2 text-sm">
-              <TriangleAlert className="text-warning mt-0.5 size-4 shrink-0" />
-              <span>{i18next.t("desktop:Nodes not ready")}: {notReady}</span>
-            </div>
-          )}
-          {unhealthy.map((pod) => (
-            <div key={`${pod.namespace}/${pod.name}`} className="flex items-start gap-2 rounded-md px-2 py-2 text-sm">
-              <TriangleAlert className="text-destructive mt-0.5 size-4 shrink-0" />
-              <span className="min-w-0">
-                <span className="block truncate font-medium">{pod.name}</span>
-                <span className="text-muted-foreground block truncate text-xs">{pod.namespace} · {pod.reason ?? pod.status}</span>
-              </span>
-            </div>
-          ))}
-        </div>
-      </PopoverContent>
-    </Popover>
-  );
-}
-
 /**
  * The desktop's status bar: search, cluster vitals, notifications, and the
  * account controls that the sidebar UI keeps in its header.
@@ -164,7 +121,7 @@ export function DesktopTopBar({apps, stats, account, logo, themeAlgorithm, onOpe
 
       <div className="flex shrink-0 items-center gap-1.5">
         <ClusterMonitor stats={stats} />
-        <Notifications stats={stats} />
+        <NotificationCenter stats={stats} />
 
         <button
           type="button"

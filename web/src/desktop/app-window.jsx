@@ -38,19 +38,21 @@ function clampToViewport({x, y, width, height}) {
  * mask over the content while another window holds focus so a stray click
  * raises this one instead of landing inside the app.
  */
-export function AppWindow({process, children}) {
+export function AppWindow({process, narrow = false, bottomInset = 0, children}) {
   const {closeApp, focusApp, setSize, setGeometry, currentPid} = useDesktop();
   const [drag, setDrag] = useState(null);
   const frameRef = useRef(null);
 
   const isFocused = currentPid === process.pid;
-  const maximized = process.size === WINDOW_SIZE.MAXIMIZE;
+  // A phone has no room for anything but a full-screen window, so there is
+  // nothing to drag, resize, or restore to.
+  const maximized = narrow || process.size === WINDOW_SIZE.MAXIMIZE;
   const minimized = process.size === WINDOW_SIZE.MINIMIZE;
 
   const geometry = drag ?? {x: process.x, y: process.y, width: process.width, height: process.height};
 
   const startPointer = useCallback((event, mode) => {
-    if (event.button !== 0) {
+    if (event.button !== 0 || narrow) {
       return;
     }
     event.preventDefault();
@@ -113,7 +115,7 @@ export function AppWindow({process, children}) {
 
     window.addEventListener("pointermove", onMove);
     window.addEventListener("pointerup", onUp);
-  }, [focusApp, maximized, process, setGeometry, setSize]);
+  }, [focusApp, maximized, narrow, process, setGeometry, setSize]);
 
   // A window left half off screen after the browser is resized is a window the
   // reader cannot reach the title bar of.
@@ -136,8 +138,10 @@ export function AppWindow({process, children}) {
   const Icon = process.app.icon;
   const title = process.app.labelKey ? i18next.t(process.app.labelKey) : process.app.name;
 
+  // A task bar is part of the screen furniture rather than something to sit
+  // under, so a maximized window stops above it. The floating dock is not.
   const style = maximized
-    ? {top: TOP_BAR_HEIGHT, left: 0, width: "100%", height: `calc(100% - ${TOP_BAR_HEIGHT}px)`, zIndex: process.zIndex}
+    ? {top: TOP_BAR_HEIGHT, left: 0, width: "100%", height: `calc(100% - ${TOP_BAR_HEIGHT + bottomInset}px)`, zIndex: process.zIndex}
     : {
       top: geometry.y,
       left: geometry.x,
@@ -190,12 +194,14 @@ export function AppWindow({process, children}) {
           <WindowButton label={i18next.t("desktop:Minimize")} onClick={() => setSize(process.pid, WINDOW_SIZE.MINIMIZE)}>
             <Minus className="size-3.5" />
           </WindowButton>
-          <WindowButton
-            label={maximized ? i18next.t("desktop:Restore") : i18next.t("desktop:Maximize")}
-            onClick={() => setSize(process.pid, maximized ? WINDOW_SIZE.WINDOWED : WINDOW_SIZE.MAXIMIZE)}
-          >
-            {maximized ? <Minimize2 className="size-3.5" /> : <Maximize2 className="size-3.5" />}
-          </WindowButton>
+          {narrow ? null : (
+            <WindowButton
+              label={maximized ? i18next.t("desktop:Restore") : i18next.t("desktop:Maximize")}
+              onClick={() => setSize(process.pid, maximized ? WINDOW_SIZE.WINDOWED : WINDOW_SIZE.MAXIMIZE)}
+            >
+              {maximized ? <Minimize2 className="size-3.5" /> : <Maximize2 className="size-3.5" />}
+            </WindowButton>
+          )}
           <WindowButton label={i18next.t("desktop:Close")} destructive onClick={() => closeApp(process.pid)}>
             <X className="size-3.5" />
           </WindowButton>
