@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 
 	corev1 "k8s.io/api/core/v1"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	"github.com/casosorg/casos/object"
 )
@@ -29,6 +28,20 @@ type deployAppRequest struct {
 	EnvVars     []envVarRequest  `json:"envVars"`
 	Volumes     []volumeRequest  `json:"volumes"`
 	ServiceType string           `json:"serviceType"`
+	// The rest is what the launchpad form adds on top of a one-click install:
+	// how much the container may use, what it runs, the files and credentials
+	// it needs, and how it is reached and scaled. All optional, so an install
+	// that sends none of it behaves exactly as it did before.
+	resourceRequest
+	Command []string `json:"command"`
+	Args    []string `json:"args"`
+	// Pointers, for the same reason the quantities above are: an install that
+	// says nothing about config files or a domain must leave the ones the app
+	// already has alone, while an empty list means "remove them".
+	ConfigFiles *[]appConfigFile  `json:"configFiles"`
+	Registry    *appRegistryLogin `json:"registry"`
+	Hpa         *appHpaRequest    `json:"hpa"`
+	Domains     *[]appDomain      `json:"domains"`
 }
 
 type deployAppResult struct {
@@ -99,8 +112,31 @@ func (c *ApiController) DeployApp() {
 		return
 	}
 
-	if len(req.Ports) > 0 && len(depl.Spec.Template.Spec.Containers) > 0 {
-		depl.Spec.Template.Spec.Containers[0].Ports = containerPortsFor(req.Ports)
+	configVolume, configMounts, pullSecret, err := reconcileAppExtras(cfg, req, labels, nil)
+	if err != nil {
+		c.ResponseError(err.Error())
+		return
+	}
+
+	container := &depl.Spec.Template.Spec.Containers[0]
+	if err := applyAppContainer(container, req); err != nil {
+		c.ResponseError(err.Error())
+		return
+	}
+	if len(req.Ports) > 0 {
+		container.Ports = containerPortsFor(req.Ports)
+	}
+	if configVolume != nil {
+		depl.Spec.Template.Spec.Volumes = append(depl.Spec.Template.Spec.Volumes, *configVolume)
+		container.VolumeMounts = append(container.VolumeMounts, configMounts...)
+	}
+	applyImagePullSecret(&depl.Spec.Template.Spec, pullSecret)
+
+	// An autoscaled app starts at the floor it will be held to; leaving the
+	// form's replica count would have the autoscaler undo it a minute later.
+	if req.Hpa != nil && req.Hpa.Enabled && req.Hpa.MinReplicas > 0 {
+		minReplicas := req.Hpa.MinReplicas
+		depl.Spec.Replicas = &minReplicas
 	}
 
 	createdDepl, err := object.AddDeployment(cfg, depl)
@@ -111,33 +147,13 @@ func (c *ApiController) DeployApp() {
 
 	result := deployAppResult{Deployment: toDeploymentSummary(*createdDepl)}
 
-	if len(req.Ports) > 0 {
-		svcType := req.ServiceType
-		if svcType == "" {
-			svcType = "NodePort"
-		}
-		svcReq := serviceRequest{
-			Namespace: req.Namespace,
-			Name:      req.Name,
-			Type:      svcType,
-			Selector:  map[string]string{"app": req.Name},
-			Ports:     servicePortsFor(req.Ports),
-		}
-		svc := &corev1.Service{
-			ObjectMeta: metav1.ObjectMeta{
-				Name:      svcReq.Name,
-				Namespace: svcReq.Namespace,
-			},
-			Spec: buildServiceSpec(svcReq),
-		}
-		applyLabels(&svc.ObjectMeta, labels)
-		createdSvc, svcErr := object.AddService(cfg, svc)
-		if svcErr != nil {
-			c.ResponseError("deployment created but service failed: " + svcErr.Error())
-			return
-		}
-		s := toSvcSummary(*createdSvc)
-		result.Service = &s
+	if err := reconcileAppNetworkAndScaling(cfg, req, labels); err != nil {
+		c.ResponseError(err.Error())
+		return
+	}
+	if svc, svcErr := object.GetService(cfg, req.Namespace, req.Name); svcErr == nil {
+		summary := toSvcSummary(*svc)
+		result.Service = &summary
 	}
 
 	c.ResponseOk(result)

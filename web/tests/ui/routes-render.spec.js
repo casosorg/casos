@@ -20,6 +20,8 @@ import {signInAsCiUser} from "./e2e-helpers.js";
 const ROUTES = [
   "/dashboard",
   "/app-store",
+  "/launchpad",
+  "/launchpad/new",
   "/helm-releases",
   "/pods",
   "/deployments",

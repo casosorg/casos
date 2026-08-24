@@ -10,6 +10,7 @@ import {
   LayoutDashboard,
   Lock,
   Network,
+  Rocket,
   Server,
   Store,
 } from "lucide-react";
@@ -26,6 +27,7 @@ import {
 export const navGroups = [
   {key: "/dashboard", label: "general:Dashboard", icon: LayoutDashboard, path: "/dashboard"},
   {key: "/app-store", label: "general:App Store", icon: Store, path: "/app-store"},
+  {key: "/launchpad", label: "launchpad:App Launchpad", icon: Rocket, path: "/launchpad"},
   {key: "/helm-releases", label: "helm:Installed Apps", icon: Boxes, path: "/helm-releases"},
   {
     key: "/workloads",

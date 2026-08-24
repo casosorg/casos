@@ -1,5 +1,7 @@
 import React from "react";
 import {
+  Area,
+  AreaChart,
   Bar,
   BarChart,
   CartesianGrid,
@@ -197,6 +199,43 @@ export function RadialGauge({value = 0, label, caption, color = "var(--chart-1)"
           <Label content={CenteredTotal({value: `${percent}%`, label: caption})} />
         </PolarRadiusAxis>
       </RadialBarChart>
+    </ChartContainer>
+  );
+}
+
+/**
+ * A usage series over time — what an app has been doing, rather than what it is
+ * doing now. Samples arrive one poll at a time, so the axis is deliberately
+ * unlabelled: the shape is the message, and a clock would only claim a
+ * precision the polling does not have.
+ */
+export function UsageAreaChart({data, label, unit = "", color = "var(--chart-1)", className}) {
+  const config = {value: {label: label ?? "", color}};
+
+  return (
+    <ChartContainer config={config} className={cn("aspect-auto h-40 w-full", className)}>
+      <AreaChart data={data} margin={{left: 4, right: 4, top: 8, bottom: 0}}>
+        <CartesianGrid vertical={false} strokeDasharray="3 3" />
+        <YAxis
+          width={48}
+          tickLine={false}
+          axisLine={false}
+          tickFormatter={(value) => `${value}${unit}`}
+          className="text-xs"
+        />
+        <XAxis dataKey="time" hide />
+        <ChartTooltip content={<ChartTooltipContent labelKey="time" />} />
+        <Area
+          dataKey="value"
+          type="monotone"
+          stroke={color}
+          fill={color}
+          fillOpacity={0.18}
+          strokeWidth={2}
+          isAnimationActive={false}
+          dot={false}
+        />
+      </AreaChart>
     </ChartContainer>
   );
 }

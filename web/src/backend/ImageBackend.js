@@ -25,6 +25,13 @@ export function getImageApps(namespace = "") {
   }).then(r => r.json());
 }
 
+export function getImageApp(namespace, name) {
+  const params = new URLSearchParams({namespace, name});
+  return fetch(`${Setting.ServerUrl}/api/get-image-app?${params}`, {
+    credentials: "include", headers: lang(),
+  }).then(r => r.json());
+}
+
 export function upgradeApp(payload) {
   return fetch(`${Setting.ServerUrl}/api/upgrade-image-app`, {
     method: "POST", credentials: "include", headers: jsonHeaders(), body: JSON.stringify(payload),

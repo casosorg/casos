@@ -14,7 +14,6 @@ import (
 	"k8s.io/client-go/rest"
 
 	"github.com/casosorg/casos/object"
-	"github.com/casosorg/casos/store"
 )
 
 // An app installed from a plain container image has no release object to look
@@ -203,32 +202,11 @@ func (c *ApiController) GetImageApps() {
 
 	result := make([]imageAppSummary, 0, len(mains))
 	for _, d := range mains {
-		status, description := deploymentAppStatus(d)
-		image := imageOf(d)
-		repository, tag := store.SplitImageRef(image)
-		replicas := int32(1)
-		if d.Spec.Replicas != nil {
-			replicas = *d.Spec.Replicas
+		var svc *corev1.Service
+		if found, ok := serviceByKey[d.Namespace+"/"+d.Name]; ok {
+			svc = &found
 		}
-		summary := imageAppSummary{
-			Name:          d.Name,
-			Namespace:     d.Namespace,
-			Image:         image,
-			Repository:    repository,
-			Tag:           tag,
-			Status:        status,
-			Description:   description,
-			Replicas:      replicas,
-			ReadyReplicas: d.Status.ReadyReplicas,
-			Ports:         containerPortsOf(d),
-			EnvVars:       extractEnvVars(d.Spec.Template.Spec.Containers),
-			Volumes:       extractVolumes(d),
-			CreatedAt:     d.CreationTimestamp.UTC().Format("2006-01-02 15:04:05"),
-			Components:    []imageAppComponent{},
-		}
-		if svc, ok := serviceByKey[d.Namespace+"/"+d.Name]; ok {
-			summary.ServiceType = string(svc.Spec.Type)
-		}
+		summary := appSummaryOf(d, svc)
 		for _, part := range parts[d.Namespace+"/"+d.Name] {
 			partStatus, _ := deploymentAppStatus(part)
 			partReplicas := int32(1)
@@ -403,28 +381,46 @@ func (c *ApiController) UpgradeImageApp() {
 	applyLabels(&existing.Spec.Template.ObjectMeta, labels)
 	applyAnnotation(&existing.ObjectMeta, appImageAnnotation, req.Image)
 
-	if req.Replicas != nil {
+	// While an autoscaler is in charge the replica count is not the form's to
+	// set: writing it back would fight the autoscaler on every save.
+	autoscaled := req.Hpa != nil && req.Hpa.Enabled
+	if req.Replicas != nil && !autoscaled {
 		replicas := replicasOrDefault(req.Replicas)
 		existing.Spec.Replicas = &replicas
+	}
+
+	configVolume, configMounts, pullSecret, err := reconcileAppExtras(cfg, req, labels, existing)
+	if err != nil {
+		c.ResponseError(err.Error())
+		return
 	}
 
 	container := &existing.Spec.Template.Spec.Containers[0]
 	if req.Image != "" {
 		container.Image = req.Image
 	}
+	if err := applyAppContainer(container, req); err != nil {
+		c.ResponseError(err.Error())
+		return
+	}
 	container.Env = buildEnvVars(req.EnvVars)
 	container.Ports = containerPortsFor(req.Ports)
 	podVolumes, mounts := buildPodVolumes(req.Name, req.Volumes)
+	if configVolume != nil {
+		podVolumes = append(podVolumes, *configVolume)
+		mounts = append(mounts, configMounts...)
+	}
 	container.VolumeMounts = mounts
 	existing.Spec.Template.Spec.Volumes = podVolumes
+	applyImagePullSecret(&existing.Spec.Template.Spec, pullSecret)
 
 	updated, err := object.UpdateDeployment(cfg, existing)
 	if err != nil {
 		c.ResponseError(err.Error())
 		return
 	}
-	if err := reconcileAppService(cfg, req, labels); err != nil {
-		c.ResponseError(fmt.Sprintf("the app was updated but its address could not be: %s", err.Error()))
+	if err := reconcileAppNetworkAndScaling(cfg, req, labels); err != nil {
+		c.ResponseError(err.Error())
 		return
 	}
 	c.ResponseOk(toDeploymentSummary(*updated))
@@ -498,6 +494,8 @@ func (c *ApiController) UninstallImageApp() {
 			failures = append(failures, fmt.Sprintf("%s (%v)", svc.Name, err))
 		}
 	}
+
+	failures = append(failures, deleteAppExtras(cfg, req.Namespace, req.Name)...)
 
 	if req.DeleteData {
 		claims, err := object.GetPersistentVolumeClaims(cfg, req.Namespace)

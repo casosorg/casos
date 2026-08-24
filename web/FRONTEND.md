@@ -103,6 +103,38 @@ lands. A page both modes render links through `resolvePath` so a simple-mode
 reader is not bounced into the advanced surface; `nav.js` holds the pairing that
 also decides where the header's mode switch lands.
 
+## App Launchpad — `/launchpad`
+
+The launchpad turns one container image into a running application: how much it
+may use, what it runs, the files and credentials it needs, how it is reached and
+how it scales. It manages the same objects the App Store's Docker Hub install
+creates (everything labelled `app.kubernetes.io/managed-by: casos`), so an app
+installed from the store can be edited here, and an app deployed here shows up
+under Installed Apps.
+
+| File | What it holds |
+|---|---|
+| `lib/launchpad.js` | The form model: read from the cluster, edited, previewed as YAML, sent back |
+| `pages/LaunchpadPage.jsx` | The list, with live CPU and memory per app |
+| `pages/LaunchpadEditPage.jsx` | Create and edit — the same form, with the manifest preview beside it |
+| `pages/LaunchpadDetailPage.jsx` | One app: usage over time, addresses, storage, pods with logs/terminal/events |
+
+Backend: `POST /api/deploy-app` and `POST /api/upgrade-image-app` take the same
+payload, and `GET /api/get-image-app` reads an app back as the form that
+produced it. `controllers/launchpad.go` holds the reconcilers for the objects an
+app owns besides its workload — its ConfigMap of config files, its registry
+secret, its autoscaler and its Ingress.
+
+**Absent means "leave alone".** `configFiles`, `domains`, `hpa` and `registry`
+are pointers on the Go side: a payload that omits one keeps whatever the app
+already has, and an empty list removes it. That is what lets the App Store's
+upgrade — which knows nothing about domains or autoscaling — leave the
+launchpad's work intact. The launchpad form always states all four.
+
+Usage series on the detail page are collected in the page from `/api/get-metrics`
+polls; the cluster only reports the present, so the chart starts empty and fills
+in rather than inventing history.
+
 ## The desktop — `src/desktop/`
 
 `/desktop` is a third shell alongside simple and advanced mode: a wallpaper, an
