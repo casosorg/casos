@@ -103,6 +103,37 @@ lands. A page both modes render links through `resolvePath` so a simple-mode
 reader is not bounced into the advanced surface; `nav.js` holds the pairing that
 also decides where the header's mode switch lands.
 
+## The desktop — `src/desktop/`
+
+`/desktop` is a third shell alongside simple and advanced mode: a wallpaper, an
+icon grid, a dock and floating windows, modelled on the sealos desktop. It is
+not a separate application — a window mounts `AppRoutes` under a `MemoryRouter`
+of its own, so every page the sidebar UI serves is available inside a window and
+the two surfaces cannot drift apart. Each window keeps its own history, which is
+what lets two windows sit on different pages at once without touching the
+browser address bar.
+
+| File | What it holds |
+|---|---|
+| `registry.js` | The app catalogue: key, label key, icon, tint, and the route the window opens at |
+| `desktop-store.jsx` | The window manager — processes, stacking order, sizes, single-instance launching |
+| `app-window.jsx` | Window chrome: drag, resize, minimize/maximize/restore, focus mask |
+| `app-frame.jsx` | Window contents: our routes, or an iframe for an installed app's own UI |
+| `app-dock.jsx` | The dock, its magnification, and the running indicators |
+| `desktop-icons.jsx` | The icon grid and the folder icons drag into |
+| `app-launcher.jsx` | Launchpad: every app, searchable, with the pin that puts one on the desktop |
+| `desktop-topbar.jsx` | Search, cluster vitals, notifications, account controls |
+| `desktop-prefs.js` | What persists in localStorage: arrangement, wallpaper, dock state |
+| `use-installed-apps.js` | Installed releases that have an address, as icons |
+
+An installed app becomes an icon only once it has a reachable address (the
+Ingress or Service its release owns), and opens in an iframe. Apps that refuse
+framing still have the window header's open-in-browser button.
+
+`useUiMode` treats the desktop as a mode: entering it stores `uiMode=desktop`, so
+`/` lands there next time, and leaving it returns to whichever page mode the
+reader came from (`uiPageMode`).
+
 ## End-to-end tests
 
 ```bash

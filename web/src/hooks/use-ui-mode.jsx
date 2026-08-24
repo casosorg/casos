@@ -1,8 +1,12 @@
 import React, {createContext, useCallback, useContext, useMemo} from "react";
 import {useHistory, useLocation} from "react-router-dom";
-import {counterpartPath, isSimplePath, pathForMode} from "@/nav";
+import {counterpartPath, isDesktopPath, isSimplePath, pathForMode} from "@/nav";
 
 const STORAGE_KEY = "uiMode";
+// Which of the two page modes the desktop was entered from, so leaving it
+// lands a reader back where they were rather than always on the advanced
+// dashboard.
+const PAGE_MODE_KEY = "uiPageMode";
 
 /**
  * Simple mode is the default: the navigation, the home page, the App Store and
@@ -16,9 +20,12 @@ const STORAGE_KEY = "uiMode";
  * only a preference: it decides where "/" lands, and the mode switch keeps it up
  * to date.
  */
+const MODES = ["simple", "advanced", "desktop"];
+
 export function readUiMode() {
   try {
-    return localStorage.getItem(STORAGE_KEY) === "advanced" ? "advanced" : "simple";
+    const stored = localStorage.getItem(STORAGE_KEY);
+    return MODES.includes(stored) ? stored : "simple";
   } catch {
     return "simple";
   }
@@ -27,8 +34,21 @@ export function readUiMode() {
 function writeUiMode(mode) {
   try {
     localStorage.setItem(STORAGE_KEY, mode);
+    if (mode !== "desktop") {
+      localStorage.setItem(PAGE_MODE_KEY, mode);
+    }
   } catch {
     // Private-mode storage failures must not break the switch itself.
+  }
+}
+
+/** The page mode to return to when the desktop is closed. */
+export function readPageMode() {
+  try {
+    const stored = localStorage.getItem(PAGE_MODE_KEY);
+    return stored === "advanced" ? "advanced" : "simple";
+  } catch {
+    return "simple";
   }
 }
 
@@ -38,12 +58,16 @@ const UiModeContext = createContext({
   resolvePath: (path) => path,
   switchMode: () => {},
   toggleMode: () => {},
+  openDesktop: () => {},
+  exitDesktop: () => {},
 });
 
 export function UiModeProvider({children}) {
   const location = useLocation();
   const history = useHistory();
-  const mode = isSimplePath(location.pathname) ? "simple" : "advanced";
+  const mode = isDesktopPath(location.pathname)
+    ? "desktop"
+    : isSimplePath(location.pathname) ? "simple" : "advanced";
 
   const switchMode = useCallback((next, path) => {
     writeUiMode(next);
@@ -58,6 +82,11 @@ export function UiModeProvider({children}) {
       // never bounced into the advanced surface by a button.
       resolvePath: (advancedPath) => pathForMode(advancedPath, mode),
       switchMode,
+      openDesktop: () => switchMode("desktop"),
+      exitDesktop: () => switchMode(readPageMode()),
+      // The toggle only ever moves between the two page-based modes; the
+      // desktop is reached by its own control, and leaving it lands wherever
+      // the reader was before.
       toggleMode: () => switchMode(mode === "advanced" ? "simple" : "advanced"),
     }),
     [mode, switchMode]

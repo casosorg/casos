@@ -45,6 +45,7 @@ const ROUTES = [
   "/authorization-policy",
   "/trivy-scans",
   "/monitor",
+  "/terminal",
   "/log-search",
   "/topology",
   "/machines",

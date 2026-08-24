@@ -1,4 +1,4 @@
-import React, {Component} from "react";
+import React, {Component, Suspense, lazy} from "react";
 import {Redirect, Route, Switch, withRouter} from "react-router-dom";
 import * as Setting from "@/Setting";
 import * as AccountBackend from "@/backend/AccountBackend";
@@ -7,8 +7,13 @@ import {Toaster} from "@/components/ui/sonner";
 import {TooltipProvider} from "@/components/ui/tooltip";
 import {UiModeProvider} from "@/hooks/use-ui-mode";
 import ManagementPage from "@/pages/ManagementPage";
+import {Loading} from "@/components/shared/loading";
 import AuthCallback from "@/pages/AuthCallback";
 import SigninPage from "@/pages/SigninPage";
+
+// The desktop pulls in the window manager and every app icon; a reader who
+// stays in the sidebar UI should never download it.
+const DesktopPage = lazy(() => import("@/pages/DesktopPage"));
 
 class App extends Component {
   constructor(props) {
@@ -139,6 +144,26 @@ class App extends Component {
               render={(props) =>
                 this.renderHomeIfSignedIn(
                   <SigninPage logo={this.state.logo} themeAlgorithm={this.state.themeAlgorithm} site={this.state.site} {...props} />
+                )
+              }
+            />
+            <Route
+              path="/desktop"
+              render={(props) =>
+                this.renderSigninIfNotSignedIn(
+                  <Suspense fallback={<Loading type="page" />}>
+                    <DesktopPage
+                      account={this.state.account}
+                      site={this.state.site}
+                      themeAlgorithm={this.state.themeAlgorithm}
+                      logo={this.state.logo}
+                      onSignout={this.signout}
+                      onUpdateSite={this.onUpdateSite}
+                      onUpdateAccount={this.onUpdateAccount}
+                      setLogoAndThemeAlgorithm={this.setLogoAndThemeAlgorithm}
+                      {...props}
+                    />
+                  </Suspense>
                 )
               }
             />

@@ -112,6 +112,13 @@ export const navGroups = [
 /** Simple mode's pages live under this prefix, so no URL ever serves both modes. */
 export const SIMPLE_PREFIX = "/simple";
 
+/** The desktop is a mode of its own: one address, every page inside a window. */
+export const DESKTOP_PREFIX = "/desktop";
+
+export function isDesktopPath(pathname) {
+  return pathname === DESKTOP_PREFIX || (pathname ?? "").startsWith(`${DESKTOP_PREFIX}/`);
+}
+
 /**
  * Simple mode's navigation: five flat entries named after what a reader wants to
  * do, not after the Kubernetes object behind it.
@@ -171,6 +178,9 @@ const MODE_COUNTERPARTS = [
 ];
 
 export function homePath(mode) {
+  if (mode === "desktop") {
+    return DESKTOP_PREFIX;
+  }
   return mode === "advanced" ? "/dashboard" : SIMPLE_PREFIX;
 }
 
@@ -185,6 +195,11 @@ export function pathForMode(advancedPath, mode) {
 
 /** Where a URL's reader should land after switching to the other mode. */
 export function counterpartPath(pathname, targetMode) {
+  // The desktop has one address and hosts every page inside it, so there is no
+  // per-page counterpart to look up in either direction.
+  if (targetMode === "desktop" || isDesktopPath(pathname)) {
+    return homePath(targetMode);
+  }
   const key = navKeyForPath(pathname);
   const pair = targetMode === "advanced"
     ? MODE_COUNTERPARTS.find(([, simple]) => simple === key)

@@ -1,6 +1,6 @@
 import * as React from "react";
 import i18next from "i18next";
-import {Globe, LogOut, Moon, PanelLeft, PanelLeftClose, SlidersHorizontal, Sparkles, Sun, User} from "lucide-react";
+import {Globe, LayoutGrid, LogOut, Moon, PanelLeft, PanelLeftClose, SlidersHorizontal, Sparkles, Sun, User} from "lucide-react";
 import * as Setting from "@/Setting";
 import {Button} from "@/components/ui/button";
 import {Avatar, AvatarFallback, AvatarImage} from "@/components/ui/avatar";
@@ -29,6 +29,18 @@ function UiModeToggle() {
       <Button variant="ghost" size="sm" onClick={toggleMode} className="gap-1.5">
         {advanced ? <Sparkles className="size-4" /> : <SlidersHorizontal className="size-4" />}
         <span className="hidden md:inline">{label}</span>
+      </Button>
+    </SimpleTooltip>
+  );
+}
+
+/** The way into the desktop, kept next to the mode toggle it sits alongside. */
+function DesktopButton() {
+  const {openDesktop} = useUiMode();
+  return (
+    <SimpleTooltip title={i18next.t("desktop:Open the desktop")}>
+      <Button variant="ghost" size="icon-sm" onClick={openDesktop} aria-label={i18next.t("desktop:Desktop")} data-testid="open-desktop">
+        <LayoutGrid className="size-4" />
       </Button>
     </SimpleTooltip>
   );
@@ -141,6 +153,7 @@ export function AppHeader({
       <div className="flex items-center gap-0.5 pr-1">
         {navbarHtml ? <div className="flex items-center" dangerouslySetInnerHTML={{__html: navbarHtml}} /> : null}
         <UiModeToggle />
+        <DesktopButton />
         <ThemeToggle themeAlgorithm={themeAlgorithm} onChange={onThemeChange} />
         <LanguageSelect />
         <AccountMenu account={account} onOpenAccount={onOpenAccount} onSignout={onSignout} />

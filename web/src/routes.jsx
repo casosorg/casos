@@ -41,6 +41,7 @@ const TopologyPage = lazy(() => import("@/pages/TopologyPage"));
 const AppStorePage = lazy(() => import("@/pages/AppStorePage"));
 const HelmReleasePage = lazy(() => import("@/pages/HelmReleasePage"));
 const MonitorPage = lazy(() => import("@/pages/MonitorPage"));
+const TerminalPage = lazy(() => import("@/pages/TerminalPage"));
 
 // Simple mode's combined pages. They are routes of their own rather than a
 // rendering mode of the pages they wrap, so a link keeps working after a switch
@@ -108,6 +109,7 @@ export function AppRoutes({account, accountUpdatedAt, onOpenAccount, onUpdateSit
         <Route exact path="/app-store/:sourceSlug" component={AppStorePage} />
         <Route exact path="/helm-releases" component={HelmReleasePage} />
         <Route exact path="/monitor" component={MonitorPage} />
+        <Route exact path="/terminal" component={TerminalPage} />
 
         {/* Simple mode's own addresses. Each one renders the simplified screen
             whatever the reader last switched to, so a shared link opens the
