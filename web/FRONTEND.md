@@ -135,6 +135,40 @@ Usage series on the detail page are collected in the page from `/api/get-metrics
 polls; the cluster only reports the present, so the chart starts empty and fills
 in rather than inventing history.
 
+## Databases — `/databases`
+
+A managed database is a StatefulSet, a Service, a Secret holding its
+credentials and two claims — one for its data, one for its backups. There is no
+database operator involved: the engines are the stock images, and everything the
+pages offer is done to those objects directly.
+
+| File | What it holds |
+|---|---|
+| `lib/database.js` | Engine tints and the form model shared by create and edit |
+| `pages/DatabasePage.jsx` | The list, with per-database state and start/stop |
+| `pages/DatabaseEditPage.jsx` | Engine, version, credentials, size, public access |
+| `pages/DatabaseDetailPage.jsx` | Connection details, backups, pods, and the engine console |
+
+Backend: `controllers/database_engine.go` is the catalogue — for each engine the
+image, how the Secret reaches the container, and the four shell commands that
+make it a database rather than a container (console, dump, restore, connection
+URI). `controllers/database.go` is the CRUD and the actions around it.
+
+**Backups run inside the database pod.** The engine dumps itself into the backup
+claim, which the pod also mounts, so listing and downloading a backup are just
+the pod-file endpoints that already exist and no backup operator is needed. That
+is also why backups and the console are unavailable while a database is stopped,
+and the pages say so rather than failing.
+
+**The console is the engine's own client**, not a shell: `/api/database-console`
+runs `psql`, `mysql`, `mongosh` or `redis-cli` already signed in.
+`PodShell` takes the endpoint as a prop, so the pod terminal and the database
+console are the same component over the same two-channel protocol.
+
+Credentials are set once. The engine stores its own user and password at first
+start, so rewriting the Secret afterwards would only make it disagree with the
+engine — the edit form leaves them out for that reason.
+
 ## The desktop — `src/desktop/`
 
 `/desktop` is a third shell alongside simple and advanced mode: a wallpaper, an

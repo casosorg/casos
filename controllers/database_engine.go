@@ -1,0 +1,229 @@
+package controllers
+
+import (
+	"fmt"
+
+	corev1 "k8s.io/api/core/v1"
+)
+
+// What casos knows how to run as a database.
+//
+// One engine describes everything the rest of the code needs: which image to
+// run, how the container is told its credentials, and the four shell commands
+// that make a database more than a container — a console to type into, a dump,
+// a restore, and the URI an application connects with.
+//
+// The credentials live in a Secret and reach the container as environment
+// variables, which is also why every command below refers to them by variable
+// name rather than by value: nothing here ever puts a password on a command
+// line the cluster would record.
+
+const (
+	databaseManagedByLabel = "app.kubernetes.io/managed-by"
+	databaseManagedByValue = "casos"
+	databaseInstanceLabel  = "app.kubernetes.io/instance"
+	databaseEngineLabel    = "casos.io/database-engine"
+	databaseVersionLabel   = "casos.io/database-version"
+
+	databaseDataVolume    = "data"
+	databaseBackupVolume  = "backups"
+	databaseBackupPath    = "/backups"
+	databaseContainerName = "database"
+)
+
+type databaseEngine struct {
+	Key      string
+	Label    string
+	Image    string
+	Versions []string
+	Port     int32
+	DataPath string
+	// The user an application signs in as. Some engines only ever have one.
+	DefaultUser string
+	// FixedUser is set for engines whose superuser cannot be renamed.
+	FixedUser bool
+	// SupportsDatabaseName is false for engines with no database-name concept.
+	SupportsDatabaseName bool
+	// Env wires the Secret into the container. Values are read from the Secret
+	// rather than written into the pod spec.
+	Env func(secretName string) []corev1.EnvVar
+	// Command overrides the image's entrypoint where the engine needs one to
+	// pick the password up from the environment.
+	Command func() []string
+	// BackupSuffix names the file a dump produces, so a reader can tell what
+	// they are downloading.
+	BackupSuffix string
+	// Dump writes a backup to path; Restore reads one back.
+	Dump    func(path string) string
+	Restore func(path string) string
+	// Console is the client shell an operator types into.
+	Console func() []string
+	// RestoreNeedsRestart is true where a restore only takes effect once the
+	// engine has re-read its data directory.
+	RestoreNeedsRestart bool
+	// URI is what an application puts in its configuration.
+	URI func(user, password, database, host string, port int32) string
+}
+
+func secretEnv(name, secretName, key string) corev1.EnvVar {
+	return corev1.EnvVar{
+		Name: name,
+		ValueFrom: &corev1.EnvVarSource{
+			SecretKeyRef: &corev1.SecretKeySelector{
+				LocalObjectReference: corev1.LocalObjectReference{Name: secretName},
+				Key:                  key,
+			},
+		},
+	}
+}
+
+var databaseEngines = map[string]databaseEngine{
+	"postgresql": {
+		Key:                  "postgresql",
+		Label:                "PostgreSQL",
+		Image:                "postgres",
+		Versions:             []string{"17-alpine", "16-alpine", "15-alpine"},
+		Port:                 5432,
+		DataPath:             "/var/lib/postgresql/data",
+		DefaultUser:          "postgres",
+		SupportsDatabaseName: true,
+		Env: func(secretName string) []corev1.EnvVar {
+			return []corev1.EnvVar{
+				secretEnv("POSTGRES_USER", secretName, "username"),
+				secretEnv("POSTGRES_PASSWORD", secretName, "password"),
+				secretEnv("POSTGRES_DB", secretName, "database"),
+				secretEnv("PGPASSWORD", secretName, "password"),
+				// initdb refuses to run in a non-empty directory and a freshly
+				// bound claim arrives carrying lost+found, so the data lives one
+				// level down.
+				{Name: "PGDATA", Value: "/var/lib/postgresql/data/pgdata"},
+			}
+		},
+		BackupSuffix: ".sql.gz",
+		Dump: func(path string) string {
+			return fmt.Sprintf("pg_dump -U \"$POSTGRES_USER\" -d \"$POSTGRES_DB\" | gzip > %q", path)
+		},
+		Restore: func(path string) string {
+			return fmt.Sprintf("gunzip -c %q | psql -U \"$POSTGRES_USER\" -d \"$POSTGRES_DB\"", path)
+		},
+		Console: func() []string {
+			return []string{"sh", "-c", "exec psql -U \"$POSTGRES_USER\" -d \"$POSTGRES_DB\""}
+		},
+		URI: func(user, password, database, host string, port int32) string {
+			return fmt.Sprintf("postgresql://%s:%s@%s:%d/%s", user, password, host, port, database)
+		},
+	},
+
+	"mysql": {
+		Key:                  "mysql",
+		Label:                "MySQL",
+		Image:                "mysql",
+		Versions:             []string{"8.4", "8.0"},
+		Port:                 3306,
+		DataPath:             "/var/lib/mysql",
+		DefaultUser:          "root",
+		FixedUser:            true,
+		SupportsDatabaseName: true,
+		Env: func(secretName string) []corev1.EnvVar {
+			return []corev1.EnvVar{
+				secretEnv("MYSQL_ROOT_PASSWORD", secretName, "password"),
+				secretEnv("MYSQL_DATABASE", secretName, "database"),
+			}
+		},
+		BackupSuffix: ".sql.gz",
+		Dump: func(path string) string {
+			return fmt.Sprintf("mysqldump -u root -p\"$MYSQL_ROOT_PASSWORD\" --databases \"$MYSQL_DATABASE\" | gzip > %q", path)
+		},
+		Restore: func(path string) string {
+			return fmt.Sprintf("gunzip -c %q | mysql -u root -p\"$MYSQL_ROOT_PASSWORD\"", path)
+		},
+		Console: func() []string {
+			return []string{"sh", "-c", "exec mysql -u root -p\"$MYSQL_ROOT_PASSWORD\" \"$MYSQL_DATABASE\""}
+		},
+		URI: func(user, password, database, host string, port int32) string {
+			return fmt.Sprintf("mysql://%s:%s@%s:%d/%s", user, password, host, port, database)
+		},
+	},
+
+	"mongodb": {
+		Key:                  "mongodb",
+		Label:                "MongoDB",
+		Image:                "mongo",
+		Versions:             []string{"7", "6"},
+		Port:                 27017,
+		DataPath:             "/data/db",
+		DefaultUser:          "root",
+		SupportsDatabaseName: true,
+		Env: func(secretName string) []corev1.EnvVar {
+			return []corev1.EnvVar{
+				secretEnv("MONGO_INITDB_ROOT_USERNAME", secretName, "username"),
+				secretEnv("MONGO_INITDB_ROOT_PASSWORD", secretName, "password"),
+				secretEnv("MONGO_INITDB_DATABASE", secretName, "database"),
+			}
+		},
+		BackupSuffix: ".archive.gz",
+		Dump: func(path string) string {
+			return fmt.Sprintf("mongodump --username \"$MONGO_INITDB_ROOT_USERNAME\" --password \"$MONGO_INITDB_ROOT_PASSWORD\" --authenticationDatabase admin --archive=%q --gzip", path)
+		},
+		Restore: func(path string) string {
+			return fmt.Sprintf("mongorestore --username \"$MONGO_INITDB_ROOT_USERNAME\" --password \"$MONGO_INITDB_ROOT_PASSWORD\" --authenticationDatabase admin --archive=%q --gzip --drop", path)
+		},
+		Console: func() []string {
+			return []string{"sh", "-c", "exec mongosh -u \"$MONGO_INITDB_ROOT_USERNAME\" -p \"$MONGO_INITDB_ROOT_PASSWORD\" --authenticationDatabase admin"}
+		},
+		URI: func(user, password, database, host string, port int32) string {
+			return fmt.Sprintf("mongodb://%s:%s@%s:%d/%s?authSource=admin", user, password, host, port, database)
+		},
+	},
+
+	"redis": {
+		Key:         "redis",
+		Label:       "Redis",
+		Image:       "redis",
+		Versions:    []string{"7-alpine", "6-alpine"},
+		Port:        6379,
+		DataPath:    "/data",
+		DefaultUser: "default",
+		FixedUser:   true,
+		Env: func(secretName string) []corev1.EnvVar {
+			return []corev1.EnvVar{secretEnv("REDIS_PASSWORD", secretName, "password")}
+		},
+		Command: func() []string {
+			return []string{"sh", "-c", "exec redis-server --requirepass \"$REDIS_PASSWORD\" --appendonly yes"}
+		},
+		BackupSuffix: ".rdb.gz",
+		Dump: func(path string) string {
+			return fmt.Sprintf("redis-cli -a \"$REDIS_PASSWORD\" --no-auth-warning SAVE && gzip -c /data/dump.rdb > %q", path)
+		},
+		// Redis only reads its dump file at startup, so the restore drops the
+		// file in place and the pod is restarted around it.
+		Restore: func(path string) string {
+			return fmt.Sprintf("gunzip -c %q > /data/dump.rdb", path)
+		},
+		RestoreNeedsRestart: true,
+		Console: func() []string {
+			return []string{"sh", "-c", "exec redis-cli -a \"$REDIS_PASSWORD\" --no-auth-warning"}
+		},
+		URI: func(user, password, database, host string, port int32) string {
+			return fmt.Sprintf("redis://:%s@%s:%d", password, host, port)
+		},
+	},
+}
+
+// databaseEngineOrder keeps the catalogue in a stable, sensible order rather
+// than in map order, which Go deliberately randomises.
+var databaseEngineOrder = []string{"postgresql", "mysql", "mongodb", "redis"}
+
+func engineByKey(key string) (databaseEngine, bool) {
+	engine, ok := databaseEngines[key]
+	return engine, ok
+}
+
+func engineVersionOrDefault(engine databaseEngine, version string) string {
+	for _, candidate := range engine.Versions {
+		if candidate == version {
+			return version
+		}
+	}
+	return engine.Versions[0]
+}

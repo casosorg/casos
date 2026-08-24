@@ -26,8 +26,12 @@ function frame(channel, payload) {
  * `openDelay` exists because xterm measures its element to choose a grid size,
  * and measuring one that is still sliding into view gives a terminal sized for
  * a half-open pane.
+ *
+ * `endpoint` is what makes this reusable: the same pipe carries a shell in a
+ * pod and a database's own client, because the backend decides which command to
+ * run and both speak the same two-channel protocol.
  */
-export function PodShell({namespace, name, container, className, openDelay = 0}) {
+export function PodShell({namespace, name, container, className, openDelay = 0, endpoint = "/api/pod-terminal", params}) {
   const mountRef = useRef(null);
   const termRef = useRef(null);
   const fitAddonRef = useRef(null);
@@ -68,7 +72,7 @@ export function PodShell({namespace, name, container, className, openDelay = 0})
         fitAddon.fit();
       }
 
-      const socket = new WebSocket(Setting.getWebSocketUrl("/api/pod-terminal", {namespace, name, container}));
+      const socket = new WebSocket(Setting.getWebSocketUrl(endpoint, params ?? {namespace, name, container}));
       socket.binaryType = "arraybuffer";
       socketRef.current = socket;
 
@@ -103,7 +107,8 @@ export function PodShell({namespace, name, container, className, openDelay = 0})
       clearTimeout(timer);
       cleanup();
     };
-  }, [namespace, name, container, openDelay]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [namespace, name, container, openDelay, endpoint, JSON.stringify(params ?? null)]);
 
   // A window being dragged wider has to hand the new grid size to the shell on
   // the other end, or the remote program keeps wrapping at the old width.

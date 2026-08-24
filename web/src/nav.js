@@ -4,6 +4,7 @@ import {
   Boxes,
   ClipboardList,
   Cog,
+  Database,
   Gauge,
   House,
   Laptop,
@@ -28,6 +29,7 @@ export const navGroups = [
   {key: "/dashboard", label: "general:Dashboard", icon: LayoutDashboard, path: "/dashboard"},
   {key: "/app-store", label: "general:App Store", icon: Store, path: "/app-store"},
   {key: "/launchpad", label: "launchpad:App Launchpad", icon: Rocket, path: "/launchpad"},
+  {key: "/databases", label: "database:Databases", icon: Database, path: "/databases"},
   {key: "/helm-releases", label: "helm:Installed Apps", icon: Boxes, path: "/helm-releases"},
   {
     key: "/workloads",

@@ -40,6 +40,14 @@ func AddPersistentVolumeClaim(cfg *rest.Config, pvc *corev1.PersistentVolumeClai
 	return client.CoreV1().PersistentVolumeClaims(pvc.Namespace).Create(context.Background(), pvc, metav1.CreateOptions{})
 }
 
+func UpdatePersistentVolumeClaim(cfg *rest.Config, pvc *corev1.PersistentVolumeClaim) (*corev1.PersistentVolumeClaim, error) {
+	client, err := newClient(cfg)
+	if err != nil {
+		return nil, err
+	}
+	return client.CoreV1().PersistentVolumeClaims(pvc.Namespace).Update(context.Background(), pvc, metav1.UpdateOptions{})
+}
+
 func DeletePersistentVolumeClaim(cfg *rest.Config, namespace, name string) error {
 	client, err := newClient(cfg)
 	if err != nil {

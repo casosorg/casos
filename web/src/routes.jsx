@@ -45,6 +45,9 @@ const TerminalPage = lazy(() => import("@/pages/TerminalPage"));
 const LaunchpadPage = lazy(() => import("@/pages/LaunchpadPage"));
 const LaunchpadEditPage = lazy(() => import("@/pages/LaunchpadEditPage"));
 const LaunchpadDetailPage = lazy(() => import("@/pages/LaunchpadDetailPage"));
+const DatabasePage = lazy(() => import("@/pages/DatabasePage"));
+const DatabaseEditPage = lazy(() => import("@/pages/DatabaseEditPage"));
+const DatabaseDetailPage = lazy(() => import("@/pages/DatabaseDetailPage"));
 
 // Simple mode's combined pages. They are routes of their own rather than a
 // rendering mode of the pages they wrap, so a link keeps working after a switch
@@ -117,6 +120,10 @@ export function AppRoutes({account, accountUpdatedAt, onOpenAccount, onUpdateSit
         <Route exact path="/launchpad/new" component={LaunchpadEditPage} />
         <Route exact path="/launchpad/:namespace/:name" component={LaunchpadDetailPage} />
         <Route exact path="/launchpad/:namespace/:name/edit" component={LaunchpadEditPage} />
+        <Route exact path="/databases" component={DatabasePage} />
+        <Route exact path="/databases/new" component={DatabaseEditPage} />
+        <Route exact path="/databases/:namespace/:name" component={DatabaseDetailPage} />
+        <Route exact path="/databases/:namespace/:name/edit" component={DatabaseEditPage} />
 
         {/* Simple mode's own addresses. Each one renders the simplified screen
             whatever the reader last switched to, so a shared link opens the

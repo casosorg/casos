@@ -12,6 +12,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/kubernetes/scheme"
+	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/remotecommand"
 )
 
@@ -144,6 +145,18 @@ func (c *ApiController) PodTerminal() {
 		return
 	}
 
+	c.streamPodExec(cfg, namespace, name, container, defaultShellCommand)
+}
+
+// defaultShellCommand prefers bash where the image has it and falls back to the
+// shell every image does have.
+var defaultShellCommand = []string{"sh", "-c", "if command -v bash >/dev/null 2>&1; then exec bash; else exec sh; fi"}
+
+// streamPodExec is the websocket half of a terminal: it upgrades the request,
+// runs one command in a container with a TTY attached, and pumps bytes between
+// the two until either end goes away. The command is the caller's business —
+// a shell for the pod terminal, the engine's client for a database console.
+func (c *ApiController) streamPodExec(cfg *rest.Config, namespace, name, container string, command []string) {
 	conn, err := wsUpgrader.Upgrade(c.Ctx.ResponseWriter, c.Ctx.Request, nil)
 	if err != nil {
 		return
@@ -166,7 +179,7 @@ func (c *ApiController) PodTerminal() {
 		SubResource("exec").
 		VersionedParams(&corev1.PodExecOptions{
 			Container: container,
-			Command:   []string{"sh", "-c", "if command -v bash >/dev/null 2>&1; then exec bash; else exec sh; fi"},
+			Command:   command,
 			Stdin:     true,
 			Stdout:    true,
 			Stderr:    false, // TTY mode combines stderr into stdout, so use one output stream.

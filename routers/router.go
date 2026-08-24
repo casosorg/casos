@@ -52,6 +52,18 @@ func InitAPI() {
 	beego.Router("/api/uninstall-image-app", &controllers.ApiController{}, "POST:UninstallImageApp")
 	beego.Router("/api/scale-image-app", &controllers.ApiController{}, "POST:ScaleImageApp")
 
+	beego.Router("/api/get-database-engines", &controllers.ApiController{}, "GET:GetDatabaseEngines")
+	beego.Router("/api/get-databases", &controllers.ApiController{}, "GET:GetDatabases")
+	beego.Router("/api/get-database", &controllers.ApiController{}, "GET:GetDatabase")
+	beego.Router("/api/create-database", &controllers.ApiController{}, "POST:CreateDatabase")
+	beego.Router("/api/update-database", &controllers.ApiController{}, "POST:UpdateDatabase")
+	beego.Router("/api/scale-database", &controllers.ApiController{}, "POST:ScaleDatabase")
+	beego.Router("/api/delete-database", &controllers.ApiController{}, "POST:DeleteDatabase")
+	beego.Router("/api/backup-database", &controllers.ApiController{}, "POST:BackupDatabase")
+	beego.Router("/api/restore-database", &controllers.ApiController{}, "POST:RestoreDatabase")
+	beego.Router("/api/delete-database-backup", &controllers.ApiController{}, "POST:DeleteDatabaseBackup")
+	beego.Router("/api/database-console", &controllers.ApiController{}, "GET:DatabaseConsole")
+
 	beego.Router("/api/get-ingresses", &controllers.ApiController{}, "GET:GetIngresses")
 	beego.Router("/api/get-ingress", &controllers.ApiController{}, "GET:GetIngress")
 	beego.Router("/api/add-ingress", &controllers.ApiController{}, "POST:AddIngress")
