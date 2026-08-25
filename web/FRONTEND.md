@@ -120,7 +120,13 @@ no URL means two different screens. `useUiMode` reads the mode off the URL rathe
 than off storage: the stored `uiMode` is only a preference deciding where `/`
 lands. A page both modes render links through `resolvePath` so a simple-mode
 reader is not bounced into the advanced surface; `nav.js` holds the pairing that
-also decides where the header's mode switch lands.
+also decides where the header's mode switch lands. The pairing keeps whatever
+follows the nav key, so switching mode on one app's page lands on that app's
+page rather than on the list it sits in.
+
+Pages served in both modes — the launchpad and the databases are the two with
+subpaths — need a `/simple` route per subpath, and every link inside them has to
+go through `resolvePath`, or one click drops the reader into the advanced tree.
 
 ## App Launchpad — `/launchpad`
 

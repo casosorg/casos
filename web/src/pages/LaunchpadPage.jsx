@@ -15,6 +15,7 @@ import {SimpleSelect} from "@/components/shared/simple-select";
 import {StatusBadge} from "@/components/shared/status-badge";
 import {AppIcon} from "@/components/shared/app-icon";
 import {runAction, useResource} from "@/hooks/use-resource";
+import {useUiMode} from "@/hooks/use-ui-mode";
 
 const POLL_INTERVAL = 15000;
 
@@ -50,6 +51,7 @@ function formatMemory(mebibytes) {
 function LaunchpadPage(props) {
   useTranslation();
   const {history} = props;
+  const {resolvePath} = useUiMode();
   const [namespace, setNamespace] = useState("all");
   const [deleteTarget, setDeleteTarget] = useState(null);
   const [deleteData, setDeleteData] = useState(false);
@@ -184,7 +186,7 @@ function LaunchpadPage(props) {
             title={i18next.t("launchpad:Edit app")}
             onClick={(event) => {
               event.stopPropagation();
-              history.push(`/launchpad/${record.namespace}/${record.name}/edit`);
+              history.push(resolvePath(`/launchpad/${record.namespace}/${record.name}/edit`));
             }}
           >
             <Pencil />
@@ -239,7 +241,7 @@ function LaunchpadPage(props) {
         title={i18next.t("launchpad:App Launchpad")}
         description={i18next.t("launchpad:Run a container image as an application — sized, reachable and kept up.")}
         actions={
-          <Button onClick={() => history.push("/launchpad/new")} data-testid="launchpad-create">
+          <Button onClick={() => history.push(resolvePath("/launchpad/new"))} data-testid="launchpad-create">
             <Rocket />
             {i18next.t("launchpad:Deploy app")}
           </Button>
@@ -254,7 +256,7 @@ function LaunchpadPage(props) {
         rowKey={(record) => `${record.namespace}/${record.name}`}
         loading={loading}
         searchable
-        onRowClick={(record) => history.push(`/launchpad/${record.namespace}/${record.name}`)}
+        onRowClick={(record) => history.push(resolvePath(`/launchpad/${record.namespace}/${record.name}`))}
         emptyIcon={Rocket}
         emptyText={i18next.t("launchpad:No apps yet. Deploy one from an image, or install one from the App Store.")}
         toolbar={

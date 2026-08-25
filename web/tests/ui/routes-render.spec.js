@@ -61,7 +61,17 @@ const ROUTES = [
 
 // Simple mode has URLs of its own, so its screens are a separate walk rather
 // than the same paths with a flag flipped.
-const SIMPLE_MODE_ROUTES = ["/simple", "/simple/app-store", "/simple/apps", "/simple/devices", "/simple/health"];
+const SIMPLE_MODE_ROUTES = [
+  "/simple",
+  "/simple/app-store",
+  "/simple/apps",
+  "/simple/launchpad",
+  "/simple/launchpad/new",
+  "/simple/databases",
+  "/simple/databases/new",
+  "/simple/devices",
+  "/simple/health",
+];
 
 // A rendered screen always carries the shell's own chrome; anything shorter
 // than this means React unmounted the tree.

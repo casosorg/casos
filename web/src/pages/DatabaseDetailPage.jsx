@@ -40,6 +40,7 @@ import {StatusBadge} from "@/components/shared/status-badge";
 import {engineTint} from "@/lib/database";
 import {cn} from "@/lib/utils";
 import {runAction} from "@/hooks/use-resource";
+import {useUiMode} from "@/hooks/use-ui-mode";
 
 const POLL_INTERVAL = 15000;
 
@@ -89,6 +90,7 @@ function CopyField({label, value, secret}) {
 function DatabaseDetailPage(props) {
   useTranslation();
   const {history, match} = props;
+  const {resolvePath} = useUiMode();
   const {namespace, name} = match.params;
 
   const [detail, setDetail] = useState(null);
@@ -178,7 +180,7 @@ function DatabaseDetailPage(props) {
   function remove() {
     runAction(DatabaseBackend.deleteDatabase({namespace, name, deleteData}), {
       successMessage: i18next.t("database:Database deleted"),
-      onSuccess: () => history.push("/databases"),
+      onSuccess: () => history.push(resolvePath("/databases")),
     });
   }
 
@@ -191,7 +193,7 @@ function DatabaseDetailPage(props) {
       <PageContainer>
         <MessageAlert title={error ?? i18next.t("database:Database not found")} />
         <div>
-          <Button variant="outline" onClick={() => history.push("/databases")}>
+          <Button variant="outline" onClick={() => history.push(resolvePath("/databases"))}>
             <ArrowLeft />
             {i18next.t("launchpad:Back")}
           </Button>
@@ -289,7 +291,7 @@ function DatabaseDetailPage(props) {
         description={`${detail.engineLabel} ${detail.version}`}
         actions={
           <div className="flex flex-wrap items-center gap-2">
-            <Button variant="outline" onClick={() => history.push("/databases")}>
+            <Button variant="outline" onClick={() => history.push(resolvePath("/databases"))}>
               <ArrowLeft />
               {i18next.t("launchpad:Back")}
             </Button>
@@ -305,7 +307,7 @@ function DatabaseDetailPage(props) {
               <SlidersHorizontal />
               {i18next.t("database:Engine settings")}
             </Button>
-            <Button variant="outline" onClick={() => history.push(`/databases/${namespace}/${name}/edit`)}>
+            <Button variant="outline" onClick={() => history.push(resolvePath(`/databases/${namespace}/${name}/edit`))}>
               <Pencil />
               {i18next.t("database:Edit database")}
             </Button>

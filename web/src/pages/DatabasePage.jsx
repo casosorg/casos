@@ -15,6 +15,7 @@ import {StatusBadge} from "@/components/shared/status-badge";
 import {DATABASE_STATUS_VARIANTS, engineTint} from "@/lib/database";
 import {cn} from "@/lib/utils";
 import {runAction, useResource} from "@/hooks/use-resource";
+import {useUiMode} from "@/hooks/use-ui-mode";
 
 const POLL_INTERVAL = 15000;
 
@@ -22,6 +23,7 @@ const POLL_INTERVAL = 15000;
 function DatabasePage(props) {
   useTranslation();
   const {history} = props;
+  const {resolvePath} = useUiMode();
   const [namespace, setNamespace] = useState("all");
   const [deleteTarget, setDeleteTarget] = useState(null);
   const [deleteData, setDeleteData] = useState(false);
@@ -123,7 +125,7 @@ function DatabasePage(props) {
             title={i18next.t("database:Edit database")}
             onClick={(event) => {
               event.stopPropagation();
-              history.push(`/databases/${record.namespace}/${record.name}/edit`);
+              history.push(resolvePath(`/databases/${record.namespace}/${record.name}/edit`));
             }}
           >
             <Pencil />
@@ -178,7 +180,7 @@ function DatabasePage(props) {
         title={i18next.t("database:Databases")}
         description={i18next.t("database:Managed PostgreSQL, MySQL, MongoDB and Redis, with credentials and backups handled for you.")}
         actions={
-          <Button onClick={() => history.push("/databases/new")} data-testid="database-create">
+          <Button onClick={() => history.push(resolvePath("/databases/new"))} data-testid="database-create">
             <Database />
             {i18next.t("database:New database")}
           </Button>
@@ -193,7 +195,7 @@ function DatabasePage(props) {
         rowKey={(record) => `${record.namespace}/${record.name}`}
         loading={loading}
         searchable
-        onRowClick={(record) => history.push(`/databases/${record.namespace}/${record.name}`)}
+        onRowClick={(record) => history.push(resolvePath(`/databases/${record.namespace}/${record.name}`))}
         emptyIcon={Database}
         emptyText={i18next.t("database:No databases yet. Create one and its connection details are generated for you.")}
         toolbar={

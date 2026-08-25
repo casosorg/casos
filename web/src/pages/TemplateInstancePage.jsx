@@ -14,6 +14,7 @@ import {Loading} from "@/components/shared/loading";
 import {PageContainer, PageHeader} from "@/components/shared/page-header";
 import {AppIcon} from "@/components/shared/app-icon";
 import {runAction} from "@/hooks/use-resource";
+import {useUiMode} from "@/hooks/use-ui-mode";
 
 const POLL_INTERVAL = 20000;
 
@@ -26,6 +27,7 @@ const POLL_INTERVAL = 20000;
 function TemplateInstancePage(props) {
   useTranslation();
   const {history, match} = props;
+  const {resolvePath} = useUiMode();
   const {namespace, name} = match.params;
 
   const [instance, setInstance] = useState(null);
@@ -159,7 +161,7 @@ function TemplateInstancePage(props) {
                   key={database}
                   size="sm"
                   variant="outline"
-                  onClick={() => history.push(`/databases/${instance.namespace}/${database}`)}
+                  onClick={() => history.push(resolvePath(`/databases/${instance.namespace}/${database}`))}
                 >
                   <Database />
                   {database}

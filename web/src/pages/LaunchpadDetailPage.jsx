@@ -40,6 +40,7 @@ import {StatCard} from "@/components/shared/stat-card";
 import {StatusBadge} from "@/components/shared/status-badge";
 import {UsageAreaChart} from "@/components/shared/charts";
 import {runAction, useResource} from "@/hooks/use-resource";
+import {useUiMode} from "@/hooks/use-ui-mode";
 
 const POLL_INTERVAL = 10000;
 /** ACME issuance settles in seconds to minutes, so it is watched more closely. */
@@ -228,6 +229,7 @@ function RevisionTable({namespace, name, onRolledBack}) {
 function LaunchpadDetailPage(props) {
   useTranslation();
   const {history, match} = props;
+  const {resolvePath} = useUiMode();
   const {namespace, name} = match.params;
 
   const [detail, setDetail] = useState(null);
@@ -316,7 +318,7 @@ function LaunchpadDetailPage(props) {
   function uninstall() {
     runAction(ImageBackend.uninstallApp({namespace, name, deleteData}), {
       successMessage: i18next.t("launchpad:App deleted"),
-      onSuccess: () => history.push("/launchpad"),
+      onSuccess: () => history.push(resolvePath("/launchpad")),
     });
   }
 
@@ -329,7 +331,7 @@ function LaunchpadDetailPage(props) {
       <PageContainer>
         <MessageAlert title={error ?? i18next.t("launchpad:App not found")} />
         <div>
-          <Button variant="outline" onClick={() => history.push("/launchpad")}>
+          <Button variant="outline" onClick={() => history.push(resolvePath("/launchpad"))}>
             <ArrowLeft />
             {i18next.t("launchpad:Back")}
           </Button>
@@ -379,11 +381,11 @@ function LaunchpadDetailPage(props) {
         description={detail.image}
         actions={
           <div className="flex flex-wrap items-center gap-2">
-            <Button variant="outline" onClick={() => history.push("/launchpad")}>
+            <Button variant="outline" onClick={() => history.push(resolvePath("/launchpad"))}>
               <ArrowLeft />
               {i18next.t("launchpad:Back")}
             </Button>
-            <Button variant="outline" onClick={() => history.push(`/launchpad/${namespace}/${name}/edit`)}>
+            <Button variant="outline" onClick={() => history.push(resolvePath(`/launchpad/${namespace}/${name}/edit`))}>
               <Pencil />
               {i18next.t("launchpad:Edit app")}
             </Button>

@@ -136,6 +136,8 @@ export const simpleNavGroups = [
   {key: "/simple", label: "simple:Home", icon: House, path: "/simple"},
   {key: "/simple/app-store", label: "simple:App Store", icon: Store, path: "/simple/app-store"},
   {key: "/simple/apps", label: "simple:My Apps", icon: Boxes, path: "/simple/apps"},
+  {key: "/simple/launchpad", label: "simple:Custom apps", icon: Rocket, path: "/simple/launchpad"},
+  {key: "/simple/databases", label: "database:Databases", icon: Database, path: "/simple/databases"},
   {key: "/simple/devices", label: "simple:Devices", icon: Laptop, path: "/simple/devices"},
   {key: "/simple/health", label: "simple:Health", icon: Activity, path: "/simple/health"},
 ];
@@ -175,6 +177,8 @@ const MODE_COUNTERPARTS = [
   ["/dashboard", "/simple"],
   ["/app-store", "/simple/app-store"],
   ["/helm-releases", "/simple/apps"],
+  ["/launchpad", "/simple/launchpad"],
+  ["/databases", "/simple/databases"],
   ["/machines", "/simple/devices"],
   ["/nodes", "/simple/devices"],
   ["/monitor", "/simple/health"],
@@ -193,8 +197,9 @@ export function pathForMode(advancedPath, mode) {
   if (mode === "advanced") {
     return advancedPath;
   }
-  const pair = MODE_COUNTERPARTS.find(([advanced]) => advanced === navKeyForPath(advancedPath));
-  return pair ? pair[1] : advancedPath;
+  const key = navKeyForPath(advancedPath);
+  const pair = MODE_COUNTERPARTS.find(([advanced]) => advanced === key);
+  return pair ? pair[1] + advancedPath.slice(key.length) : advancedPath;
 }
 
 /** Where a URL's reader should land after switching to the other mode. */
@@ -211,7 +216,8 @@ export function counterpartPath(pathname, targetMode) {
   if (!pair) {
     return homePath(targetMode);
   }
-  return targetMode === "advanced" ? pair[0] : pair[1];
+  const rest = pathname.slice(key.length);
+  return targetMode === "advanced" ? pair[0] + rest : pair[1] + rest;
 }
 
 // Both trees are searched: a nav key belongs to exactly one of them now that

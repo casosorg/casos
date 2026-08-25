@@ -142,6 +142,14 @@ export function AppRoutes({account, accountUpdatedAt, onOpenAccount, onUpdateSit
         />
         <Route exact path="/simple/app-store" component={AppStorePage} />
         <Route exact path="/simple/apps" component={HelmReleasePage} />
+        <Route exact path="/simple/launchpad" component={LaunchpadPage} />
+        <Route exact path="/simple/launchpad/new" component={LaunchpadEditPage} />
+        <Route exact path="/simple/launchpad/:namespace/:name" component={LaunchpadDetailPage} />
+        <Route exact path="/simple/launchpad/:namespace/:name/edit" component={LaunchpadEditPage} />
+        <Route exact path="/simple/databases" component={DatabasePage} />
+        <Route exact path="/simple/databases/new" component={DatabaseEditPage} />
+        <Route exact path="/simple/databases/:namespace/:name" component={DatabaseDetailPage} />
+        <Route exact path="/simple/databases/:namespace/:name/edit" component={DatabaseEditPage} />
         <Route exact path="/simple/devices" render={(props) => <DevicesPage account={account} {...props} />} />
         <Route exact path="/simple/health" component={HealthPage} />
         <Redirect exact from="/devices" to="/simple/devices" />

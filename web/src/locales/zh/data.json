@@ -720,6 +720,7 @@
     "Computers that have joined the cluster and can run apps.": "已经加入集群、可以跑应用的电脑。",
     "Connect another machine so there is more room to run apps.": "接入另一台机器，让应用有更多空间可用。",
     "Connect apps together and automate tasks by drawing a flow.": "画一条流程就能把各个应用串起来，自动干活。",
+    "Custom apps": "自建应用",
     "Databases": "数据库",
     "Developer tools": "开发工具",
     "Devices": "设备",

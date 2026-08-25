@@ -30,6 +30,7 @@ import {
   validateAppForm,
 } from "@/lib/launchpad";
 import {runAction, useResource} from "@/hooks/use-resource";
+import {useUiMode} from "@/hooks/use-ui-mode";
 import {useWorkspace} from "@/hooks/use-workspace";
 import {cn} from "@/lib/utils";
 
@@ -93,6 +94,7 @@ function FormRow({label, hint, error, children, className}) {
 function LaunchpadEditPage(props) {
   useTranslation();
   const {history, match} = props;
+  const {resolvePath} = useUiMode();
   const editing = Boolean(match.params.name);
   const namespaceParam = match.params.namespace;
   const nameParam = match.params.name;
@@ -149,7 +151,7 @@ function LaunchpadEditPage(props) {
       successMessage: editing
         ? i18next.t("launchpad:App updated")
         : i18next.t("launchpad:App deployed"),
-      onSuccess: () => history.push(`/launchpad/${payload.namespace}/${payload.name}`),
+      onSuccess: () => history.push(resolvePath(`/launchpad/${payload.namespace}/${payload.name}`)),
     }).finally(() => setSubmitting(false));
   }
 
@@ -164,7 +166,7 @@ function LaunchpadEditPage(props) {
         description={i18next.t("launchpad:One container, everything it needs to be reachable and to stay up.")}
         actions={
           <div className="flex items-center gap-2">
-            <Button variant="outline" onClick={() => history.push("/launchpad")}>
+            <Button variant="outline" onClick={() => history.push(resolvePath("/launchpad"))}>
               <ArrowLeft />
               {i18next.t("launchpad:Back")}
             </Button>

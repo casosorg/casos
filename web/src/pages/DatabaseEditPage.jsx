@@ -25,6 +25,7 @@ import {
 } from "@/lib/database";
 import {cn} from "@/lib/utils";
 import {runAction, useResource} from "@/hooks/use-resource";
+import {useUiMode} from "@/hooks/use-ui-mode";
 import {useWorkspace} from "@/hooks/use-workspace";
 
 function PresetRow({value, presets, onChange, placeholder}) {
@@ -76,6 +77,7 @@ function FormRow({label, hint, error, children, className}) {
 function DatabaseEditPage(props) {
   useTranslation();
   const {history, match} = props;
+  const {resolvePath} = useUiMode();
   const editing = Boolean(match.params.name);
   const namespaceParam = match.params.namespace;
   const nameParam = match.params.name;
@@ -142,7 +144,7 @@ function DatabaseEditPage(props) {
     const request = editing ? DatabaseBackend.updateDatabase(payload) : DatabaseBackend.createDatabase(payload);
     runAction(request, {
       successMessage: editing ? i18next.t("database:Database updated") : i18next.t("database:Database created"),
-      onSuccess: () => history.push(`/databases/${payload.namespace}/${payload.name}`),
+      onSuccess: () => history.push(resolvePath(`/databases/${payload.namespace}/${payload.name}`)),
     }).finally(() => setSubmitting(false));
   }
 
@@ -157,7 +159,7 @@ function DatabaseEditPage(props) {
         description={i18next.t("database:Pick an engine and a size; the credentials, storage and address are set up for you.")}
         actions={
           <div className="flex items-center gap-2">
-            <Button variant="outline" onClick={() => history.push("/databases")}>
+            <Button variant="outline" onClick={() => history.push(resolvePath("/databases"))}>
               <ArrowLeft />
               {i18next.t("launchpad:Back")}
             </Button>
