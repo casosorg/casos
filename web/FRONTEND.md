@@ -136,7 +136,7 @@ under Installed Apps.
 | `lib/launchpad.js` | The form model: read from the cluster, edited, previewed as YAML, sent back |
 | `pages/LaunchpadPage.jsx` | The list, with live CPU and memory per app |
 | `pages/LaunchpadEditPage.jsx` | Create and edit — the same form, with the manifest preview beside it |
-| `pages/LaunchpadDetailPage.jsx` | One app: usage over time, addresses, storage, pods with logs/terminal/events |
+| `pages/LaunchpadDetailPage.jsx` | One app: usage over time, addresses, storage, version history, pods with logs/terminal/events |
 
 Backend: `POST /api/deploy-app` and `POST /api/upgrade-image-app` take the same
 payload, and `GET /api/get-image-app` reads an app back as the form that
@@ -164,6 +164,15 @@ app serves on HTTP meanwhile, and the detail page polls
 `/api/get-cert-status` and reports why. Reading an app back, `https` on a domain
 means the Ingress already carries a certificate.
 
+**Version history.** `/api/get-deployment-revisions` lists the ReplicaSets
+Kubernetes still keeps behind the Deployment; how many there are is the
+Deployment's own `revisionHistoryLimit`, so this is what the cluster has rather
+than a log casos maintains. Which one is running is decided by comparing pod
+templates, not by the Deployment's revision annotation — the annotation is
+written by the controller and lags a change by a moment, which would show a
+just-edited app as running nothing. `/api/rollback-deployment` puts a past
+template back, so a rollback is itself a new revision and can be rolled back.
+
 ## Databases — `/databases`
 
 A managed database is a StatefulSet, a Service, a Secret holding its
@@ -176,7 +185,8 @@ pages offer is done to those objects directly.
 | `lib/database.js` | Engine tints and the form model shared by create and edit |
 | `pages/DatabasePage.jsx` | The list, with per-database state and start/stop |
 | `pages/DatabaseEditPage.jsx` | Engine, version, credentials, size, public access |
-| `pages/DatabaseDetailPage.jsx` | Connection details, backups, pods, and the engine console |
+| `pages/DatabaseDetailPage.jsx` | Connection details, backups, pods, the engine console and its log |
+| `components/shared/database-params-dialog.jsx` | Engine settings and the record of what was changed |
 
 Backend: `controllers/database_engine.go` is the catalogue — for each engine the
 image, how the Secret reaches the container, and the four shell commands that
@@ -197,6 +207,22 @@ console are the same component over the same two-channel protocol.
 Credentials are set once. The engine stores its own user and password at first
 start, so rewriting the Secret afterwards would only make it disagree with the
 engine — the edit form leaves them out for that reason.
+
+**Engine settings** (`controllers/database_params.go`, `DatabaseParamsDialog`)
+are a short curated list per engine, not everything the engine has: the rest
+belong in a config file, and a database nobody can start is worse than one
+nobody has tuned. Each engine says how a setting reaches its server, because
+every image wants it somewhere different — `Flag` renders one setting, `Run`
+says what the container then executes. Only values that differ from the engine's
+own default are rendered at all, so an untuned database runs exactly the command
+it would without the feature.
+
+Values are validated against their parameter's shape before they go anywhere,
+which is what lets Redis take its settings on a shell command line. What was
+asked for is recorded on the StatefulSet as `casos.io/db-params`, with a bounded
+`casos.io/db-param-history` beside it — the command line is how the engine is
+told, and the annotation is what a form reads back. Saving rolls the pod,
+because the engine only reads these at startup; the dialog says so.
 
 ## The desktop — `src/desktop/`
 

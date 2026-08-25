@@ -2,6 +2,10 @@ package controllers
 
 import (
 	"fmt"
+	"regexp"
+	"slices"
+	"strconv"
+	"strings"
 
 	corev1 "k8s.io/api/core/v1"
 )
@@ -47,9 +51,19 @@ type databaseEngine struct {
 	// Env wires the Secret into the container. Values are read from the Secret
 	// rather than written into the pod spec.
 	Env func(secretName string) []corev1.EnvVar
-	// Command overrides the image's entrypoint where the engine needs one to
-	// pick the password up from the environment.
-	Command func() []string
+	// Run says what the container executes once the tuned parameters have been
+	// turned into flags. Every image wants them somewhere different — after the
+	// entrypoint, after the server binary, or inside the shell line that starts
+	// it — so each engine composes its own. Returning nothing leaves the image
+	// to run itself.
+	Run func(flags []string) (command []string, args []string)
+	// Flag renders one tuned parameter the way this engine's server reads it.
+	Flag func(key, value string) []string
+	// Params is the short list of settings worth tuning from a form. It is
+	// deliberately not every setting the engine has: the rest belong in a
+	// config file, and a database nobody can start is worse than one that is
+	// not tuned.
+	Params []databaseParam
 	// BackupSuffix names the file a dump produces, so a reader can tell what
 	// they are downloading.
 	BackupSuffix string
@@ -63,6 +77,17 @@ type databaseEngine struct {
 	RestoreNeedsRestart bool
 	// URI is what an application puts in its configuration.
 	URI func(user, password, database, host string, port int32) string
+}
+
+// databaseParam describes one tunable setting: what it is called, what shape a
+// value has to be, and what the engine does when nobody sets it.
+type databaseParam struct {
+	Key     string   `json:"key"`
+	Label   string   `json:"label"`
+	Kind    string   `json:"kind"` // int | size | enum
+	Default string   `json:"default"`
+	Options []string `json:"options,omitempty"`
+	Hint    string   `json:"hint,omitempty"`
 }
 
 func secretEnv(name, secretName, key string) corev1.EnvVar {
@@ -99,6 +124,20 @@ var databaseEngines = map[string]databaseEngine{
 				{Name: "PGDATA", Value: "/var/lib/postgresql/data/pgdata"},
 			}
 		},
+		Flag: func(key, value string) []string { return []string{"-c", key + "=" + value} },
+		Run: func(flags []string) ([]string, []string) {
+			if len(flags) == 0 {
+				return nil, nil
+			}
+			return nil, append([]string{"postgres"}, flags...)
+		},
+		Params: []databaseParam{
+			{Key: "max_connections", Label: "Maximum connections", Kind: "int", Default: "100"},
+			{Key: "shared_buffers", Label: "Shared buffers", Kind: "size", Default: "128MB", Hint: "Roughly a quarter of the memory limit."},
+			{Key: "work_mem", Label: "Work memory per sort", Kind: "size", Default: "4MB"},
+			{Key: "effective_cache_size", Label: "Effective cache size", Kind: "size", Default: "4GB", Hint: "What the planner assumes the OS is caching."},
+			{Key: "log_min_duration_statement", Label: "Log statements slower than (ms)", Kind: "int", Default: "-1", Hint: "-1 turns slow-statement logging off."},
+		},
 		BackupSuffix: ".sql.gz",
 		Dump: func(path string) string {
 			return fmt.Sprintf("pg_dump -U \"$POSTGRES_USER\" -d \"$POSTGRES_DB\" | gzip > %q", path)
@@ -129,6 +168,20 @@ var databaseEngines = map[string]databaseEngine{
 				secretEnv("MYSQL_ROOT_PASSWORD", secretName, "password"),
 				secretEnv("MYSQL_DATABASE", secretName, "database"),
 			}
+		},
+		Flag: func(key, value string) []string { return []string{"--" + key + "=" + value} },
+		Run: func(flags []string) ([]string, []string) {
+			if len(flags) == 0 {
+				return nil, nil
+			}
+			return nil, append([]string{"mysqld"}, flags...)
+		},
+		Params: []databaseParam{
+			{Key: "max_connections", Label: "Maximum connections", Kind: "int", Default: "151"},
+			{Key: "innodb_buffer_pool_size", Label: "InnoDB buffer pool", Kind: "size", Default: "128M", Hint: "The single setting that matters most for read speed."},
+			{Key: "max_allowed_packet", Label: "Maximum packet size", Kind: "size", Default: "64M"},
+			{Key: "slow_query_log", Label: "Slow query log", Kind: "enum", Default: "OFF", Options: []string{"OFF", "ON"}},
+			{Key: "long_query_time", Label: "Slow query threshold (s)", Kind: "int", Default: "10"},
 		},
 		BackupSuffix: ".sql.gz",
 		Dump: func(path string) string {
@@ -161,6 +214,18 @@ var databaseEngines = map[string]databaseEngine{
 				secretEnv("MONGO_INITDB_DATABASE", secretName, "database"),
 			}
 		},
+		Flag: func(key, value string) []string { return []string{"--" + key + "=" + value} },
+		Run: func(flags []string) ([]string, []string) {
+			if len(flags) == 0 {
+				return nil, nil
+			}
+			return nil, append([]string{"mongod"}, flags...)
+		},
+		Params: []databaseParam{
+			{Key: "wiredTigerCacheSizeGB", Label: "WiredTiger cache (GB)", Kind: "int", Default: "0", Hint: "0 lets MongoDB size the cache from the memory it can see."},
+			{Key: "slowms", Label: "Slow operation threshold (ms)", Kind: "int", Default: "100"},
+			{Key: "profile", Label: "Profiling level", Kind: "enum", Default: "0", Options: []string{"0", "1", "2"}, Hint: "0 off, 1 slow operations, 2 everything."},
+		},
 		BackupSuffix: ".archive.gz",
 		Dump: func(path string) string {
 			return fmt.Sprintf("mongodump --username \"$MONGO_INITDB_ROOT_USERNAME\" --password \"$MONGO_INITDB_ROOT_PASSWORD\" --authenticationDatabase admin --archive=%q --gzip", path)
@@ -188,8 +253,23 @@ var databaseEngines = map[string]databaseEngine{
 		Env: func(secretName string) []corev1.EnvVar {
 			return []corev1.EnvVar{secretEnv("REDIS_PASSWORD", secretName, "password")}
 		},
-		Command: func() []string {
-			return []string{"sh", "-c", "exec redis-server --requirepass \"$REDIS_PASSWORD\" --appendonly yes"}
+		Flag: func(key, value string) []string { return []string{"--" + key, value} },
+		// Redis takes its settings on the server's own command line, and the
+		// command line is a shell line here because the password comes from the
+		// environment. Values reach it only after passing their parameter's
+		// shape check, so there is nothing in them a shell could act on.
+		Run: func(flags []string) ([]string, []string) {
+			line := "exec redis-server --requirepass \"$REDIS_PASSWORD\" --appendonly yes"
+			if len(flags) > 0 {
+				line += " " + strings.Join(flags, " ")
+			}
+			return []string{"sh", "-c", line}, nil
+		},
+		Params: []databaseParam{
+			{Key: "maxmemory", Label: "Memory limit", Kind: "size", Default: "0", Hint: "0 means no limit of its own."},
+			{Key: "maxmemory-policy", Label: "What to drop when full", Kind: "enum", Default: "noeviction",
+				Options: []string{"noeviction", "allkeys-lru", "allkeys-lfu", "volatile-lru", "volatile-lfu", "volatile-ttl", "volatile-random", "allkeys-random"}},
+			{Key: "timeout", Label: "Idle client timeout (s)", Kind: "int", Default: "0"},
 		},
 		BackupSuffix: ".rdb.gz",
 		Dump: func(path string) string {
@@ -226,4 +306,52 @@ func engineVersionOrDefault(engine databaseEngine, version string) string {
 		}
 	}
 	return engine.Versions[0]
+}
+
+// paramValuePattern is what a tuned value may look like: a number, or a number
+// with a unit, or a bare word. Nothing in it can mean anything to a shell,
+// which is what lets Redis take its settings on a shell command line.
+var paramValuePattern = regexp.MustCompile(`^-?[0-9A-Za-z_.-]{1,32}$`)
+
+func (p databaseParam) validate(value string) error {
+	if !paramValuePattern.MatchString(value) {
+		return fmt.Errorf("%s: %q is not a value this setting can take", p.Key, value)
+	}
+	switch p.Kind {
+	case "int":
+		if _, err := strconv.Atoi(value); err != nil {
+			return fmt.Errorf("%s has to be a whole number", p.Key)
+		}
+	case "size":
+		if !regexp.MustCompile(`^[0-9]+[A-Za-z]{0,2}$`).MatchString(value) {
+			return fmt.Errorf("%s has to be a size like 256MB", p.Key)
+		}
+	case "enum":
+		if !slices.Contains(p.Options, value) {
+			return fmt.Errorf("%s has to be one of %s", p.Key, strings.Join(p.Options, ", "))
+		}
+	}
+	return nil
+}
+
+// applyDatabaseParams renders the tuned parameters into the container. Values
+// left at their default are not rendered at all, so a database nobody has tuned
+// runs exactly the command it would have without this feature.
+func applyDatabaseParams(container *corev1.Container, engine databaseEngine, values map[string]string) error {
+	flags := []string{}
+	for _, param := range engine.Params {
+		value, ok := values[param.Key]
+		if !ok || value == "" || value == param.Default {
+			continue
+		}
+		if err := param.validate(value); err != nil {
+			return err
+		}
+		flags = append(flags, engine.Flag(param.Key, value)...)
+	}
+
+	command, args := engine.Run(flags)
+	container.Command = command
+	container.Args = args
+	return nil
 }

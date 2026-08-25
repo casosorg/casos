@@ -8,6 +8,7 @@ import {
   ExternalLink,
   FileText,
   HardDrive,
+  History,
   MemoryStick,
   Pencil,
   Play,
@@ -125,6 +126,93 @@ function CertificateLine({namespace, name, domains}) {
         </Button>
       ) : null}
     </div>
+  );
+}
+
+/**
+ * The versions this app has been, and the way back to one of them.
+ *
+ * Kubernetes keeps a bounded history of pod templates, so this is exactly what
+ * is still on the cluster rather than a log casos maintains — a version that
+ * has aged out is genuinely gone. Rolling back rolls forward to an older
+ * template, which is why the current row can itself be rolled back to later.
+ */
+function RevisionTable({namespace, name, onRolledBack}) {
+  const [target, setTarget] = useState(null);
+
+  const {data: revisions, loading, refresh} = useResource(
+    () => DeploymentBackend.getDeploymentRevisions(namespace, name),
+    [namespace, name],
+    {initialData: [], toastOnError: false}
+  );
+
+  function rollback() {
+    const revision = target.revision;
+    setTarget(null);
+    runAction(DeploymentBackend.rollbackDeployment({namespace, name, revision}), {
+      successMessage: i18next.t("launchpad:Rolling back to version {{revision}}", {revision}),
+      onSuccess: () => {
+        refresh();
+        onRolledBack?.();
+      },
+    });
+  }
+
+  const columns = [
+    {
+      key: "revision",
+      title: i18next.t("launchpad:Version"),
+      dataIndex: "revision",
+      width: 120,
+      render: (value, record) => (
+        <span className="flex items-center gap-2">
+          <span className="font-mono text-xs">#{value}</span>
+          {record.current ? <Badge variant="success">{i18next.t("launchpad:Running now")}</Badge> : null}
+        </span>
+      ),
+    },
+    {key: "image", title: i18next.t("launchpad:Image"), dataIndex: "image", minWidth: 240, ellipsis: true},
+    {key: "createdAt", title: i18next.t("launchpad:Created"), dataIndex: "createdAt", width: 170},
+    {
+      key: "actions",
+      title: "",
+      width: 130,
+      align: "right",
+      render: (_, record) => (
+        record.current ? null : (
+          <Button size="sm" variant="outline" onClick={() => setTarget(record)}>
+            <History />
+            {i18next.t("launchpad:Roll back")}
+          </Button>
+        )
+      ),
+    },
+  ];
+
+  return (
+    <>
+      <DataTable
+        testId="launchpad-revisions-table"
+        title={i18next.t("launchpad:Version history")}
+        description={i18next.t("launchpad:Every change to the app is a version Kubernetes still has the recipe for.")}
+        columns={columns}
+        dataSource={revisions ?? []}
+        rowKey="name"
+        loading={loading}
+        pageSize={10}
+        emptyText={i18next.t("launchpad:No earlier versions are kept.")}
+      />
+
+      <ConfirmDialog
+        open={Boolean(target)}
+        onOpenChange={(open) => !open && setTarget(null)}
+        title={`${i18next.t("launchpad:Roll back")} — #${target?.revision ?? ""}`}
+        description={i18next.t("launchpad:The app goes back to running {{image}}. This is itself a new version, so the current one can be returned to.", {image: target?.image ?? ""})}
+        confirmText={i18next.t("launchpad:Roll back")}
+        variant="default"
+        onConfirm={rollback}
+      />
+    </>
   );
 }
 
@@ -444,6 +532,8 @@ function LaunchpadDetailPage(props) {
         pageSize={10}
         emptyText={i18next.t("launchpad:No pods are running for this app.")}
       />
+
+      <RevisionTable namespace={namespace} name={name} onRolledBack={() => load({background: true})} />
 
       <PodLogsSheet pod={logsPod} open={Boolean(logsPod)} onClose={() => setLogsPod(null)} />
       <PodTerminalSheet pod={terminalPod} open={Boolean(terminalPod)} onClose={() => setTerminalPod(null)} />

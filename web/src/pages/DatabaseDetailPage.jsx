@@ -15,6 +15,7 @@ import {
   RotateCcw,
   Save,
   ScrollText,
+  SlidersHorizontal,
   Square,
   TerminalSquare,
   Trash2,
@@ -30,6 +31,7 @@ import {ConfirmDialog} from "@/components/shared/confirm-dialog";
 import {DataTable} from "@/components/shared/data-table";
 import {Loading} from "@/components/shared/loading";
 import {PageContainer, PageHeader} from "@/components/shared/page-header";
+import {DatabaseParamsDialog} from "@/components/shared/database-params-dialog";
 import {PodLogsSheet} from "@/components/shared/pod-logs-sheet";
 import {PodShell} from "@/components/shared/pod-shell";
 import {ResourceSheet} from "@/components/shared/resource-sheet";
@@ -94,6 +96,7 @@ function DatabaseDetailPage(props) {
   const [error, setError] = useState(null);
   const [consoleOpen, setConsoleOpen] = useState(false);
   const [logsPod, setLogsPod] = useState(null);
+  const [paramsOpen, setParamsOpen] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [deleteData, setDeleteData] = useState(false);
   const [restoreTarget, setRestoreTarget] = useState(null);
@@ -198,6 +201,9 @@ function DatabaseDetailPage(props) {
   }
 
   const running = detail.status === "running";
+  // The engine's own log is the log of whichever pod is actually up; a reader
+  // asking for it should not have to know there is a pod at all.
+  const enginePod = (detail.pods ?? []).find((pod) => pod.phase === "Running") ?? null;
 
   const podColumns = [
     {key: "name", title: i18next.t("launchpad:Pod"), dataIndex: "name", minWidth: 220, ellipsis: true},
@@ -290,6 +296,14 @@ function DatabaseDetailPage(props) {
             <Button variant="outline" disabled={!running} onClick={() => setConsoleOpen(true)} data-testid="database-console">
               <TerminalSquare />
               {i18next.t("database:Console")}
+            </Button>
+            <Button variant="outline" disabled={!enginePod} onClick={() => setLogsPod(enginePod)} data-testid="database-engine-log">
+              <ScrollText />
+              {i18next.t("database:Engine log")}
+            </Button>
+            <Button variant="outline" onClick={() => setParamsOpen(true)} data-testid="database-params">
+              <SlidersHorizontal />
+              {i18next.t("database:Engine settings")}
             </Button>
             <Button variant="outline" onClick={() => history.push(`/databases/${namespace}/${name}/edit`)}>
               <Pencil />
@@ -403,6 +417,14 @@ function DatabaseDetailPage(props) {
           />
         ) : null}
       </ResourceSheet>
+
+      <DatabaseParamsDialog
+        namespace={namespace}
+        name={name}
+        open={paramsOpen}
+        onOpenChange={setParamsOpen}
+        onSaved={() => load({background: true})}
+      />
 
       <PodLogsSheet pod={logsPod} open={Boolean(logsPod)} onClose={() => setLogsPod(null)} />
 

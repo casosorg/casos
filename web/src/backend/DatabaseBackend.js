@@ -68,3 +68,14 @@ export function backupDownloadUrl(namespace, pod, file) {
   });
   return `${Setting.ServerUrl}/api/pod-file-download?${params}`;
 }
+
+export function getDatabaseParams(namespace, name) {
+  const params = new URLSearchParams({namespace, name});
+  return fetch(`${Setting.ServerUrl}/api/get-database-params?${params}`, {
+    credentials: "include", headers: lang(),
+  }).then(r => r.json());
+}
+
+export function configureDatabase(payload) {
+  return post("/api/configure-database", payload);
+}

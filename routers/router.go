@@ -29,6 +29,9 @@ func InitAPI() {
 	beego.Router("/api/delete-node", &controllers.ApiController{}, "POST:DeleteNode")
 	beego.Router("/api/get-worker-kubeconfig", &controllers.ApiController{}, "GET:GetWorkerKubeconfig")
 
+	beego.Router("/api/get-deployment-revisions", &controllers.ApiController{}, "GET:GetDeploymentRevisions")
+	beego.Router("/api/rollback-deployment", &controllers.ApiController{}, "POST:RollbackDeployment")
+
 	beego.Router("/api/get-events", &controllers.ApiController{}, "GET:GetEvents")
 
 	beego.Router("/api/get-namespaces", &controllers.ApiController{}, "GET:GetNamespaces")
@@ -65,6 +68,8 @@ func InitAPI() {
 	beego.Router("/api/restore-database", &controllers.ApiController{}, "POST:RestoreDatabase")
 	beego.Router("/api/delete-database-backup", &controllers.ApiController{}, "POST:DeleteDatabaseBackup")
 	beego.Router("/api/database-console", &controllers.ApiController{}, "GET:DatabaseConsole")
+	beego.Router("/api/get-database-params", &controllers.ApiController{}, "GET:GetDatabaseParams")
+	beego.Router("/api/configure-database", &controllers.ApiController{}, "POST:ConfigureDatabase")
 
 	beego.Router("/api/get-ingresses", &controllers.ApiController{}, "GET:GetIngresses")
 	beego.Router("/api/get-ingress", &controllers.ApiController{}, "GET:GetIngress")

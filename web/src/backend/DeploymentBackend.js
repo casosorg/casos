@@ -55,3 +55,24 @@ export function deleteDeployment(namespace, name) {
     body: JSON.stringify({namespace, name}),
   }).then(res => res.json());
 }
+
+export function getDeploymentRevisions(namespace, name) {
+  const params = new URLSearchParams({namespace, name});
+  return fetch(`${Setting.ServerUrl}/api/get-deployment-revisions?${params}`, {
+    method: "GET",
+    credentials: "include",
+    headers: {"Accept-Language": Setting.getAcceptLanguage()},
+  }).then(res => res.json());
+}
+
+export function rollbackDeployment(payload) {
+  return fetch(`${Setting.ServerUrl}/api/rollback-deployment`, {
+    method: "POST",
+    credentials: "include",
+    headers: {
+      "Content-Type": "application/json",
+      "Accept-Language": Setting.getAcceptLanguage(),
+    },
+    body: JSON.stringify(payload),
+  }).then(res => res.json());
+}

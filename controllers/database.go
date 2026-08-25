@@ -88,6 +88,9 @@ type databaseRequest struct {
 	Password     string `json:"password"`
 	Database     string `json:"database"`
 	PublicAccess bool   `json:"publicAccess"`
+	// Params holds engine settings by key. Absent means "whatever the engine
+	// does on its own", which is also what a value equal to the default means.
+	Params map[string]string `json:"params"`
 }
 
 type databaseSummary struct {
@@ -259,8 +262,8 @@ func buildDatabaseStatefulSet(req databaseRequest, engine databaseEngine, versio
 			PeriodSeconds:       10,
 		},
 	}
-	if engine.Command != nil {
-		container.Command = engine.Command()
+	if err := applyDatabaseParams(&container, engine, req.Params); err != nil {
+		return nil, err
 	}
 	if err := applyResources(&container, req.resourceRequest); err != nil {
 		return nil, err

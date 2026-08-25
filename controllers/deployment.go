@@ -311,3 +311,90 @@ func (c *ApiController) RestartDeployment() {
 	}
 	c.ResponseOk()
 }
+
+type deploymentRevision struct {
+	Revision  int64  `json:"revision"`
+	Name      string `json:"name"`
+	Image     string `json:"image"`
+	Replicas  int32  `json:"replicas"`
+	Ready     int32  `json:"ready"`
+	Current   bool   `json:"current"`
+	CreatedAt string `json:"createdAt"`
+	Change    string `json:"change"`
+}
+
+// GetDeploymentRevisions lists the versions a Deployment can be rolled back to.
+// @router /api/get-deployment-revisions [get]
+func (c *ApiController) GetDeploymentRevisions() {
+	cfg := getAdminRestConfig()
+	if cfg == nil {
+		c.ResponseError("apiserver not ready")
+		return
+	}
+	namespace := c.GetString("namespace")
+	if namespace == "" {
+		namespace = "default"
+	}
+	name := c.GetString("name")
+
+	deploy, revisions, err := object.DeploymentRevisions(cfg, namespace, name)
+	if err != nil {
+		c.ResponseError(err.Error())
+		return
+	}
+
+	result := make([]deploymentRevision, 0, len(revisions))
+	for _, rs := range revisions {
+		image := ""
+		if len(rs.Spec.Template.Spec.Containers) > 0 {
+			image = rs.Spec.Template.Spec.Containers[0].Image
+		}
+		replicas := int32(0)
+		if rs.Spec.Replicas != nil {
+			replicas = *rs.Spec.Replicas
+		}
+		revision := object.RevisionNumber(rs)
+		result = append(result, deploymentRevision{
+			Revision:  revision,
+			Name:      rs.Name,
+			Image:     image,
+			Replicas:  replicas,
+			Ready:     rs.Status.ReadyReplicas,
+			Current:   object.IsCurrentRevision(deploy, rs),
+			CreatedAt: rs.CreationTimestamp.UTC().Format("2006-01-02 15:04:05"),
+			Change:    rs.Annotations["kubernetes.io/change-cause"],
+		})
+	}
+	c.ResponseOk(result)
+}
+
+// RollbackDeployment returns a Deployment to a past revision.
+// @router /api/rollback-deployment [post]
+func (c *ApiController) RollbackDeployment() {
+	cfg := getAdminRestConfig()
+	if cfg == nil {
+		c.ResponseError("apiserver not ready")
+		return
+	}
+	var req struct {
+		Namespace string `json:"namespace"`
+		Name      string `json:"name"`
+		Revision  int64  `json:"revision"`
+	}
+	if err := json.Unmarshal(c.Ctx.Input.RequestBody, &req); err != nil {
+		c.ResponseError("invalid request body: " + err.Error())
+		return
+	}
+	if req.Namespace == "" {
+		req.Namespace = "default"
+	}
+	if req.Name == "" || req.Revision == 0 {
+		c.ResponseError("name and revision are required")
+		return
+	}
+	if err := object.RollbackDeployment(cfg, req.Namespace, req.Name, req.Revision); err != nil {
+		c.ResponseError(err.Error())
+		return
+	}
+	c.ResponseOk()
+}
