@@ -58,8 +58,27 @@ readable size instead of collapsing between fixed-width neighbours. An
 
 Table props: `dataSource`, `rowKey` (string or function), `loading`, `title`,
 `description`, `toolbar`, `searchable`, `pageSize` (0 disables pagination),
-`emptyText`, `onRowClick`, `expandable`, `dense`. Pagination only renders once
-the rows overflow a page.
+`emptyText`, `onRowClick`, `expandable`, `dense`, `scopeToWorkspace`.
+Pagination only renders once the rows overflow a page.
+
+### The workspace — `hooks/use-workspace.jsx`
+
+The namespace the reader is working in, kept in localStorage and switched from
+`WorkspaceSelect` in both the management header and the desktop top bar. It is
+a place, not a filter: it decides where a new app or database is created, and
+which rows the lists are about. "All namespaces" is the default and stays one
+click away.
+
+A list page opts in with `scopeToWorkspace` on its `DataTable`, which then drops
+rows whose `namespace` is somewhere else and says which namespace it is showing.
+Rows with no `namespace` at all are never dropped, so a table of cluster-scoped
+things is unaffected — but a table of something else's children (an app's pods,
+a database's backups) must not take the prop, because those rows belong to the
+thing on screen rather than to the workspace.
+
+A create form reads `useWorkspace()` directly and seeds its namespace field from
+it. `useWorkspace()` works outside the provider too, reporting "all namespaces",
+so a component rendered through a portal does not have to care.
 
 ### Dialogs
 
@@ -134,6 +153,16 @@ launchpad's work intact. The launchpad form always states all four.
 Usage series on the detail page are collected in the page from `/api/get-metrics`
 polls; the cluster only reports the present, so the chart starts empty and fills
 in rather than inventing history.
+
+**HTTPS.** Ticking HTTPS on a domain asks Let's Encrypt for a certificate once
+the app is saved: `requestAppCertificate` in `controllers/launchpad.go` starts
+the same HTTP-01 flow the certificate dialog does. One certificate covers the
+app, because `AttachTLSToIngress` puts every host the Ingress serves under a
+single TLS block, so a second request would only collide with the first.
+Issuance is asynchronous and its failure is not the deployment's failure — the
+app serves on HTTP meanwhile, and the detail page polls
+`/api/get-cert-status` and reports why. Reading an app back, `https` on a domain
+means the Ingress already carries a certificate.
 
 ## Databases — `/databases`
 

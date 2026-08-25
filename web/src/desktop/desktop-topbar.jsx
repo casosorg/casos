@@ -11,6 +11,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import {cn} from "@/lib/utils";
+import {WorkspaceSelect} from "@/components/shared/workspace-select";
 import {NotificationCenter} from "@/desktop/notification-center";
 import {tintClass} from "@/desktop/registry";
 
@@ -113,6 +114,7 @@ export function DesktopTopBar({apps, stats, account, logo, themeAlgorithm, onOpe
     >
       <div className="flex shrink-0 items-center gap-2">
         {logo ? <img src={logo} alt="" className="h-6 max-w-28 object-contain" /> : null}
+        <WorkspaceSelect onDark />
       </div>
 
       <div className="flex flex-1 justify-center">
@@ -121,7 +123,15 @@ export function DesktopTopBar({apps, stats, account, logo, themeAlgorithm, onOpe
 
       <div className="flex shrink-0 items-center gap-1.5">
         <ClusterMonitor stats={stats} />
-        <NotificationCenter stats={stats} />
+        <NotificationCenter
+          stats={stats}
+          onOpenApp={(appKey) => {
+            const target = apps.find((app) => app.key === appKey);
+            if (target) {
+              onOpenApp(target);
+            }
+          }}
+        />
 
         <button
           type="button"

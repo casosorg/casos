@@ -138,6 +138,7 @@ export function payloadFromForm(form, {mode = "create"} = {}) {
         host: domain.host.trim(),
         port: Number(domain.port),
         ingressClass: domain.ingressClass?.trim() ?? "",
+        https: Boolean(domain.https),
       })),
     hpa: {
       enabled: form.hpa.enabled,
@@ -346,6 +347,11 @@ export function appYamlPreview(form) {
       `  namespace: ${namespace}`,
       "spec:",
       ...(domains[0].ingressClass?.trim() ? [`  ingressClassName: ${domains[0].ingressClass.trim()}`] : []),
+      // One certificate covers the app, so every host it serves goes in the
+      // same TLS block once any of them asks for HTTPS.
+      ...(domains.some((domain) => domain.https)
+        ? ["  tls:", `  - secretName: ${name}-tls`, "    hosts:", ...domains.map((domain) => `    - ${domain.host.trim()}`)]
+        : []),
       "  rules:",
       yamlBlock(rules, 2),
     ].join("\n"));

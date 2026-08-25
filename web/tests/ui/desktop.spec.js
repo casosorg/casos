@@ -110,3 +110,38 @@ test("the notification centre reports what the cluster recorded", async({page}) 
   await expect(panel.getByRole("tab", {name: /Unread/})).toBeVisible();
   await expect(panel.getByRole("tab", {name: "All"})).toBeVisible();
 });
+
+test("the workspace narrows the lists and follows the reader into a new app", async({page}) => {
+  test.setTimeout(60_000);
+  await signInAsCiUser(page);
+  await openDesktop(page);
+
+  // ConfigMaps lives in the folder rather than on the desktop, and every
+  // namespace grows one as the cluster comes up.
+  await page.getByTestId("desktop-folder").click();
+  const launcher = page.getByTestId("desktop-launcher");
+  await launcher.locator("input").fill("config");
+  await launcher.getByTestId("desktop-icon-system-configmaps").click();
+  const configMaps = page.getByTestId("desktop-window-system-configmaps");
+
+  // A cluster that has only just started is still filling in; refresh until it
+  // has something in more than one namespace to narrow.
+  await expect(async() => {
+    await configMaps.getByRole("button", {name: "Refresh"}).click();
+    await expect(configMaps.getByText("kube-system").first()).toBeVisible({timeout: 2000});
+    await expect(configMaps.getByText("kube-flannel").first()).toBeVisible({timeout: 2000});
+  }).toPass({timeout: 40_000});
+
+  // Choosing a workspace hides everything that lives elsewhere.
+  await page.getByTestId("workspace-select").click();
+  await page.getByRole("menuitem", {name: "kube-system", exact: true}).click();
+  await expect(configMaps.getByText("In kube-system")).toBeVisible();
+  await expect(configMaps.getByText("kube-flannel")).toHaveCount(0);
+
+  // And it is where a new app would be created, rather than the cluster default.
+  await page.getByTestId("dock-icon-system-launchpad").click();
+  const launchpad = page.getByTestId("desktop-window-system-launchpad");
+  await launchpad.getByRole("button", {name: "Deploy app"}).click();
+  await expect(launchpad.getByTestId("launchpad-name")).toBeVisible();
+  await expect(launchpad.getByRole("combobox").first()).toContainText("kube-system");
+});

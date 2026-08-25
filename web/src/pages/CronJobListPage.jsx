@@ -199,6 +199,7 @@ function CronJobListPage() {
       {error ? <MessageAlert title="Failed to fetch Cron Jobs" description={error} /> : null}
 
       <DataTable
+        scopeToWorkspace
         title={i18next.t("general:Cron Jobs")}
         description={`${cronJobs?.length ?? 0} cron jobs`}
         columns={columns}

@@ -493,6 +493,7 @@ function DeploymentListPage() {
       {error ? <MessageAlert title="Failed to fetch Deployments" description={error} /> : null}
 
       <DataTable
+        scopeToWorkspace
         title={i18next.t("general:Deployments")}
         description={`${deployments?.length ?? 0} deployments`}
         columns={columns}

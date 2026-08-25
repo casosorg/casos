@@ -1,10 +1,12 @@
 import React, {useCallback, useEffect, useMemo, useState} from "react";
 import i18next from "i18next";
-import {Bell, CheckCheck, CircleAlert, TriangleAlert} from "lucide-react";
+import {Bell, CheckCheck, ChevronRight, CircleAlert, TriangleAlert} from "lucide-react";
 import * as EventBackend from "@/backend/EventBackend";
 import {Popover, PopoverContent, PopoverTrigger} from "@/components/ui/popover";
 import {Tabs, TabsContent, TabsList, TabsTrigger} from "@/components/ui/tabs";
 import {useResource} from "@/hooks/use-resource";
+import {cn} from "@/lib/utils";
+import {appKeyForKind} from "@/desktop/registry";
 
 const READ_KEY = "desktopReadNotifications";
 
@@ -64,6 +66,7 @@ function buildNotifications(events, stats) {
     body: event.message,
     context: `${event.namespace || "cluster"} - ${event.kind}`,
     at: event.lastSeen,
+    kind: event.kind,
   }));
 
   (stats?.unhealthyPods ?? []).forEach((pod) => {
@@ -74,6 +77,7 @@ function buildNotifications(events, stats) {
       body: pod.reason ?? pod.status,
       context: pod.namespace,
       at: "",
+      kind: "Pod",
     });
   });
 
@@ -86,6 +90,7 @@ function buildNotifications(events, stats) {
       body: `${notReady} / ${stats?.nodesTotal ?? 0}`,
       context: i18next.t("general:Nodes"),
       at: "",
+      kind: "Node",
     });
   }
 
@@ -102,25 +107,40 @@ function SeverityIcon({severity}) {
   return <Bell className="text-muted-foreground mt-0.5 size-4 shrink-0" />;
 }
 
-function NotificationList({notifications, empty}) {
+function NotificationList({notifications, empty, onOpen}) {
   if (notifications.length === 0) {
     return <p className="text-muted-foreground px-2 py-8 text-center text-sm">{empty}</p>;
   }
   return (
     <div className="max-h-80 overflow-auto p-1.5">
-      {notifications.map((notification) => (
-        <div key={notification.id} className="hover:bg-accent/50 flex items-start gap-2 rounded-md px-2 py-2 text-sm">
-          <SeverityIcon severity={notification.severity} />
-          <div className="min-w-0 flex-1">
-            <p className="truncate font-medium">{notification.title}</p>
-            <p className="text-muted-foreground line-clamp-2 text-xs">{notification.body}</p>
-            <p className="text-muted-foreground/80 mt-0.5 text-[11px]">
-              {notification.context}
-              {notification.at ? ` - ${since(notification.at)}` : ""}
-            </p>
-          </div>
-        </div>
-      ))}
+      {notifications.map((notification) => {
+        const target = appKeyForKind(notification.kind);
+        const body = (
+          <>
+            <SeverityIcon severity={notification.severity} />
+            <div className="min-w-0 flex-1">
+              <p className="truncate font-medium">{notification.title}</p>
+              <p className="text-muted-foreground line-clamp-2 text-xs">{notification.body}</p>
+              <p className="text-muted-foreground/80 mt-0.5 text-[11px]">
+                {notification.context}
+                {notification.at ? ` - ${since(notification.at)}` : ""}
+              </p>
+            </div>
+            {target ? <ChevronRight className="text-muted-foreground mt-0.5 size-4 shrink-0" /> : null}
+          </>
+        );
+        const className = "flex w-full items-start gap-2 rounded-md px-2 py-2 text-left text-sm";
+
+        // A notification about something with a page of its own opens it; one
+        // about a kind the desktop has no app for is not a false promise.
+        return target ? (
+          <button key={notification.id} type="button" className={cn(className, "hover:bg-accent/50")} onClick={() => onOpen(notification, target)}>
+            {body}
+          </button>
+        ) : (
+          <div key={notification.id} className={className}>{body}</div>
+        );
+      })}
     </div>
   );
 }
@@ -129,7 +149,7 @@ function NotificationList({notifications, empty}) {
  * The desktop's notification centre. Unread is the default view because the
  * only reason to open a bell is to find out what has not been seen yet.
  */
-export function NotificationCenter({stats}) {
+export function NotificationCenter({stats, onOpenApp}) {
   const [seen, setSeen] = useState(readSeen);
   const [open, setOpen] = useState(false);
 
@@ -160,6 +180,11 @@ export function NotificationCenter({stats}) {
     const timer = setTimeout(markAllRead, 1500);
     return () => clearTimeout(timer);
   }, [open, markAllRead]);
+
+  function openTarget(notification, appKey) {
+    setOpen(false);
+    onOpenApp?.(appKey, notification);
+  }
 
   return (
     <Popover open={open} onOpenChange={setOpen}>
@@ -200,10 +225,10 @@ export function NotificationCenter({stats}) {
             <TabsTrigger value="all">{i18next.t("desktop:All")}</TabsTrigger>
           </TabsList>
           <TabsContent value="unread">
-            <NotificationList notifications={unread} empty={i18next.t("desktop:Nothing needs attention")} />
+            <NotificationList notifications={unread} empty={i18next.t("desktop:Nothing needs attention")} onOpen={openTarget} />
           </TabsContent>
           <TabsContent value="all">
-            <NotificationList notifications={notifications} empty={i18next.t("desktop:Nothing needs attention")} />
+            <NotificationList notifications={notifications} empty={i18next.t("desktop:Nothing needs attention")} onOpen={openTarget} />
           </TabsContent>
         </Tabs>
       </PopoverContent>

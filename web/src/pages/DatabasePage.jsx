@@ -186,6 +186,7 @@ function DatabasePage(props) {
       />
 
       <DataTable
+        scopeToWorkspace
         testId="databases-table"
         columns={columns}
         dataSource={databases}

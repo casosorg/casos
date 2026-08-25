@@ -6,6 +6,7 @@ import * as SiteBackend from "@/backend/SiteBackend";
 import {Toaster} from "@/components/ui/sonner";
 import {TooltipProvider} from "@/components/ui/tooltip";
 import {UiModeProvider} from "@/hooks/use-ui-mode";
+import {WorkspaceProvider} from "@/hooks/use-workspace";
 import ManagementPage from "@/pages/ManagementPage";
 import {Loading} from "@/components/shared/loading";
 import AuthCallback from "@/pages/AuthCallback";
@@ -135,25 +136,46 @@ class App extends Component {
     return (
       <TooltipProvider>
         <UiModeProvider>
-          <Toaster />
-          <Switch>
-            <Route exact path="/callback" component={AuthCallback} />
-            <Route
-              exact
-              path="/signin"
-              render={(props) =>
-                this.renderHomeIfSignedIn(
-                  <SigninPage logo={this.state.logo} themeAlgorithm={this.state.themeAlgorithm} site={this.state.site} {...props} />
-                )
-              }
-            />
-            <Route
-              path="/desktop"
-              render={(props) =>
-                this.renderSigninIfNotSignedIn(
-                  <Suspense fallback={<Loading type="page" />}>
-                    <DesktopPage
+          <WorkspaceProvider signedIn={Boolean(this.state.account)}>
+            <Toaster />
+            <Switch>
+              <Route exact path="/callback" component={AuthCallback} />
+              <Route
+                exact
+                path="/signin"
+                render={(props) =>
+                  this.renderHomeIfSignedIn(
+                    <SigninPage logo={this.state.logo} themeAlgorithm={this.state.themeAlgorithm} site={this.state.site} {...props} />
+                  )
+                }
+              />
+              <Route
+                path="/desktop"
+                render={(props) =>
+                  this.renderSigninIfNotSignedIn(
+                    <Suspense fallback={<Loading type="page" />}>
+                      <DesktopPage
+                        account={this.state.account}
+                        site={this.state.site}
+                        themeAlgorithm={this.state.themeAlgorithm}
+                        logo={this.state.logo}
+                        onSignout={this.signout}
+                        onUpdateSite={this.onUpdateSite}
+                        onUpdateAccount={this.onUpdateAccount}
+                        setLogoAndThemeAlgorithm={this.setLogoAndThemeAlgorithm}
+                        {...props}
+                      />
+                    </Suspense>
+                  )
+                }
+              />
+              <Route
+                path="/"
+                render={(props) =>
+                  this.renderSigninIfNotSignedIn(
+                    <ManagementPage
                       account={this.state.account}
+                      uri={this.state.uri}
                       site={this.state.site}
                       themeAlgorithm={this.state.themeAlgorithm}
                       logo={this.state.logo}
@@ -163,30 +185,11 @@ class App extends Component {
                       setLogoAndThemeAlgorithm={this.setLogoAndThemeAlgorithm}
                       {...props}
                     />
-                  </Suspense>
-                )
-              }
-            />
-            <Route
-              path="/"
-              render={(props) =>
-                this.renderSigninIfNotSignedIn(
-                  <ManagementPage
-                    account={this.state.account}
-                    uri={this.state.uri}
-                    site={this.state.site}
-                    themeAlgorithm={this.state.themeAlgorithm}
-                    logo={this.state.logo}
-                    onSignout={this.signout}
-                    onUpdateSite={this.onUpdateSite}
-                    onUpdateAccount={this.onUpdateAccount}
-                    setLogoAndThemeAlgorithm={this.setLogoAndThemeAlgorithm}
-                    {...props}
-                  />
-                )
-              }
-            />
-          </Switch>
+                  )
+                }
+              />
+            </Switch>
+          </WorkspaceProvider>
         </UiModeProvider>
       </TooltipProvider>
     );

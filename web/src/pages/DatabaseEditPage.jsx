@@ -25,6 +25,7 @@ import {
 } from "@/lib/database";
 import {cn} from "@/lib/utils";
 import {runAction, useResource} from "@/hooks/use-resource";
+import {useWorkspace} from "@/hooks/use-workspace";
 
 function PresetRow({value, presets, onChange, placeholder}) {
   return (
@@ -79,7 +80,10 @@ function DatabaseEditPage(props) {
   const namespaceParam = match.params.namespace;
   const nameParam = match.params.name;
 
-  const [form, setForm] = useState(() => emptyDatabaseForm(namespaceParam || "default"));
+  const {workspace} = useWorkspace();
+  // A new one belongs where the reader is working, not wherever the cluster
+  // happens to call home.
+  const [form, setForm] = useState(() => emptyDatabaseForm(namespaceParam || workspace || "default"));
   const [errors, setErrors] = useState({});
   const [submitting, setSubmitting] = useState(false);
   const [loading, setLoading] = useState(editing);

@@ -271,6 +271,7 @@ function IngressListPage() {
       {error ? <MessageAlert title="Failed to fetch Ingresses" description={error} /> : null}
 
       <DataTable
+        scopeToWorkspace
         title={i18next.t("general:Ingresses")}
         description={`${ingresses?.length ?? 0} ingresses`}
         columns={columns}

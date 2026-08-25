@@ -2,7 +2,10 @@ package controllers
 
 import (
 	"encoding/json"
+	"fmt"
 	"sync"
+
+	"k8s.io/client-go/rest"
 
 	"github.com/casosorg/casos/conf"
 	"github.com/casosorg/casos/object"
@@ -74,50 +77,58 @@ func (c *ApiController) RequestLECert() {
 		return
 	}
 
-	// Apply defaults from app.conf when not supplied by caller. The port
-	// defaults to the one CasOS actually serves on, so a changed httpport does
-	// not silently point the challenge Ingress at nothing.
-	if req.CasosServiceName == "" {
-		req.CasosServiceName = conf.GetConfigStringDefault("casosServiceName", "casos")
+	status, err := startLECertRequest(cfg, req.Namespace, req.IngressName, req.Domain, req.CasosServiceName, req.CasosServicePort)
+	if err != nil {
+		c.ResponseError(err.Error())
+		return
 	}
-	if req.CasosServicePort == 0 {
-		req.CasosServicePort = int32(conf.GetConfigIntDefault("casosServicePort", conf.GetConfigIntDefault("httpport", 20080)))
+	c.ResponseOk(map[string]string{"status": status})
+}
+
+// startLECertRequest kicks off an HTTP-01 issuance in the background and
+// reports what it did: "pending" for a request it started, "already_running"
+// for one that was already in flight. Both the certificate page and an app
+// deployment that asked for HTTPS come through here.
+func startLECertRequest(cfg *rest.Config, namespace, ingressName, domain, serviceName string, servicePort int32) (string, error) {
+	if serviceName == "" {
+		serviceName = conf.GetConfigStringDefault("casosServiceName", "casos")
+	}
+	if servicePort == 0 {
+		servicePort = int32(conf.GetConfigIntDefault("casosServicePort", conf.GetConfigIntDefault("httpport", 20080)))
 	}
 
 	srvCfg := getServerConfig()
 	if srvCfg == nil {
-		c.ResponseError("server config not ready")
-		return
+		return "", fmt.Errorf("server config not ready")
 	}
 	backend := object.CasosBackend{
-		ServiceName: req.CasosServiceName,
-		ServicePort: req.CasosServicePort,
+		ServiceName: serviceName,
+		ServicePort: servicePort,
 		HostIP:      srvCfg.AdvertiseAddress,
 	}
 
-	key := req.Namespace + "/" + req.IngressName
+	key := namespace + "/" + ingressName
 
 	// Prevent duplicate concurrent requests.
 	certStatusMu.Lock()
 	if s := certStatuses[key]; s != nil && (s.Status == "pending" || s.Status == "verifying") {
 		certStatusMu.Unlock()
-		c.ResponseOk(map[string]string{"status": "already_running"})
-		return
+		return "already_running", nil
 	}
 	certStatuses[key] = &certStatus{Status: "pending"}
 	certStatusMu.Unlock()
 
 	go func() {
 		setCertStatus(key, &certStatus{Status: "verifying"})
-		if err := object.ObtainLECert(cfg, req.Namespace, req.IngressName, req.Domain, backend); err != nil {
+		if err := object.ObtainLECert(cfg, namespace, ingressName, domain, backend); err != nil {
 			setCertStatus(key, &certStatus{Status: "failed", Error: err.Error()})
 			return
 		}
-		expiry, _ := object.GetTLSCertExpiry(cfg, req.Namespace, req.IngressName+"-tls")
+		expiry, _ := object.GetTLSCertExpiry(cfg, namespace, ingressName+"-tls")
 		setCertStatus(key, &certStatus{Status: "issued", Expiry: expiry})
 	}()
 
-	c.ResponseOk(map[string]string{"status": "pending"})
+	return "pending", nil
 }
 
 // UploadCert accepts a manually supplied PEM certificate + key, stores them as

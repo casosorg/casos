@@ -304,6 +304,7 @@ function PodListPage() {
       {error ? <MessageAlert title="Failed to fetch pods" description={error} /> : null}
 
       <DataTable
+        scopeToWorkspace
         title={i18next.t("general:Pods")}
         description={`${pods?.length ?? 0} pods`}
         columns={columns}

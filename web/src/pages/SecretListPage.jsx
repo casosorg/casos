@@ -194,6 +194,7 @@ function SecretListPage() {
       {error ? <MessageAlert title="Failed to fetch Secrets" description={error} /> : null}
 
       <DataTable
+        scopeToWorkspace
         title={i18next.t("general:Secrets")}
         description={`${secrets?.length ?? 0} secrets`}
         columns={columns}

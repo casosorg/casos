@@ -193,6 +193,7 @@ function JobListPage() {
       {error ? <MessageAlert title="Failed to fetch Jobs" description={error} /> : null}
 
       <DataTable
+        scopeToWorkspace
         title={i18next.t("general:Jobs")}
         description={`${jobs?.length ?? 0} jobs`}
         columns={columns}

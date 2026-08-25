@@ -13,6 +13,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import {SimpleTooltip} from "@/components/ui/tooltip";
 import {BreadcrumbBar} from "@/components/shared/breadcrumb-bar";
+import {WorkspaceSelect} from "@/components/shared/workspace-select";
 import {useUiMode} from "@/hooks/use-ui-mode";
 
 /**
@@ -149,6 +150,8 @@ export function AppHeader({
         </Button>
         <BreadcrumbBar uri={uri} />
       </div>
+
+      <WorkspaceSelect className="ml-auto mr-1" />
 
       <div className="flex items-center gap-0.5 pr-1">
         {navbarHtml ? <div className="flex items-center" dangerouslySetInnerHTML={{__html: navbarHtml}} /> : null}

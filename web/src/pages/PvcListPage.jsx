@@ -114,6 +114,7 @@ function PvcListPage() {
       {error ? <MessageAlert title="Failed to fetch PVCs" description={error} /> : null}
 
       <DataTable
+        scopeToWorkspace
         title={i18next.t("general:Persistent Volume Claims")}
         description={`${pvcs?.length ?? 0} claims`}
         columns={columns}

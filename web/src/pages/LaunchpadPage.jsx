@@ -247,6 +247,7 @@ function LaunchpadPage(props) {
       />
 
       <DataTable
+        scopeToWorkspace
         testId="launchpad-table"
         columns={columns}
         dataSource={apps}

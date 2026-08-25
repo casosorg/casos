@@ -186,6 +186,7 @@ function HPAListPage() {
       {error ? <MessageAlert title="Failed to fetch Horizontal Pod Autoscalers" description={error} /> : null}
 
       <DataTable
+        scopeToWorkspace
         title={i18next.t("general:Horizontal Pod Autoscaler")}
         description={`${hpas?.length ?? 0} autoscalers`}
         columns={columns}

@@ -171,6 +171,7 @@ function RoleBindingListPage() {
       {error ? <MessageAlert title="Failed to fetch Role Bindings" description={error} /> : null}
 
       <DataTable
+        scopeToWorkspace
         title={i18next.t("general:Role Bindings")}
         description={`${bindings?.length ?? 0} bindings`}
         columns={columns}

@@ -185,6 +185,7 @@ function ResourceQuotaListPage() {
       {error ? <MessageAlert title="Failed to fetch Resource Quotas" description={error} /> : null}
 
       <DataTable
+        scopeToWorkspace
         title={i18next.t("general:Resource Quotas")}
         description={`${quotas?.length ?? 0} quotas`}
         columns={columns}

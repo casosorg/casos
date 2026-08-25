@@ -606,6 +606,7 @@ export default function HelmReleasePage() {
 
       {advanced ? (
         <DataTable
+          scopeToWorkspace
           title={t("helm:Installed Apps")}
           description={`${releases.length} apps`}
           columns={columns}

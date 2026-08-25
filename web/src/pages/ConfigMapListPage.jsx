@@ -170,6 +170,7 @@ function ConfigMapListPage() {
       {error ? <MessageAlert title="Failed to fetch ConfigMaps" description={error} /> : null}
 
       <DataTable
+        scopeToWorkspace
         title={i18next.t("general:ConfigMaps")}
         description={`${configMaps?.length ?? 0} config maps`}
         columns={columns}

@@ -30,6 +30,7 @@ import {
   validateAppForm,
 } from "@/lib/launchpad";
 import {runAction, useResource} from "@/hooks/use-resource";
+import {useWorkspace} from "@/hooks/use-workspace";
 import {cn} from "@/lib/utils";
 
 /** A row of preset buttons with a box for anything the presets do not cover. */
@@ -96,7 +97,10 @@ function LaunchpadEditPage(props) {
   const namespaceParam = match.params.namespace;
   const nameParam = match.params.name;
 
-  const [form, setForm] = useState(() => emptyAppForm(namespaceParam || "default"));
+  const {workspace} = useWorkspace();
+  // A new one belongs where the reader is working, not wherever the cluster
+  // happens to call home.
+  const [form, setForm] = useState(() => emptyAppForm(namespaceParam || workspace || "default"));
   const [errors, setErrors] = useState({});
   const [submitting, setSubmitting] = useState(false);
   const [showYaml, setShowYaml] = useState(false);
@@ -389,14 +393,14 @@ function LaunchpadEditPage(props) {
                 <Button
                   size="sm"
                   variant="outline"
-                  onClick={() => set({domains: [...form.domains, {host: "", port: form.ports[0]?.containerPort ?? 80, ingressClass: ""}]})}
+                  onClick={() => set({domains: [...form.domains, {host: "", port: form.ports[0]?.containerPort ?? 80, ingressClass: "", https: true}]})}
                 >
                   <Plus />
                   {i18next.t("launchpad:Add domain")}
                 </Button>
               </div>
               {form.domains.map((domain, index) => (
-                <div key={index} className="grid grid-cols-[minmax(0,2fr)_minmax(0,1fr)_minmax(0,1fr)_auto] items-center gap-2">
+                <div key={index} className="grid grid-cols-[minmax(0,2fr)_minmax(0,1fr)_minmax(0,1fr)_auto_auto] items-center gap-2">
                   <Input
                     value={domain.host}
                     onChange={(event) => set({domains: form.domains.map((item, itemIndex) => (itemIndex === index ? {...item, host: event.target.value} : item))})}
@@ -415,6 +419,13 @@ function LaunchpadEditPage(props) {
                     placeholder={i18next.t("launchpad:Ingress class")}
                     className="h-8 text-xs"
                   />
+                  <label className="flex items-center gap-1.5 text-xs whitespace-nowrap">
+                    <Checkbox
+                      checked={Boolean(domain.https)}
+                      onCheckedChange={(next) => set({domains: form.domains.map((item, itemIndex) => (itemIndex === index ? {...item, https: Boolean(next)} : item))})}
+                    />
+                    {i18next.t("launchpad:HTTPS")}
+                  </label>
                   <Button
                     size="icon-sm"
                     variant="ghost"
@@ -428,7 +439,11 @@ function LaunchpadEditPage(props) {
               {errors.domains ? <p className="text-destructive text-xs">{i18next.t("launchpad:A domain needs the port it forwards to")}</p> : null}
               {form.domains.length === 0 ? (
                 <p className="text-muted-foreground text-xs">{i18next.t("launchpad:A domain needs an ingress controller in the cluster and DNS pointing at it.")}</p>
-              ) : null}
+              ) : (
+                <p className="text-muted-foreground text-xs">
+                  {i18next.t("launchpad:HTTPS asks Let's Encrypt for a certificate once the app is saved. The domain has to already resolve to this cluster.")}
+                </p>
+              )}
             </div>
           </SectionCard>
 

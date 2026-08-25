@@ -206,6 +206,7 @@ function NetworkPolicyListPage() {
       {error ? <MessageAlert title="Failed to fetch Network Policies" description={error} /> : null}
 
       <DataTable
+        scopeToWorkspace
         title={i18next.t("general:Network Policies")}
         description={`${policies?.length ?? 0} policies`}
         columns={columns}

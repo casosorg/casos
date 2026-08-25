@@ -188,6 +188,7 @@ function DaemonSetListPage() {
       {error ? <MessageAlert title="Failed to fetch Daemon Sets" description={error} /> : null}
 
       <DataTable
+        scopeToWorkspace
         title={i18next.t("general:Daemon Sets")}
         description={`${daemonSets?.length ?? 0} daemon sets`}
         columns={columns}

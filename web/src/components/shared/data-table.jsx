@@ -1,4 +1,5 @@
 import * as React from "react";
+import i18next from "i18next";
 import {
   flexRender,
   getCoreRowModel,
@@ -14,6 +15,7 @@ import {Input} from "@/components/ui/input";
 import {Table, TableBody, TableCell, TableHead, TableHeader, TableRow} from "@/components/ui/table";
 import {Skeleton} from "@/components/ui/skeleton";
 import {EmptyState} from "@/components/shared/empty-state";
+import {useWorkspace} from "@/hooks/use-workspace";
 
 // Column descriptor accepted by DataTable:
 //   {key, title, dataIndex, render(value, record, index), width, minWidth,
@@ -130,6 +132,7 @@ export function DataTable({
   onRowClick,
   expandable,
   dense = false,
+  scopeToWorkspace = false,
   className,
   tableClassName,
   testId,
@@ -138,7 +141,18 @@ export function DataTable({
   const [globalFilter, setGlobalFilter] = React.useState("");
   const [expanded, setExpanded] = React.useState({});
 
-  const data = React.useMemo(() => dataSource ?? [], [dataSource]);
+  const {workspace} = useWorkspace();
+  // A scoped table is about one namespace. Rows that predate the choice, or
+  // that carry no namespace at all, are not silently dropped — only rows that
+  // belong somewhere else are.
+  const scopedTo = scopeToWorkspace ? workspace : "";
+  const data = React.useMemo(() => {
+    const rows = dataSource ?? [];
+    if (!scopedTo) {
+      return rows;
+    }
+    return rows.filter((row) => !row?.namespace || row.namespace === scopedTo);
+  }, [dataSource, scopedTo]);
   const columnDefs = React.useMemo(() => toColumnDefs(columns ?? []), [columns]);
 
   const table = useReactTable({
@@ -182,6 +196,9 @@ export function DataTable({
           <div className="min-w-0">
             {title ? <h2 className="truncate text-sm font-semibold">{title}</h2> : null}
             {description ? <p className="text-muted-foreground mt-0.5 truncate text-xs">{description}</p> : null}
+            {scopedTo ? (
+              <p className="text-muted-foreground mt-0.5 truncate text-xs">{i18next.t("workspace:In {{namespace}}", {namespace: scopedTo})}</p>
+            ) : null}
           </div>
           <div className="flex flex-wrap items-center gap-2">
             {searchable && (

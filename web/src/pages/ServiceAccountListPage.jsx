@@ -154,6 +154,7 @@ function ServiceAccountListPage() {
       {error ? <MessageAlert title="Failed to fetch ServiceAccounts" description={error} /> : null}
 
       <DataTable
+        scopeToWorkspace
         title={i18next.t("general:ServiceAccounts")}
         description={`${serviceAccounts?.length ?? 0} service accounts`}
         columns={columns}

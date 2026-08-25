@@ -56,6 +56,9 @@ type appDomain struct {
 	Host         string `json:"host"`
 	Port         int32  `json:"port"`
 	IngressClass string `json:"ingressClass"`
+	// Https asks for a Let's Encrypt certificate, and reads back as whether the
+	// Ingress already carries one for this host.
+	Https bool `json:"https"`
 }
 
 type appPodSummary struct {
@@ -436,6 +439,29 @@ func reconcileAppExtras(cfg *rest.Config, req deployAppRequest, labels map[strin
 	return volume, mounts, secretName, nil
 }
 
+// requestAppCertificate asks Let's Encrypt for a certificate when the form
+// ticked HTTPS and the Ingress does not already carry one.
+//
+// One request covers the app: a certificate is attached to the Ingress as a
+// whole, so asking again for a second host would only collide with the first.
+// Issuance is asynchronous and its failure is not the deployment's failure —
+// the app is already serving on HTTP, and the certificate page reports why.
+func requestAppCertificate(cfg *rest.Config, req deployAppRequest) {
+	if req.Domains == nil {
+		return
+	}
+	ing, err := object.GetIngress(cfg, req.Namespace, req.Name)
+	if err != nil || ing == nil || len(ing.Spec.TLS) > 0 {
+		return
+	}
+	for _, domain := range validDomains(*req.Domains) {
+		if domain.Https {
+			_, _ = startLECertRequest(cfg, req.Namespace, req.Name, domain.Host, "", 0)
+			return
+		}
+	}
+}
+
 // reconcileAppNetworkAndScaling runs the parts that must happen after the
 // workload exists, because they point at it.
 func reconcileAppNetworkAndScaling(cfg *rest.Config, req deployAppRequest, labels map[string]string) error {
@@ -445,6 +471,7 @@ func reconcileAppNetworkAndScaling(cfg *rest.Config, req deployAppRequest, label
 	if err := reconcileAppIngress(cfg, req, labels); err != nil {
 		return fmt.Errorf("the app was saved but its domain could not be: %w", err)
 	}
+	requestAppCertificate(cfg, req)
 	if err := reconcileAppHpa(cfg, req, labels); err != nil {
 		return fmt.Errorf("the app was saved but its autoscaler could not be: %w", err)
 	}
@@ -498,12 +525,18 @@ func domainsOf(ing *networkingv1.Ingress) []appDomain {
 	if ing.Spec.IngressClassName != nil {
 		class = *ing.Spec.IngressClassName
 	}
+	secured := map[string]bool{}
+	for _, tls := range ing.Spec.TLS {
+		for _, host := range tls.Hosts {
+			secured[host] = true
+		}
+	}
 	for _, rule := range ing.Spec.Rules {
 		port := int32(0)
 		if rule.HTTP != nil && len(rule.HTTP.Paths) > 0 {
 			port = rule.HTTP.Paths[0].Backend.Service.Port.Number
 		}
-		domains = append(domains, appDomain{Host: rule.Host, Port: port, IngressClass: class})
+		domains = append(domains, appDomain{Host: rule.Host, Port: port, IngressClass: class, Https: secured[rule.Host]})
 	}
 	return domains
 }

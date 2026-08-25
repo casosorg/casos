@@ -2,11 +2,12 @@ import React, {useEffect, useState} from "react";
 import i18next from "i18next";
 import * as AccountBackend from "@/backend/AccountBackend";
 import * as Setting from "@/Setting";
+import {Avatar, AvatarFallback, AvatarImage} from "@/components/ui/avatar";
 import {Input} from "@/components/ui/input";
 import {Field, FormDialog} from "@/components/shared/form-dialog";
 import {PasswordInput} from "@/components/shared/password-input";
 
-const emptyForm = {displayName: "", currentPassword: "", newPassword: "", confirmPassword: ""};
+const emptyForm = {displayName: "", avatar: "", currentPassword: "", newPassword: "", confirmPassword: ""};
 
 /**
  * Edits the built-in account: its display name always, and its password when
@@ -20,7 +21,7 @@ export function AccountDialog({account, open, onOpenChange, onUpdateAccount}) {
 
   useEffect(() => {
     if (open) {
-      setValues({...emptyForm, displayName: account?.displayName || ""});
+      setValues({...emptyForm, displayName: account?.displayName || "", avatar: account?.avatar || ""});
       setErrors({});
     }
   }, [open, account]);
@@ -49,7 +50,7 @@ export function AccountDialog({account, open, onOpenChange, onUpdateAccount}) {
     try {
       const res = await AccountBackend.updateAccount({
         displayName: values.displayName,
-        avatar: account?.avatar || "",
+        avatar: values.avatar,
         currentPassword: values.currentPassword || "",
         newPassword: values.newPassword || "",
       });
@@ -84,6 +85,24 @@ export function AccountDialog({account, open, onOpenChange, onUpdateAccount}) {
           onChange={(event) => setField("displayName", event.target.value)}
           autoComplete="off"
         />
+      </Field>
+
+      <Field label={i18next.t("account:Avatar")} htmlFor="account-avatar">
+        <div className="flex items-center gap-3">
+          <Avatar className="size-10 shrink-0">
+            {values.avatar ? <AvatarImage src={values.avatar} alt="" /> : null}
+            <AvatarFallback style={{backgroundColor: Setting.getAvatarColor(account?.name), color: "#fff"}}>
+              {Setting.getShortName(account?.name)}
+            </AvatarFallback>
+          </Avatar>
+          <Input
+            id="account-avatar"
+            value={values.avatar}
+            onChange={(event) => setField("avatar", event.target.value)}
+            placeholder="https://example.com/me.png"
+            autoComplete="off"
+          />
+        </div>
       </Field>
 
       <Field label={i18next.t("account:Old Password")} htmlFor="account-current-password" error={errors.currentPassword}>

@@ -136,3 +136,34 @@ export const DOCK_PINNED_KEYS = [
   "system-database",
   "system-terminal",
 ];
+
+/**
+ * The app that answers for a Kubernetes kind. A notification about a pod should
+ * open the pod list, not leave the reader to find it. Kinds with no app of
+ * their own are absent rather than pointed at something approximate.
+ */
+const APP_KEY_BY_KIND = {
+  Pod: "system-pods",
+  Deployment: "system-deployments",
+  ReplicaSet: "system-deployments",
+  StatefulSet: "system-statefulsets",
+  DaemonSet: "system-daemonsets",
+  Job: "system-jobs",
+  CronJob: "system-cronjobs",
+  Service: "system-services",
+  Ingress: "system-ingresses",
+  NetworkPolicy: "system-networkpolicies",
+  ConfigMap: "system-configmaps",
+  Secret: "system-secrets",
+  PersistentVolumeClaim: "system-pvcs",
+  StorageClass: "system-storageclasses",
+  ResourceQuota: "system-resourcequotas",
+  HorizontalPodAutoscaler: "system-hpas",
+  ServiceAccount: "system-serviceaccounts",
+  Namespace: "system-namespaces",
+  Node: "system-nodes",
+};
+
+export function appKeyForKind(kind) {
+  return APP_KEY_BY_KIND[kind] ?? null;
+}

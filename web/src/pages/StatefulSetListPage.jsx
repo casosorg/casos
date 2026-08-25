@@ -233,6 +233,7 @@ function StatefulSetListPage() {
       {error ? <MessageAlert title="Failed to fetch StatefulSets" description={error} /> : null}
 
       <DataTable
+        scopeToWorkspace
         title={i18next.t("general:Stateful Sets")}
         description={`${statefulSets?.length ?? 0} stateful sets`}
         columns={columns}

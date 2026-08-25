@@ -11,11 +11,16 @@ import {
   MemoryStick,
   Pencil,
   Play,
+  RotateCw,
   ScrollText,
+  ShieldCheck,
+  ShieldOff,
   Square,
   TerminalSquare,
   Trash2,
 } from "lucide-react";
+import * as CertificateBackend from "@/backend/CertificateBackend";
+import * as DeploymentBackend from "@/backend/DeploymentBackend";
 import * as ImageBackend from "@/backend/ImageBackend";
 import * as MetricsBackend from "@/backend/MetricsBackend";
 import {Badge} from "@/components/ui/badge";
@@ -36,12 +41,91 @@ import {UsageAreaChart} from "@/components/shared/charts";
 import {runAction, useResource} from "@/hooks/use-resource";
 
 const POLL_INTERVAL = 10000;
+/** ACME issuance settles in seconds to minutes, so it is watched more closely. */
+const CERT_POLL_INTERVAL = 4000;
 /** Roughly twenty minutes of samples at the poll interval above. */
 const MAX_SAMPLES = 120;
 
 function sampleTime() {
   const now = new Date();
   return `${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")}`;
+}
+
+/**
+ * Whether the app's domains are served over HTTPS, and the button that makes
+ * them so. Issuance is asynchronous, so an in-flight request is polled until it
+ * settles rather than reported once and forgotten.
+ */
+function CertificateLine({namespace, name, domains}) {
+  const [status, setStatus] = useState(null);
+  const [requesting, setRequesting] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    let timer = null;
+
+    function poll() {
+      CertificateBackend.getCertStatus(namespace, name).then((res) => {
+        if (cancelled || res.status !== "ok") {
+          return;
+        }
+        setStatus(res.data);
+        if (res.data?.status === "pending" || res.data?.status === "verifying") {
+          timer = setTimeout(poll, CERT_POLL_INTERVAL);
+        }
+      });
+    }
+
+    poll();
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+  }, [namespace, name, requesting]);
+
+  if (domains.length === 0) {
+    return null;
+  }
+
+  const state = status?.status ?? "none";
+
+  function request() {
+    setRequesting(true);
+    runAction(CertificateBackend.requestLECert({namespace, ingressName: name, domain: domains[0].host}), {
+      successMessage: i18next.t("launchpad:Requesting a certificate"),
+      onSuccess: () => setRequesting(false),
+      onError: () => setRequesting(false),
+    });
+  }
+
+  return (
+    <div className="flex flex-wrap items-center gap-2 text-sm">
+      {state === "issued" ? (
+        <Badge variant="success">
+          <ShieldCheck />
+          {i18next.t("launchpad:HTTPS")}
+        </Badge>
+      ) : (
+        <Badge variant="secondary">
+          <ShieldOff />
+          {i18next.t("launchpad:No certificate")}
+        </Badge>
+      )}
+      {state === "issued" && status?.expiry ? (
+        <span className="text-muted-foreground text-xs">{i18next.t("launchpad:Expires")} {status.expiry}</span>
+      ) : null}
+      {state === "pending" || state === "verifying" ? (
+        <span className="text-muted-foreground text-xs">{i18next.t("launchpad:Checking the domain with Let's Encrypt…")}</span>
+      ) : null}
+      {state === "failed" ? <span className="text-destructive text-xs">{status?.error}</span> : null}
+      {state !== "issued" && state !== "pending" && state !== "verifying" ? (
+        <Button size="sm" variant="outline" onClick={request} disabled={requesting}>
+          <ShieldCheck />
+          {i18next.t("launchpad:Enable HTTPS")}
+        </Button>
+      ) : null}
+    </div>
+  );
 }
 
 /**
@@ -134,6 +218,13 @@ function LaunchpadDetailPage(props) {
     });
   }
 
+  function restart() {
+    runAction(DeploymentBackend.restartDeployment(namespace, name), {
+      successMessage: i18next.t("launchpad:Restarting"),
+      onSuccess: () => load({background: true}),
+    });
+  }
+
   function uninstall() {
     runAction(ImageBackend.uninstallApp({namespace, name, deleteData}), {
       successMessage: i18next.t("launchpad:App deleted"),
@@ -214,10 +305,16 @@ function LaunchpadDetailPage(props) {
                 {i18next.t("launchpad:Start")}
               </Button>
             ) : (
-              <Button variant="outline" onClick={() => toggleRunning(false)}>
-                <Square />
-                {i18next.t("launchpad:Stop")}
-              </Button>
+              <>
+                <Button variant="outline" onClick={restart}>
+                  <RotateCw />
+                  {i18next.t("launchpad:Restart")}
+                </Button>
+                <Button variant="outline" onClick={() => toggleRunning(false)}>
+                  <Square />
+                  {i18next.t("launchpad:Stop")}
+                </Button>
+              </>
             )}
             <Button variant="destructive" onClick={() => setDeleteOpen(true)}>
               <Trash2 />
@@ -303,6 +400,7 @@ function LaunchpadDetailPage(props) {
             ) : (
               <p className="text-muted-foreground text-sm">{i18next.t("launchpad:No address yet.")}</p>
             )}
+            <CertificateLine namespace={namespace} name={name} domains={detail.domains ?? []} />
             {(detail.ports ?? []).length > 0 ? (
               <div className="flex flex-wrap gap-1.5">
                 {detail.ports.map((port) => (
