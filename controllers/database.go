@@ -392,17 +392,38 @@ func (c *ApiController) CreateDatabase() {
 		c.ResponseError("invalid request body: " + err.Error())
 		return
 	}
+	summary, _, err := createDatabase(cfg, req)
+	if err != nil {
+		c.ResponseError(err.Error())
+		return
+	}
+	c.ResponseOk(summary)
+}
+
+// databaseCredentials is what an application needs to reach the database that
+// was just created for it.
+type databaseCredentials struct {
+	User     string
+	Password string
+	Database string
+	Host     string
+	Port     int32
+}
+
+// createDatabase brings up one database and hands back both what it looks like
+// and how to connect to it. It is the whole of the create path: the HTTP
+// handler above and the template market's KubeBlocks translation both go
+// through here, so a database created either way is the same database.
+func createDatabase(cfg *rest.Config, req databaseRequest) (databaseSummary, databaseCredentials, error) {
 	if req.Namespace == "" {
 		req.Namespace = "default"
 	}
 	if req.Name == "" {
-		c.ResponseError("name is required")
-		return
+		return databaseSummary{}, databaseCredentials{}, fmt.Errorf("name is required")
 	}
 	engine, ok := engineByKey(req.Engine)
 	if !ok {
-		c.ResponseError(fmt.Sprintf("unknown database engine %q", req.Engine))
-		return
+		return databaseSummary{}, databaseCredentials{}, fmt.Errorf("unknown database engine %q", req.Engine)
 	}
 	version := engineVersionOrDefault(engine, req.Version)
 
@@ -412,8 +433,7 @@ func (c *ApiController) CreateDatabase() {
 	}
 	storage, err := resource.ParseQuantity(storageText)
 	if err != nil {
-		c.ResponseError(fmt.Sprintf("invalid storage size %q", storageText))
-		return
+		return databaseSummary{}, databaseCredentials{}, fmt.Errorf("invalid storage size %q", storageText)
 	}
 
 	user := strings.TrimSpace(req.User)
@@ -428,46 +448,59 @@ func (c *ApiController) CreateDatabase() {
 	if password == "" {
 		password, err = generatePassword()
 		if err != nil {
-			c.ResponseError(err.Error())
-			return
+			return databaseSummary{}, databaseCredentials{}, err
 		}
 	}
 
 	labels := databaseLabels(req.Name, engine.Key, version)
+	credentials := databaseCredentials{
+		User:     user,
+		Password: password,
+		Database: database,
+		Host:     fmt.Sprintf("%s.%s.svc.cluster.local", req.Name, req.Namespace),
+		Port:     engine.Port,
+	}
 
 	secret := &corev1.Secret{
 		ObjectMeta: metav1.ObjectMeta{Name: databaseSecretName(req.Name), Namespace: req.Namespace, Labels: labels},
 		Type:       corev1.SecretTypeOpaque,
 		StringData: map[string]string{"username": user, "password": password, "database": database},
 	}
-	if _, err := object.AddSecret(cfg, secret); err != nil && !errors.IsAlreadyExists(err) {
-		c.ResponseError(err.Error())
-		return
+	if existing, err := object.GetSecret(cfg, req.Namespace, databaseSecretName(req.Name)); err == nil {
+		// Recreating a database over one that is already there must not hand
+		// out credentials the engine does not have.
+		credentials.User = string(existing.Data["username"])
+		credentials.Password = string(existing.Data["password"])
+		credentials.Database = string(existing.Data["database"])
+	} else if _, err := object.AddSecret(cfg, secret); err != nil && !errors.IsAlreadyExists(err) {
+		return databaseSummary{}, databaseCredentials{}, err
 	}
 
 	if err := ensureBackupClaim(cfg, req, labels, storage); err != nil {
-		c.ResponseError(err.Error())
-		return
+		return databaseSummary{}, databaseCredentials{}, err
 	}
 
 	sts, err := buildDatabaseStatefulSet(req, engine, version, storage)
 	if err != nil {
-		c.ResponseError(err.Error())
-		return
+		return databaseSummary{}, databaseCredentials{}, err
 	}
 	created, err := object.AddStatefulSet(cfg, sts)
 	if err != nil {
-		c.ResponseError(err.Error())
-		return
+		if !errors.IsAlreadyExists(err) {
+			return databaseSummary{}, databaseCredentials{}, err
+		}
+		created, err = object.GetStatefulSet(cfg, req.Namespace, req.Name)
+		if err != nil {
+			return databaseSummary{}, databaseCredentials{}, err
+		}
 	}
 
 	if err := reconcileDatabaseService(cfg, req, engine, labels); err != nil {
-		c.ResponseError("the database was created but its address could not be: " + err.Error())
-		return
+		return databaseSummary{}, databaseCredentials{}, fmt.Errorf("the database was created but its address could not be: %w", err)
 	}
 
 	svc, _ := object.GetService(cfg, req.Namespace, req.Name)
-	c.ResponseOk(toDatabaseSummary(*created, svc))
+	return toDatabaseSummary(*created, svc), credentials, nil
 }
 
 // UpdateDatabase changes what an existing database may use, which version it
@@ -851,6 +884,36 @@ func (c *ApiController) ScaleDatabase() {
 	}
 	svc, _ := object.GetService(cfg, req.Namespace, req.Name)
 	c.ResponseOk(toDatabaseSummary(*updated, svc))
+}
+
+// deleteDatabaseObjects removes one database and reports what it could not
+// remove. Deleting a template instance goes through here, so a database that
+// came with an app is torn down exactly like one created by hand.
+func deleteDatabaseObjects(cfg *rest.Config, namespace, name string, deleteData bool) []string {
+	failures := []string{}
+	if err := object.DeleteStatefulSet(cfg, namespace, name); err != nil && !errors.IsNotFound(err) {
+		failures = append(failures, fmt.Sprintf("database %s (%v)", name, err))
+	}
+	if err := object.DeleteService(cfg, namespace, name); err != nil && !errors.IsNotFound(err) {
+		failures = append(failures, fmt.Sprintf("service %s (%v)", name, err))
+	}
+	if deleteData {
+		if err := object.DeleteSecret(cfg, namespace, databaseSecretName(name)); err != nil && !errors.IsNotFound(err) {
+			failures = append(failures, fmt.Sprintf("secret %s (%v)", databaseSecretName(name), err))
+		}
+		claims, err := object.GetPersistentVolumeClaims(cfg, namespace)
+		if err == nil {
+			for _, claim := range claims {
+				if claim.Labels[databaseInstanceLabel] != name {
+					continue
+				}
+				if err := object.DeletePersistentVolumeClaim(cfg, claim.Namespace, claim.Name); err != nil && !errors.IsNotFound(err) {
+					failures = append(failures, fmt.Sprintf("%s (%v)", claim.Name, err))
+				}
+			}
+		}
+	}
+	return failures
 }
 
 // DeleteDatabase removes the engine and its address. The data and the backups

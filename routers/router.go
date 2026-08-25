@@ -68,6 +68,15 @@ func InitAPI() {
 	beego.Router("/api/restore-database", &controllers.ApiController{}, "POST:RestoreDatabase")
 	beego.Router("/api/delete-database-backup", &controllers.ApiController{}, "POST:DeleteDatabaseBackup")
 	beego.Router("/api/database-console", &controllers.ApiController{}, "GET:DatabaseConsole")
+
+	beego.Router("/api/get-templates", &controllers.ApiController{}, "GET:GetTemplates")
+	beego.Router("/api/get-template", &controllers.ApiController{}, "GET:GetTemplate")
+	beego.Router("/api/sync-templates", &controllers.ApiController{}, "POST:SyncTemplates")
+	beego.Router("/api/preview-template", &controllers.ApiController{}, "POST:PreviewTemplate")
+	beego.Router("/api/deploy-template", &controllers.ApiController{}, "POST:DeployTemplate")
+	beego.Router("/api/get-template-instances", &controllers.ApiController{}, "GET:GetTemplateInstances")
+	beego.Router("/api/get-template-instance", &controllers.ApiController{}, "GET:GetTemplateInstance")
+	beego.Router("/api/delete-template-instance", &controllers.ApiController{}, "POST:DeleteTemplateInstance")
 	beego.Router("/api/get-database-params", &controllers.ApiController{}, "GET:GetDatabaseParams")
 	beego.Router("/api/configure-database", &controllers.ApiController{}, "POST:ConfigureDatabase")
 

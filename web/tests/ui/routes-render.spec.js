@@ -24,6 +24,7 @@ const ROUTES = [
   "/launchpad/new",
   "/databases",
   "/databases/new",
+  "/templates",
   "/helm-releases",
   "/pods",
   "/deployments",

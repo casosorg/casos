@@ -14,6 +14,7 @@ import {
   Layers,
   LayoutDashboard,
   Network,
+  Package,
   Repeat,
   Rocket,
   ScrollText,
@@ -82,6 +83,7 @@ export const SYSTEM_APPS = [
   {key: "system-my-apps", labelKey: "helm:Installed Apps", icon: Boxes, tint: "amber", path: "/helm-releases"},
   {key: "system-launchpad", labelKey: "launchpad:App Launchpad", icon: Rocket, tint: "blue", path: "/launchpad"},
   {key: "system-database", labelKey: "database:Databases", icon: Database, tint: "teal", path: "/databases"},
+  {key: "system-templates", labelKey: "template:Template market", icon: Package, tint: "rose", path: "/templates"},
   {key: "system-terminal", labelKey: "desktop:Terminal", icon: TerminalSquare, tint: "zinc", path: "/terminal"},
   {key: "system-monitor", labelKey: "general:Monitor Center", icon: Gauge, tint: "emerald", path: "/monitor"},
   {key: "system-log-search", labelKey: "general:Log Search", icon: ScrollText, tint: "orange", path: "/log-search"},
@@ -116,6 +118,7 @@ export const SYSTEM_APPS = [
 /** Apps the desktop shows before anyone rearranges it. The rest live in the folder. */
 export const DEFAULT_DESKTOP_KEYS = [
   "system-app-store",
+  "system-templates",
   "system-my-apps",
   "system-launchpad",
   "system-database",

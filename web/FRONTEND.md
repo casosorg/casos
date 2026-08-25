@@ -224,6 +224,42 @@ asked for is recorded on the StatefulSet as `casos.io/db-params`, with a bounded
 told, and the annotation is what a form reads back. Saving rolls the pod,
 because the engine only reads these at startup; the dialog says so.
 
+## Template market — `/templates`
+
+The market reads the **sealos template repository** (`labring-actions/templates`)
+in its own format, so an app published for that store deploys here unchanged.
+casos pulls the repository as a tarball over HTTPS and keeps one file per
+template — no git binary, a few megabytes on disk.
+
+| File | What it holds |
+|---|---|
+| `store/templates.go` | Repository sync, the on-disk copy, and parsing a template into its description and its manifests |
+| `controllers/template_expr.go` | The `${{ … }}` language: dotted lookups, comparisons, `random()`/`base64()`, and `if/elif/else/endif` blocks |
+| `controllers/template_apply.go` | Applying whatever the template names, through the dynamic client, plus the two translations below |
+| `controllers/template.go` | The endpoints, and the instance record |
+| `pages/TemplateMarketPage.jsx` | The market and what is installed from it |
+| `pages/TemplateDeployPage.jsx` | The form a template declares, with the rendered manifests beside it |
+| `pages/TemplateInstancePage.jsx` | One installed app: address, databases, what it created, what is missing |
+
+**Two kinds are translated rather than applied**, because sealos templates ask
+for operators casos does not run:
+
+- `apps.kubeblocks.io/Cluster` becomes a casos database, and the connection
+  secret is written as `<cluster>-conn-credential` with KubeBlocks' key names —
+  which is what lets the app that asked for the database find its credentials
+  unchanged. 186 of the published templates carry one.
+- `app.sealos.io/App` becomes a desktop icon recorded on the instance, so an
+  app installed from the market appears on the desktop.
+
+Anything else the cluster has no type for (object storage buckets, for example)
+is **reported, not swallowed**: the instance page lists what could not be
+provided and why, because an app that half-installed should say so.
+
+An instance is a ConfigMap (`casos-template-<name>`) holding what was applied,
+so removing one deletes exactly what it created and nothing else. Rendering
+happens in the backend for both the preview and the deploy, so the YAML shown
+cannot drift from what the cluster is asked for.
+
 ## The desktop — `src/desktop/`
 
 `/desktop` is a third shell alongside simple and advanced mode: a wallpaper, an
