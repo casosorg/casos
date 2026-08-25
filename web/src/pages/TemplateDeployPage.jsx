@@ -119,7 +119,7 @@ function TemplateDeployPage(props) {
       <PageContainer>
         <MessageAlert title={error ?? i18next.t("template:Template not found")} />
         <div>
-          <Button variant="outline" onClick={() => history.push("/templates")}>
+          <Button variant="outline" onClick={() => history.push("/app-store/templates")}>
             <ArrowLeft />
             {i18next.t("launchpad:Back")}
           </Button>
@@ -140,7 +140,7 @@ function TemplateDeployPage(props) {
         description={detail.description}
         actions={
           <div className="flex flex-wrap items-center gap-2">
-            <Button variant="outline" onClick={() => history.push("/templates")}>
+            <Button variant="outline" onClick={() => history.push("/app-store/templates")}>
               <ArrowLeft />
               {i18next.t("launchpad:Back")}
             </Button>

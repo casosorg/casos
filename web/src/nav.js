@@ -11,7 +11,6 @@ import {
   LayoutDashboard,
   Lock,
   Network,
-  Package,
   Rocket,
   Server,
   Store,
@@ -31,7 +30,6 @@ export const navGroups = [
   {key: "/app-store", label: "general:App Store", icon: Store, path: "/app-store"},
   {key: "/launchpad", label: "launchpad:App Launchpad", icon: Rocket, path: "/launchpad"},
   {key: "/databases", label: "database:Databases", icon: Database, path: "/databases"},
-  {key: "/templates", label: "template:Template market", icon: Package, path: "/templates"},
   {key: "/helm-releases", label: "helm:Installed Apps", icon: Boxes, path: "/helm-releases"},
   {
     key: "/workloads",

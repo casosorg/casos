@@ -48,7 +48,6 @@ const LaunchpadDetailPage = lazy(() => import("@/pages/LaunchpadDetailPage"));
 const DatabasePage = lazy(() => import("@/pages/DatabasePage"));
 const DatabaseEditPage = lazy(() => import("@/pages/DatabaseEditPage"));
 const DatabaseDetailPage = lazy(() => import("@/pages/DatabaseDetailPage"));
-const TemplateMarketPage = lazy(() => import("@/pages/TemplateMarketPage"));
 const TemplateDeployPage = lazy(() => import("@/pages/TemplateDeployPage"));
 const TemplateInstancePage = lazy(() => import("@/pages/TemplateInstancePage"));
 
@@ -127,7 +126,9 @@ export function AppRoutes({account, accountUpdatedAt, onOpenAccount, onUpdateSit
         <Route exact path="/databases/new" component={DatabaseEditPage} />
         <Route exact path="/databases/:namespace/:name" component={DatabaseDetailPage} />
         <Route exact path="/databases/:namespace/:name/edit" component={DatabaseEditPage} />
-        <Route exact path="/templates" component={TemplateMarketPage} />
+        {/* The market is a source inside the App Store now; the old address
+            still leads to it so a bookmark keeps working. */}
+        <Redirect exact from="/templates" to="/app-store/templates" />
         <Route exact path="/templates/instances/:namespace/:name" component={TemplateInstancePage} />
         <Route exact path="/templates/:name" component={TemplateDeployPage} />
 

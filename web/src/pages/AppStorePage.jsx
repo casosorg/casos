@@ -4,6 +4,7 @@ import {useTranslation} from "react-i18next";
 import {Plus, RefreshCw, Rocket, Search, Store, Trash2} from "lucide-react";
 import * as HelmBackend from "@/backend/HelmBackend";
 import * as PodBackend from "@/backend/PodBackend";
+import * as TemplateBackend from "@/backend/TemplateBackend";
 import * as Setting from "@/Setting";
 import {runAction} from "@/hooks/use-resource";
 import {Badge} from "@/components/ui/badge";
@@ -23,10 +24,14 @@ import {IMAGE_STARTER_APPS} from "@/lib/imageCatalog";
 import {useUiMode} from "@/hooks/use-ui-mode";
 import SimpleAppStore from "@/pages/simple/SimpleAppStore";
 
-// Charts come from a Helm repo or from ArtifactHub's search; the Docker Hub
-// channel is a different kind of source altogether, offering plain container
-// images that the installer turns into a Deployment, its PVCs and a Service.
+// A source is a place apps come from, and there are three kinds of them: a Helm
+// repository (or ArtifactHub's search over all of them), Docker Hub's plain
+// container images, and the template market — whole applications, database and
+// domain included, published for the sealos store and deployed here unchanged.
+// They install differently; a reader browsing for something to run should not
+// have to care, which is why they are one store rather than three.
 const PRESET_REPOS = [
+  {slug: "templates", name: "Templates", url: null, kind: "template", desc: "Ready-made apps, database and domain included"},
   {slug: "artifacthub", name: "ArtifactHub", url: null, desc: "artifacthub.io — 8 000+ charts"},
   {slug: "dockerhub", name: "Docker Hub", url: null, kind: "image", desc: "hub.docker.com — any container image"},
   {slug: "bitnami", name: "Bitnami", url: "https://charts.bitnami.com/bitnami", desc: "~200 curated charts"},
@@ -169,6 +174,10 @@ function AdvancedAppStore() {
   const [error, setError] = useState(null);
   const [page, setPage] = useState(1);
   const [hasMore, setHasMore] = useState(true);
+  const [categories, setCategories] = useState([]);
+  const [category, setCategory] = useState("all");
+  const [marketStatus, setMarketStatus] = useState(null);
+  const [syncing, setSyncing] = useState(false);
   const [customRepos, setCustomRepos] = useState([]);
   const [reposLoaded, setReposLoaded] = useState(false);
   const [addRepoOpen, setAddRepoOpen] = useState(false);
@@ -213,17 +222,38 @@ function AdvancedAppStore() {
 
   function selectSource(slug) {
     setQuery("");
+    setCategory("all");
     history.push(sourcePath(slug));
   }
 
   const isImageSource = source?.kind === "image";
+  const isTemplateSource = source?.kind === "template";
   // ArtifactHub is a search API with server-side paging; a plain repo returns its
   // whole index at once and is filtered in the browser.
-  const isArtifactHub = Boolean(source) && !isImageSource && !source.url;
+  const isArtifactHub = Boolean(source) && !isImageSource && !isTemplateSource && !source.url;
 
-  const fetchCharts = useCallback((activeSource, activeQuery, activePage) => {
+  const fetchCharts = useCallback((activeSource, activeQuery, activePage, activeCategory) => {
     setLoading(true);
     setError(null);
+
+    // The market is searched and filtered where it is stored, so a category is
+    // a request rather than a filter over a list the browser is holding.
+    if (activeSource.kind === "template") {
+      TemplateBackend.getTemplates({search: activeQuery, category: activeCategory})
+        .then((res) => {
+          if (res.status !== "ok") {
+            setError(res.msg);
+            return;
+          }
+          setCharts(res.data?.templates ?? []);
+          setCategories(res.data?.categories ?? []);
+          setMarketStatus(res.data?.status ?? null);
+          setHasMore(false);
+        })
+        .catch((e) => setError(e.message))
+        .finally(() => setLoading(false));
+      return;
+    }
 
     // Docker Hub has no browsable index — a bare search ranks base images and CI
     // artefacts above anything anyone would install — so an empty query shows a
@@ -282,15 +312,15 @@ function AdvancedAppStore() {
     setHasMore(true);
     // Both remote channels search per keystroke; a short pause keeps a typed
     // word from spending one request per letter against a rate-limited API.
-    const timer = setTimeout(() => fetchCharts(source, query, 1), query ? SEARCH_DEBOUNCE : 0);
+    const timer = setTimeout(() => fetchCharts(source, query, 1, category), query ? SEARCH_DEBOUNCE : 0);
     return () => clearTimeout(timer);
-  }, [source, query, fetchCharts]);
+  }, [source, query, category, fetchCharts]);
 
   useEffect(() => {
     if (source && page > 1) {
-      fetchCharts(source, query, page);
+      fetchCharts(source, query, page, category);
     }
-  }, [page, fetchCharts, source, query]);
+  }, [page, fetchCharts, source, query, category]);
 
   // Infinite scroll: the sentinel sits below the grid, so the next ArtifactHub
   // page is requested as soon as it scrolls close to the viewport. Re-running
@@ -321,6 +351,16 @@ function AdvancedAppStore() {
   // names; normalising here keeps the card and the install dialog from each
   // having to know which source they came from.
   function normalize(chart) {
+    if (isTemplateSource) {
+      return {
+        chartName: chart.name,
+        displayName: chart.title || chart.name,
+        description: chart.description,
+        version: (chart.categories ?? [])[0] ?? "",
+        icon: chart.icon ?? null,
+        template: chart,
+      };
+    }
     if (isImageSource) {
       // A starter entry names its image and describes itself with a translation
       // key; a Hub search result carries the description its publisher wrote.
@@ -355,7 +395,7 @@ function AdvancedAppStore() {
     };
   }
 
-  const visibleCharts = (isArtifactHub || isImageSource
+  const visibleCharts = (isArtifactHub || isImageSource || isTemplateSource
     ? charts
     : charts.filter((chart) => {
       const needle = query.toLowerCase();
@@ -366,6 +406,21 @@ function AdvancedAppStore() {
       );
     })
   ).map(normalize);
+
+  function syncMarket() {
+    setSyncing(true);
+    TemplateBackend.syncTemplates()
+      .then((res) => {
+        if (res.status !== "ok") {
+          Setting.showMessage("error", res.msg);
+          return;
+        }
+        Setting.showMessage("success", t("template:Market updated"));
+        fetchCharts(source, query, 1, category);
+      })
+      .catch((e) => Setting.showMessage("error", e.message))
+      .finally(() => setSyncing(false));
+  }
 
   function deleteCustomRepo(id) {
     HelmBackend.deleteHelmRepo(id)
@@ -459,7 +514,11 @@ function AdvancedAppStore() {
             <Input
               value={query}
               onChange={(event) => setQuery(event.target.value)}
-              placeholder={isImageSource ? t("image:Search Docker Hub") : t("helm:Search charts")}
+              placeholder={
+                isTemplateSource
+                  ? t("template:Search apps")
+                  : isImageSource ? t("image:Search Docker Hub") : t("helm:Search charts")
+              }
               className="w-72 pl-9"
             />
           </div>
@@ -470,13 +529,38 @@ function AdvancedAppStore() {
             onClick={() => {
               setCharts([]);
               setPage(1);
-              fetchCharts(source, query, 1);
+              fetchCharts(source, query, 1, category);
             }}
           >
             <RefreshCw />
             {t("general:Refresh")}
           </Button>
+          {isTemplateSource ? (
+            <Button variant="outline" loading={syncing} onClick={syncMarket}>
+              {t("template:Update market")}
+            </Button>
+          ) : null}
+          {isTemplateSource && marketStatus?.updatedAt ? (
+            <span className="text-muted-foreground self-center text-xs">
+              {t("template:Updated")} {new Date(marketStatus.updatedAt).toLocaleString()} · {marketStatus.count} {t("template:apps")}
+            </span>
+          ) : null}
         </div>
+
+        {isTemplateSource && categories.length > 0 ? (
+          <div className="mb-4 flex flex-wrap gap-1.5">
+            {["all", ...categories].map((item) => (
+              <Button
+                key={item}
+                size="sm"
+                variant={category === item ? "default" : "outline"}
+                onClick={() => setCategory(item)}
+              >
+                {item === "all" ? t("template:All") : item}
+              </Button>
+            ))}
+          </div>
+        ) : null}
 
         {error ? <MessageAlert title={error} className="mb-4" /> : null}
 
@@ -485,7 +569,17 @@ function AdvancedAppStore() {
             <ChartCard
               key={`${chart.chartName}-${index}`}
               chart={chart}
-              onInstall={() => (isImageSource ? setImageTarget(chart.image) : setInstallTarget(chart))}
+              onInstall={() => {
+                if (isTemplateSource) {
+                  history.push(`/templates/${chart.chartName}`);
+                  return;
+                }
+                if (isImageSource) {
+                  setImageTarget(chart.image);
+                  return;
+                }
+                setInstallTarget(chart);
+              }}
             />
           ))}
         </div>
@@ -496,7 +590,9 @@ function AdvancedAppStore() {
 
         {source && !loading && visibleCharts.length === 0 && !error ? (
           <p className="text-muted-foreground py-16 text-center text-sm">
-            {isImageSource ? t("image:No images found") : t("helm:No charts found")}
+            {isTemplateSource
+              ? t("template:Update the market to fetch the published templates.")
+              : isImageSource ? t("image:No images found") : t("helm:No charts found")}
           </p>
         ) : null}
       </div>

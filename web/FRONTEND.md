@@ -224,12 +224,19 @@ asked for is recorded on the StatefulSet as `casos.io/db-params`, with a bounded
 told, and the annotation is what a form reads back. Saving rolls the pod,
 because the engine only reads these at startup; the dialog says so.
 
-## Template market — `/templates`
+## Template market — a source inside the App Store
 
-The market reads the **sealos template repository** (`labring-actions/templates`)
-in its own format, so an app published for that store deploys here unchanged.
-casos pulls the repository as a tarball over HTTPS and keeps one file per
-template — no git binary, a few megabytes on disk.
+casos installs apps three ways — a Helm chart, a plain container image, and a
+**sealos template** — and they are one store rather than three: the App Store's
+source rail lists Templates beside ArtifactHub, Docker Hub and the Helm repos,
+and everything installed lands in the same **Installed Apps** list, whichever
+way it got there. `/templates` redirects to `/app-store/templates` so older
+links keep working.
+
+The market reads the **sealos template repository**
+(`labring-actions/templates`) in its own format, so an app published for that
+store deploys here unchanged. casos pulls the repository as a tarball over
+HTTPS and keeps one file per template — no git binary, a few megabytes on disk.
 
 | File | What it holds |
 |---|---|
@@ -237,7 +244,7 @@ template — no git binary, a few megabytes on disk.
 | `controllers/template_expr.go` | The `${{ … }}` language: dotted lookups, comparisons, `random()`/`base64()`, and `if/elif/else/endif` blocks |
 | `controllers/template_apply.go` | Applying whatever the template names, through the dynamic client, plus the two translations below |
 | `controllers/template.go` | The endpoints, and the instance record |
-| `pages/TemplateMarketPage.jsx` | The market and what is installed from it |
+| `pages/AppStorePage.jsx` | The market grid, as one of the store's sources |
 | `pages/TemplateDeployPage.jsx` | The form a template declares, with the rendered manifests beside it |
 | `pages/TemplateInstancePage.jsx` | One installed app: address, databases, what it created, what is missing |
 

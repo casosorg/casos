@@ -1,6 +1,6 @@
 import React, {useEffect, useState} from "react";
 import {useTranslation} from "react-i18next";
-import {CircleArrowUp, History, Play, Plus, RefreshCw, RotateCcw, ScrollText, Search, Square, Trash2} from "lucide-react";
+import {ArrowUpRight, CircleArrowUp, History, Play, Plus, RefreshCw, RotateCcw, ScrollText, Search, Square, Trash2} from "lucide-react";
 import {useHistory} from "react-router-dom";
 import * as HelmBackend from "@/backend/HelmBackend";
 import * as ImageBackend from "@/backend/ImageBackend";
@@ -9,6 +9,7 @@ import * as NodeBackend from "@/backend/NodeBackend";
 import * as PodBackend from "@/backend/PodBackend";
 import * as PvcBackend from "@/backend/PvcBackend";
 import * as ServiceBackend from "@/backend/ServiceBackend";
+import * as TemplateBackend from "@/backend/TemplateBackend";
 import * as Setting from "@/Setting";
 import {Badge} from "@/components/ui/badge";
 import {Button} from "@/components/ui/button";
@@ -59,6 +60,28 @@ function toAppRecord(app) {
     // falls back to the catalogue's icon for an app of that name.
     icon: chartIconUrl(shortName),
     image: app,
+  };
+}
+
+// An app deployed from a template is the third way something gets installed
+// here, and the last one that had a list of its own. It carries the instance so
+// the actions that only make sense for a template — its own page, its own
+// removal — can find it.
+function toTemplateRecord(instance) {
+  return {
+    kind: "template",
+    name: instance.name,
+    namespace: instance.namespace,
+    chart: instance.template,
+    chartName: instance.template,
+    chartVersion: "",
+    app_version: "",
+    status: "deployed",
+    description: instance.title,
+    updated: instance.createdAt,
+    icon: instance.icon,
+    urls: (instance.apps ?? []).map((app) => app.url).filter(Boolean),
+    instance,
   };
 }
 
@@ -237,14 +260,21 @@ export default function HelmReleasePage() {
     }
     // One list, two installers. Either side failing leaves the other showing:
     // a broken Helm repository is no reason to hide the apps that are running.
-    return Promise.all([HelmBackend.getHelmReleases(namespace), ImageBackend.getImageApps(namespace)])
-      .then(([helmRes, imageRes]) => {
+    return Promise.all([
+      HelmBackend.getHelmReleases(namespace),
+      ImageBackend.getImageApps(namespace),
+      TemplateBackend.getTemplateInstances(namespace === "all" ? "" : namespace),
+    ])
+      .then(([helmRes, imageRes, templateRes]) => {
         const next = [];
         if (helmRes.status === "ok") {
           next.push(...(helmRes.data ?? []));
         }
         if (imageRes.status === "ok") {
           next.push(...(imageRes.data ?? []).map(toAppRecord));
+        }
+        if (templateRes.status === "ok") {
+          next.push(...(templateRes.data ?? []).map(toTemplateRecord));
         }
         setReleases(next);
         const failure = helmRes.status === "ok" ? imageRes : helmRes;
@@ -355,6 +385,10 @@ export default function HelmReleasePage() {
   }
 
   function openLogs(release) {
+    if (release.kind === "template") {
+      router.push(`/templates/instances/${release.namespace}/${release.name}`);
+      return;
+    }
     if (release.kind === "image") {
       openAppPodLogs(release);
       return;
@@ -366,6 +400,10 @@ export default function HelmReleasePage() {
   }
 
   function openUpgrade(release) {
+    if (release.kind === "template") {
+      router.push(`/templates/instances/${release.namespace}/${release.name}`);
+      return;
+    }
     if (release.kind === "image") {
       setImageUpgradeTarget(release.image);
       return;
@@ -420,10 +458,14 @@ export default function HelmReleasePage() {
 
   function handleUninstall(release) {
     const deleteData = deleteDataFor[releaseKey(release)] ?? false;
-    const uninstalled =
-      release.kind === "image"
-        ? ImageBackend.uninstallApp({namespace: release.namespace, name: release.name, deleteData})
-        : HelmBackend.uninstallHelmRelease({releaseName: release.name, namespace: release.namespace, deleteData});
+    let uninstalled;
+    if (release.kind === "image") {
+      uninstalled = ImageBackend.uninstallApp({namespace: release.namespace, name: release.name, deleteData});
+    } else if (release.kind === "template") {
+      uninstalled = TemplateBackend.deleteTemplateInstance({namespace: release.namespace, name: release.name, deleteData});
+    } else {
+      uninstalled = HelmBackend.uninstallHelmRelease({releaseName: release.name, namespace: release.namespace, deleteData});
+    }
     return uninstalled.then((res) => {
       if (res.status === "ok") {
         Setting.showMessage("success", `Uninstalled ${release.name}`);
@@ -457,8 +499,13 @@ export default function HelmReleasePage() {
       render: (value, release) => (
         <span className="flex items-center gap-1.5">
           {release.kind === "image" ? <Badge variant="info">{t("image:Image")}</Badge> : null}
+          {release.kind === "template" ? <Badge variant="info">{t("template:Template")}</Badge> : null}
           <span className="truncate">{release.chartName || parseChartName(value)}</span>
-          <Badge variant="muted">{release.chartVersion || parseChartVersion(value)}</Badge>
+          {/* A template has no version of its own; an empty badge would only
+              look like a value that failed to load. */}
+          {release.chartVersion || parseChartVersion(value)
+            ? <Badge variant="muted">{release.chartVersion || parseChartVersion(value)}</Badge>
+            : null}
         </span>
       ),
     },
@@ -499,11 +546,24 @@ export default function HelmReleasePage() {
       align: "right",
       render: (_, release) => (
         <div className="flex justify-end gap-1">
-          <SimpleTooltip title={t("helm:Logs")}>
-            <Button variant="outline" size="icon-sm" onClick={() => openLogs(release)} aria-label="Logs">
-              <ScrollText className="size-4" />
-            </Button>
-          </SimpleTooltip>
+          {release.kind === "template" ? (
+            <SimpleTooltip title={t("template:What it created")}>
+              <Button
+                variant="outline"
+                size="icon-sm"
+                onClick={() => router.push(`/templates/instances/${release.namespace}/${release.name}`)}
+                aria-label="Details"
+              >
+                <ArrowUpRight className="size-4" />
+              </Button>
+            </SimpleTooltip>
+          ) : (
+            <SimpleTooltip title={t("helm:Logs")}>
+              <Button variant="outline" size="icon-sm" onClick={() => openLogs(release)} aria-label="Logs">
+                <ScrollText className="size-4" />
+              </Button>
+            </SimpleTooltip>
+          )}
           {release.kind === "image" ? (
             <SimpleTooltip title={release.status === "stopped" ? t("image:Start") : t("image:Stop")}>
               <Button
@@ -516,12 +576,14 @@ export default function HelmReleasePage() {
               </Button>
             </SimpleTooltip>
           ) : null}
-          <SimpleTooltip title={t("helm:Upgrade")}>
-            <Button variant="outline" size="icon-sm" onClick={() => openUpgrade(release)} aria-label="Upgrade">
-              <CircleArrowUp className="size-4" />
-            </Button>
-          </SimpleTooltip>
-          {release.kind === "image" ? null : (
+          {release.kind === "template" ? null : (
+            <SimpleTooltip title={t("helm:Upgrade")}>
+              <Button variant="outline" size="icon-sm" onClick={() => openUpgrade(release)} aria-label="Upgrade">
+                <CircleArrowUp className="size-4" />
+              </Button>
+            </SimpleTooltip>
+          )}
+          {release.kind === "image" || release.kind === "template" ? null : (
             <SimpleTooltip title={t("helm:History")}>
               <Button variant="outline" size="icon-sm" onClick={() => openHistory(release)} aria-label="History">
                 <History className="size-4" />
@@ -680,7 +742,11 @@ export default function HelmReleasePage() {
 
           <AppCardList
             releases={visibleReleases}
-            resources={(release) => appResourcesOf(appResources, release)}
+            resources={(release) =>
+              (release.kind === "template"
+                ? {urls: release.urls ?? [], disks: []}
+                : appResourcesOf(appResources, release))
+            }
             loading={loading}
             isPending={isPendingRelease}
             emptyTitle={releases.length > 0 ? t("simple:No app here matches that.") : undefined}
