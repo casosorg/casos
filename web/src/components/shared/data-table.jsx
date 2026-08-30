@@ -140,6 +140,7 @@ export function DataTable({
   const [sorting, setSorting] = React.useState([]);
   const [globalFilter, setGlobalFilter] = React.useState("");
   const [expanded, setExpanded] = React.useState({});
+  const [pagination, setPagination] = React.useState({pageIndex: 0, pageSize: pageSize || 0});
 
   const {workspace} = useWorkspace();
   // A scoped table is about one namespace. Rows that predate the choice, or
@@ -158,9 +159,10 @@ export function DataTable({
   const table = useReactTable({
     data,
     columns: columnDefs,
-    state: {sorting, globalFilter},
+    state: {sorting, globalFilter, pagination},
     onSortingChange: setSorting,
     onGlobalFilterChange: setGlobalFilter,
+    onPaginationChange: setPagination,
     getCoreRowModel: getCoreRowModel(),
     getSortedRowModel: getSortedRowModel(),
     getFilteredRowModel: getFilteredRowModel(),
@@ -173,13 +175,30 @@ export function DataTable({
       JSON.stringify(row.original ?? {})
         .toLowerCase()
         .includes(String(value).toLowerCase()),
-    initialState: pageSize > 0 ? {pagination: {pageSize}} : undefined,
+    // Polling pages hand us a fresh array every few seconds; the built-in reset
+    // would read that as new data and throw the reader back to page one. The
+    // clamp below covers the one case the reset was there for — a page that no
+    // longer exists because the data shrank.
+    autoResetPageIndex: false,
   });
 
   const rows = table.getRowModel().rows;
   const showHeader = Boolean(title || description || toolbar || searchable);
   const totalRows = table.getFilteredRowModel().rows.length;
   const showPagination = pageSize > 0 && totalRows > pageSize;
+
+  React.useEffect(() => {
+    if (pageSize <= 0) {
+      return;
+    }
+    setPagination((prev) => {
+      const lastPage = Math.max(0, Math.ceil(totalRows / pageSize) - 1);
+      if (prev.pageSize === pageSize && prev.pageIndex <= lastPage) {
+        return prev;
+      }
+      return {pageIndex: Math.min(prev.pageIndex, lastPage), pageSize};
+    });
+  }, [totalRows, pageSize]);
 
   return (
     <div
@@ -206,7 +225,10 @@ export function DataTable({
                 <Search className="text-muted-foreground pointer-events-none absolute top-1/2 left-2.5 size-3.5 -translate-y-1/2" />
                 <Input
                   value={globalFilter}
-                  onChange={(event) => setGlobalFilter(event.target.value)}
+                  onChange={(event) => {
+                    setGlobalFilter(event.target.value);
+                    setPagination((prev) => (prev.pageIndex === 0 ? prev : {...prev, pageIndex: 0}));
+                  }}
                   placeholder={searchPlaceholder}
                   className="h-8 w-44 pl-8 text-xs lg:w-56"
                 />
