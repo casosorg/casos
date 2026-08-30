@@ -71,6 +71,7 @@ func (s *Service) PreflightMachineNode(req MachineNodeDeployRequest) (map[string
 	if err != nil {
 		return nil, err
 	}
+	s.ensureApiserverHostFirewall(config)
 	if req.ApiserverURL == "" {
 		resolved, err := resolveMachineNodeApiserverURL(deployMachine, defaultNodeDeployApiserverURL(config))
 		if err != nil {
@@ -109,6 +110,7 @@ func (s *Service) DeployMachineNode(req MachineNodeDeployRequest) (*object.Machi
 	if err != nil {
 		return nil, err
 	}
+	firewall := s.ensureApiserverHostFirewall(config)
 	if req.ApiserverURL == "" {
 		resolved, err := resolveMachineNodeApiserverURL(deployMachine, defaultNodeDeployApiserverURL(config))
 		if err != nil {
@@ -129,6 +131,11 @@ func (s *Service) DeployMachineNode(req MachineNodeDeployRequest) (*object.Machi
 	if err = object.AddMachineNodeDeployLog(task.Id, object.MachineNodeDeployLogLevelInfo, "Node deployment task created"); err != nil {
 		s.releaseDeploymentSlot()
 		return nil, err
+	}
+	if message := firewall.Message(); message != "" {
+		if err = object.AddMachineNodeDeployLog(task.Id, firewall.Level(), message); err != nil {
+			logs.Warning("failed to write host firewall log for task %d: %v", task.Id, err)
+		}
 	}
 
 	deployCtx := s.contextSnapshot()
@@ -185,6 +192,21 @@ func (s *Service) prepareMachineNodeRequest(req *MachineNodeDeployRequest) (*obj
 		return nil, NodeDeployMachine{}, err
 	}
 	return machine, deployMachine, nil
+}
+
+// ensureApiserverHostFirewall opens the apiserver port on the CasOS host before
+// the target is asked to reach it, so the first deployment on a fresh Windows
+// host does not fail on a firewall rule nobody knew was missing.
+func (s *Service) ensureApiserverHostFirewall(config Config) HostFirewallResult {
+	result := EnsureApiserverHostFirewallRule(s.contextSnapshot(), config.ApiserverPort)
+	switch message := result.Message(); {
+	case message == "":
+	case result.Level() == object.MachineNodeDeployLogLevelError:
+		logs.Warning(message)
+	default:
+		logs.Info(message)
+	}
+	return result
 }
 
 func (s *Service) configSnapshot() (Config, error) {

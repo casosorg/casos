@@ -103,7 +103,7 @@ func RunNodeDeployPreflight(ctx context.Context, runner NodeDeployRunner, apiser
 		cmd := nodeDeployApiserverProbeCommand(trimmedURL, nodeDeployPreflightProbeConnectTimeout, nodeDeployPreflightProbeMaxTime)
 		status, err := runner.RunContext(ctx, cmd)
 		if err != nil {
-			return nil, fmt.Errorf("apiserver is not reachable from target: %w", err)
+			return nil, diagnoseNodeDeployApiserverProbe(trimmedURL, err)
 		}
 		if !isNodeDeployApiserverProbeStatus(status) {
 			return nil, fmt.Errorf("apiserver readiness probe returned HTTP status %q", strings.TrimSpace(status))
