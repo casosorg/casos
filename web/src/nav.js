@@ -133,8 +133,8 @@ export function isDesktopPath(pathname) {
  * pages behind tabs, so no functionality is lost, only reached differently.
  */
 export const simpleNavGroups = [
-  {key: "/simple", label: "simple:Home", icon: House, path: "/simple"},
-  {key: "/simple/app-store", label: "simple:App Store", icon: Store, path: "/simple/app-store"},
+  {key: "/simple", label: "general:Home", icon: House, path: "/simple"},
+  {key: "/simple/app-store", label: "general:App Store", icon: Store, path: "/simple/app-store"},
   {key: "/simple/apps", label: "simple:My Apps", icon: Boxes, path: "/simple/apps"},
   {key: "/simple/launchpad", label: "simple:Custom apps", icon: Rocket, path: "/simple/launchpad"},
   {key: "/simple/databases", label: "database:Databases", icon: Database, path: "/simple/databases"},

@@ -104,7 +104,7 @@ function TemplateDeployPage(props) {
     runAction(
       TemplateBackend.deployTemplate({name: templateName, namespace, domain, inputs: values}),
       {
-        successMessage: i18next.t("template:App deployed"),
+        successMessage: i18next.t("launchpad:App deployed"),
         onSuccess: (res) => history.push(`/templates/instances/${res.data.namespace}/${res.data.name}`),
       }
     ).finally(() => setSubmitting(false));
@@ -158,7 +158,7 @@ function TemplateDeployPage(props) {
             </Button>
             <Button onClick={deploy} disabled={submitting || missing.length > 0} data-testid="template-deploy">
               <Rocket />
-              {i18next.t("template:Deploy")}
+              {i18next.t("general:Deploy")}
             </Button>
           </div>
         }
@@ -201,7 +201,7 @@ function TemplateDeployPage(props) {
           {(detail.inputs ?? []).length > 0 ? (
             <Card>
               <CardHeader>
-                <CardTitle className="text-base">{i18next.t("template:Settings")}</CardTitle>
+                <CardTitle className="text-base">{i18next.t("general:Settings")}</CardTitle>
                 <CardDescription>{i18next.t("template:What this app asks for.")}</CardDescription>
               </CardHeader>
               <CardContent className="grid gap-4">
@@ -209,7 +209,7 @@ function TemplateDeployPage(props) {
                   <div key={input.key} className="grid gap-1.5">
                     <Label className="flex items-center gap-1.5 text-sm">
                       {input.key}
-                      {input.required ? <Badge variant="secondary">{i18next.t("template:required")}</Badge> : null}
+                      {input.required ? <Badge variant="secondary">{i18next.t("general:required")}</Badge> : null}
                     </Label>
                     {input.type === "boolean" || (input.options ?? []).length > 0 ? (
                       <SimpleSelect

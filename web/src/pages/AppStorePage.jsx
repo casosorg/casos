@@ -88,7 +88,7 @@ function ChartCard({chart, onInstall}) {
         <div className="flex justify-end">
           <Button size="sm" onClick={onInstall}>
             <Rocket />
-            {t("helm:Install")}
+            {t("general:Install")}
           </Button>
         </div>
       </div>
@@ -112,10 +112,10 @@ function AddRepoDialog({open, onClose, onAdded}) {
   async function handleSubmit() {
     const nextErrors = {};
     if (!form.name) {
-      nextErrors.name = t("policy:required");
+      nextErrors.name = t("general:required");
     }
     if (!form.url) {
-      nextErrors.url = t("policy:required");
+      nextErrors.url = t("general:required");
     } else if (!/^(https?|oci):\/\//.test(form.url)) {
       // OCI registries (e.g. "oci://registry-1.docker.io/casbin/casdoor-helm-charts")
       // host charts just like a classic index.yaml repo, so they are valid here too.
@@ -501,7 +501,7 @@ function AdvancedAppStore() {
           <div className="flex-1" />
           <Button variant="outline" size="sm" asChild>
             {isImageSource ? (
-              <Link to="/helm-releases">{t("image:My Apps")} →</Link>
+              <Link to="/helm-releases">{t("simple:My Apps")} →</Link>
             ) : (
               <Link to="/helm-releases">{t("helm:My Releases")} →</Link>
             )}
@@ -516,7 +516,7 @@ function AdvancedAppStore() {
               onChange={(event) => setQuery(event.target.value)}
               placeholder={
                 isTemplateSource
-                  ? t("template:Search apps")
+                  ? t("general:Search apps")
                   : isImageSource ? t("image:Search Docker Hub") : t("helm:Search charts")
               }
               className="w-72 pl-9"
@@ -542,7 +542,7 @@ function AdvancedAppStore() {
           ) : null}
           {isTemplateSource && marketStatus?.updatedAt ? (
             <span className="text-muted-foreground self-center text-xs">
-              {t("template:Updated")} {new Date(marketStatus.updatedAt).toLocaleString()} · {marketStatus.count} {t("template:apps")}
+              {t("general:Updated")} {new Date(marketStatus.updatedAt).toLocaleString()} · {marketStatus.count} {t("template:apps")}
             </span>
           ) : null}
         </div>
@@ -556,7 +556,7 @@ function AdvancedAppStore() {
                 variant={category === item ? "default" : "outline"}
                 onClick={() => setCategory(item)}
               >
-                {item === "all" ? t("template:All") : item}
+                {item === "all" ? t("general:All") : item}
               </Button>
             ))}
           </div>

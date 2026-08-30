@@ -23,11 +23,11 @@ export const APP_CATEGORIES = [
   {key: "all", label: "simple:Recommended"},
   {key: "files", label: "simple:Files and media"},
   {key: "website", label: "simple:Websites"},
-  {key: "database", label: "simple:Databases"},
+  {key: "database", label: "database:Databases"},
   {key: "devtools", label: "simple:Developer tools"},
   {key: "monitoring", label: "simple:Monitoring"},
   {key: "security", label: "simple:Security and login"},
-  {key: "storage", label: "simple:Storage"},
+  {key: "storage", label: "general:Storage"},
 ];
 
 export const APP_CATALOG = [

@@ -176,7 +176,7 @@ function LaunchpadEditPage(props) {
             </Button>
             <Button onClick={submit} disabled={submitting} data-testid="launchpad-submit">
               <Rocket />
-              {editing ? i18next.t("launchpad:Save changes") : i18next.t("launchpad:Deploy")}
+              {editing ? i18next.t("launchpad:Save changes") : i18next.t("general:Deploy")}
             </Button>
           </div>
         }
@@ -189,7 +189,7 @@ function LaunchpadEditPage(props) {
           <SectionCard title={i18next.t("launchpad:Basics")}>
             <div className="grid gap-4 sm:grid-cols-2">
               <FormRow
-                label={i18next.t("launchpad:App name")}
+                label={i18next.t("general:App name")}
                 error={errors.name === "required" ? i18next.t("launchpad:A name is required") : errors.name ? i18next.t("launchpad:Lowercase letters, digits and dashes only") : null}
               >
                 <Input
@@ -211,7 +211,7 @@ function LaunchpadEditPage(props) {
               </FormRow>
             </div>
             <FormRow
-              label={i18next.t("launchpad:Image")}
+              label={i18next.t("general:Image")}
               hint={i18next.t("launchpad:The container image and its tag, for example nginx 1.27")}
               error={errors.image ? i18next.t("launchpad:An image is required") : null}
             >
@@ -240,14 +240,14 @@ function LaunchpadEditPage(props) {
                       placeholder="docker.io"
                     />
                   </FormRow>
-                  <FormRow label={i18next.t("launchpad:Username")}>
+                  <FormRow label={i18next.t("general:Username")}>
                     <Input
                       value={form.registry.username}
                       onChange={(event) => set({registry: {...form.registry, username: event.target.value}})}
                     />
                   </FormRow>
                   <FormRow
-                    label={i18next.t("launchpad:Password")}
+                    label={i18next.t("general:Password")}
                     hint={editing ? i18next.t("launchpad:Leave blank to keep the stored password") : null}
                   >
                     <PasswordInput
@@ -365,7 +365,7 @@ function LaunchpadEditPage(props) {
                   <Button
                     size="icon-sm"
                     variant="ghost"
-                    aria-label={i18next.t("launchpad:Remove")}
+                    aria-label={i18next.t("general:Remove")}
                     onClick={() => setPorts(form.ports.filter((_, itemIndex) => itemIndex !== index))}
                   >
                     <X />
@@ -431,7 +431,7 @@ function LaunchpadEditPage(props) {
                   <Button
                     size="icon-sm"
                     variant="ghost"
-                    aria-label={i18next.t("launchpad:Remove")}
+                    aria-label={i18next.t("general:Remove")}
                     onClick={() => set({domains: form.domains.filter((_, itemIndex) => itemIndex !== index)})}
                   >
                     <X />
@@ -449,7 +449,7 @@ function LaunchpadEditPage(props) {
             </div>
           </SectionCard>
 
-          <SectionCard title={i18next.t("launchpad:Environment")}>
+          <SectionCard title={i18next.t("general:Environment")}>
             <div className="grid gap-2">
               <div className="flex items-center justify-between">
                 <Label className="text-sm">{i18next.t("launchpad:Environment variables")}</Label>
@@ -475,7 +475,7 @@ function LaunchpadEditPage(props) {
                   <Button
                     size="icon-sm"
                     variant="ghost"
-                    aria-label={i18next.t("launchpad:Remove")}
+                    aria-label={i18next.t("general:Remove")}
                     onClick={() => set({envVars: form.envVars.filter((_, itemIndex) => itemIndex !== index)})}
                   >
                     <X />
@@ -527,7 +527,7 @@ function LaunchpadEditPage(props) {
                     <Button
                       size="icon-sm"
                       variant="ghost"
-                      aria-label={i18next.t("launchpad:Remove")}
+                      aria-label={i18next.t("general:Remove")}
                       onClick={() => set({configFiles: form.configFiles.filter((_, itemIndex) => itemIndex !== index)})}
                     >
                       <X />
@@ -546,7 +546,7 @@ function LaunchpadEditPage(props) {
 
             <div className="grid gap-2">
               <div className="flex items-center justify-between">
-                <Label className="text-sm">{i18next.t("launchpad:Storage")}</Label>
+                <Label className="text-sm">{i18next.t("general:Storage")}</Label>
                 {!editing ? (
                   <Button size="sm" variant="outline" onClick={() => set({volumes: [...form.volumes, {mountPath: "", size: "1Gi"}]})}>
                     <Plus />

@@ -109,8 +109,8 @@ function DatabasePage(props) {
     },
     {key: "cpuLimit", title: i18next.t("launchpad:CPU limit"), dataIndex: "cpuLimit", width: 110},
     {key: "memoryLimit", title: i18next.t("launchpad:Memory limit"), dataIndex: "memoryLimit", width: 130},
-    {key: "storage", title: i18next.t("database:Storage"), dataIndex: "storage", width: 110},
-    {key: "createdAt", title: i18next.t("launchpad:Created"), dataIndex: "createdAt", width: 170, sortable: true},
+    {key: "storage", title: i18next.t("general:Storage"), dataIndex: "storage", width: 110},
+    {key: "createdAt", title: i18next.t("general:Created"), dataIndex: "createdAt", width: 170, sortable: true},
     {
       key: "actions",
       title: i18next.t("general:Action"),
@@ -134,8 +134,8 @@ function DatabasePage(props) {
             <Button
               size="icon-sm"
               variant="ghost"
-              aria-label={i18next.t("launchpad:Start")}
-              title={i18next.t("launchpad:Start")}
+              aria-label={i18next.t("general:Start")}
+              title={i18next.t("general:Start")}
               onClick={(event) => {
                 event.stopPropagation();
                 toggleRunning(record, true);
@@ -147,8 +147,8 @@ function DatabasePage(props) {
             <Button
               size="icon-sm"
               variant="ghost"
-              aria-label={i18next.t("launchpad:Stop")}
-              title={i18next.t("launchpad:Stop")}
+              aria-label={i18next.t("general:Stop")}
+              title={i18next.t("general:Stop")}
               onClick={(event) => {
                 event.stopPropagation();
                 toggleRunning(record, false);
@@ -160,8 +160,8 @@ function DatabasePage(props) {
           <Button
             size="icon-sm"
             variant="ghost"
-            aria-label={i18next.t("launchpad:Delete")}
-            title={i18next.t("launchpad:Delete")}
+            aria-label={i18next.t("general:Delete")}
+            title={i18next.t("general:Delete")}
             onClick={(event) => {
               event.stopPropagation();
               setDeleteTarget(record);
@@ -204,7 +204,7 @@ function DatabasePage(props) {
               value={namespace}
               onChange={setNamespace}
               options={[
-                {label: i18next.t("launchpad:All namespaces"), value: "all"},
+                {label: i18next.t("general:All namespaces"), value: "all"},
                 ...namespaces.map((item) => ({label: item.name, value: item.name})),
               ]}
               size="sm"
@@ -225,9 +225,9 @@ function DatabasePage(props) {
             setDeleteData(false);
           }
         }}
-        title={`${i18next.t("launchpad:Delete")} ${deleteTarget?.name ?? ""}`}
+        title={`${i18next.t("general:Delete")} ${deleteTarget?.name ?? ""}`}
         description={i18next.t("database:The engine and its address are removed. Its data and backups are kept unless you say otherwise.")}
-        confirmText={i18next.t("launchpad:Delete")}
+        confirmText={i18next.t("general:Delete")}
         onConfirm={remove}
         extra={
           <label className="flex items-center gap-2 text-sm">

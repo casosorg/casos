@@ -132,9 +132,9 @@ export function DatabaseParamsDialog({namespace, name, open, onOpenChange, onSav
         {data ? (
           <Tabs defaultValue="settings">
             <TabsList className="grid w-full grid-cols-2">
-              <TabsTrigger value="settings">{i18next.t("database:Settings")}</TabsTrigger>
+              <TabsTrigger value="settings">{i18next.t("general:Settings")}</TabsTrigger>
               <TabsTrigger value="history">
-                {i18next.t("database:History")}
+                {i18next.t("general:History")}
                 {data.history.length > 0 ? ` (${data.history.length})` : ""}
               </TabsTrigger>
             </TabsList>

@@ -127,7 +127,7 @@ export function DesktopTour({open, onClose}) {
               {i18next.t("onboarding:Skip")}
             </Button>
             <Button size="sm" onClick={() => (last ? onClose() : setIndex((current) => current + 1))}>
-              {last ? i18next.t("onboarding:Done") : i18next.t("onboarding:Next")}
+              {last ? i18next.t("general:Done") : i18next.t("onboarding:Next")}
             </Button>
           </div>
         </div>

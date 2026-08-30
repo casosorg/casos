@@ -196,13 +196,13 @@ export function AppWindow({process, narrow = false, bottomInset = 0, children}) 
           </WindowButton>
           {narrow ? null : (
             <WindowButton
-              label={maximized ? i18next.t("desktop:Restore") : i18next.t("desktop:Maximize")}
+              label={maximized ? i18next.t("desktop:Restore window") : i18next.t("desktop:Maximize")}
               onClick={() => setSize(process.pid, maximized ? WINDOW_SIZE.WINDOWED : WINDOW_SIZE.MAXIMIZE)}
             >
               {maximized ? <Minimize2 className="size-3.5" /> : <Maximize2 className="size-3.5" />}
             </WindowButton>
           )}
-          <WindowButton label={i18next.t("desktop:Close")} destructive onClick={() => closeApp(process.pid)}>
+          <WindowButton label={i18next.t("general:Close")} destructive onClick={() => closeApp(process.pid)}>
             <X className="size-3.5" />
           </WindowButton>
         </div>

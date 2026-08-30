@@ -72,10 +72,10 @@ function CasbinRuleListPage({scope, title, description}) {
   async function handleAdd() {
     const nextErrors = {};
     if (!form.v0) {
-      nextErrors.v0 = i18next.t("policy:required");
+      nextErrors.v0 = i18next.t("general:required");
     }
     if (!isPolicy && !form.v1) {
-      nextErrors.v1 = i18next.t("policy:required");
+      nextErrors.v1 = i18next.t("general:required");
     }
     setErrors(nextErrors);
     if (Object.keys(nextErrors).length > 0) {

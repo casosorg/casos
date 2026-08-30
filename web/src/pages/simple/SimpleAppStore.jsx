@@ -35,7 +35,7 @@ function AppCard({app, installed, onInstall}) {
       </div>
       <Button size="sm" variant={installed ? "outline" : "default"} className="mt-auto self-end" onClick={onInstall}>
         <Rocket />
-        {installed ? t("simple:Install again") : t("simple:Install")}
+        {installed ? t("simple:Install again") : t("general:Install")}
       </Button>
     </div>
   );
@@ -75,7 +75,7 @@ function SimpleAppStore() {
   return (
     <PageContainer>
       <PageHeader
-        title={t("simple:App Store")}
+        title={t("general:App Store")}
         description={t("simple:Pick an app and CasOS installs and configures it for you.")}
         actions={
           <Button variant="outline" onClick={() => history.push("/simple/apps")}>
@@ -89,7 +89,7 @@ function SimpleAppStore() {
         <Input
           value={query}
           onChange={(event) => setQuery(event.target.value)}
-          placeholder={t("simple:Search apps")}
+          placeholder={t("general:Search apps")}
           className="pl-9"
         />
       </div>

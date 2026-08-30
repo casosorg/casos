@@ -30,7 +30,7 @@ function formatCpu(millicores) {
   if (!millicores) {
     return "—";
   }
-  return millicores >= 1000 ? `${(millicores / 1000).toFixed(2)} ${i18next.t("launchpad:cores")}` : `${Math.round(millicores)}m`;
+  return millicores >= 1000 ? `${(millicores / 1000).toFixed(2)} ${i18next.t("general:cores")}` : `${Math.round(millicores)}m`;
 }
 
 function formatMemory(mebibytes) {
@@ -139,7 +139,7 @@ function LaunchpadPage(props) {
     },
     {
       key: "image",
-      title: i18next.t("launchpad:Image"),
+      title: i18next.t("general:Image"),
       dataIndex: "image",
       minWidth: 180,
       ellipsis: true,
@@ -167,7 +167,7 @@ function LaunchpadPage(props) {
     },
     {
       key: "createdAt",
-      title: i18next.t("launchpad:Created"),
+      title: i18next.t("general:Created"),
       dataIndex: "createdAt",
       width: 170,
       sortable: true,
@@ -195,8 +195,8 @@ function LaunchpadPage(props) {
             <Button
               size="icon-sm"
               variant="ghost"
-              aria-label={i18next.t("launchpad:Start")}
-              title={i18next.t("launchpad:Start")}
+              aria-label={i18next.t("general:Start")}
+              title={i18next.t("general:Start")}
               onClick={(event) => {
                 event.stopPropagation();
                 toggleRunning(record, true);
@@ -208,8 +208,8 @@ function LaunchpadPage(props) {
             <Button
               size="icon-sm"
               variant="ghost"
-              aria-label={i18next.t("launchpad:Stop")}
-              title={i18next.t("launchpad:Stop")}
+              aria-label={i18next.t("general:Stop")}
+              title={i18next.t("general:Stop")}
               onClick={(event) => {
                 event.stopPropagation();
                 toggleRunning(record, false);
@@ -221,8 +221,8 @@ function LaunchpadPage(props) {
           <Button
             size="icon-sm"
             variant="ghost"
-            aria-label={i18next.t("launchpad:Delete")}
-            title={i18next.t("launchpad:Delete")}
+            aria-label={i18next.t("general:Delete")}
+            title={i18next.t("general:Delete")}
             onClick={(event) => {
               event.stopPropagation();
               setDeleteTarget(record);
@@ -265,7 +265,7 @@ function LaunchpadPage(props) {
               value={namespace}
               onChange={setNamespace}
               options={[
-                {label: i18next.t("launchpad:All namespaces"), value: "all"},
+                {label: i18next.t("general:All namespaces"), value: "all"},
                 ...namespaces.map((item) => ({label: item.name, value: item.name})),
               ]}
               size="sm"
@@ -286,9 +286,9 @@ function LaunchpadPage(props) {
             setDeleteData(false);
           }
         }}
-        title={`${i18next.t("launchpad:Delete")} ${deleteTarget?.name ?? ""}`}
+        title={`${i18next.t("general:Delete")} ${deleteTarget?.name ?? ""}`}
         description={i18next.t("launchpad:The app, its address and its autoscaler are removed. Its disks are kept unless you say otherwise.")}
-        confirmText={i18next.t("launchpad:Delete")}
+        confirmText={i18next.t("general:Delete")}
         onConfirm={uninstall}
         extra={
           <label className="flex items-center gap-2 text-sm">

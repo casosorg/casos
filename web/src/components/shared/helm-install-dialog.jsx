@@ -415,15 +415,15 @@ export function HelmInstallDialog({open, chart, action = "install", onClose, onI
   function validate() {
     const nextErrors = {};
     if (!form.releaseName) {
-      nextErrors.releaseName = t("policy:required");
+      nextErrors.releaseName = t("general:required");
     } else if (!RELEASE_NAME_PATTERN.test(form.releaseName)) {
       nextErrors.releaseName = t("helm:Release name pattern");
     }
     if (!form.namespace) {
-      nextErrors.namespace = t("policy:required");
+      nextErrors.namespace = t("general:required");
     }
     if (isUpgrade && !form.repoURL) {
-      nextErrors.repoURL = t("policy:required");
+      nextErrors.repoURL = t("general:required");
     }
     setFormErrors(nextErrors);
     return Object.keys(nextErrors).length === 0;
@@ -599,7 +599,7 @@ export function HelmInstallDialog({open, chart, action = "install", onClose, onI
   // still installs with the defaults the backend adapters set.
   const releaseNameField = (
     <Field
-      label={advanced ? t("helm:Release name") : t("simple:App name")}
+      label={advanced ? t("helm:Release name") : t("general:App name")}
       htmlFor="helm-release"
       required
       error={formErrors.releaseName}
@@ -626,7 +626,7 @@ export function HelmInstallDialog({open, chart, action = "install", onClose, onI
   );
 
   const versionField = (
-    <Field label={t("helm:Version")} htmlFor="helm-version">
+    <Field label={t("general:Version")} htmlFor="helm-version">
       <Input
         id="helm-version"
         value={form.version}
@@ -770,7 +770,7 @@ export function HelmInstallDialog({open, chart, action = "install", onClose, onI
               disabled={valuesLoading || Boolean(valuesLoadError)}
               onClick={handleSubmit}
             >
-              {t(isUpgrade ? "helm:Upgrade" : "helm:Install")}
+              {t(isUpgrade ? "helm:Upgrade" : "general:Install")}
             </Button>
           ) : null}
           {pollingPaused ? (

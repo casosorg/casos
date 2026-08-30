@@ -32,9 +32,9 @@ export function FirstRunChecklist({steps, onAction}) {
       action: t("simple:Open Devices"),
     },
     app: {
-      title: t("simple:Install your first app"),
+      title: t("onboarding:Install your first app"),
       description: t("simple:Pick anything from the App Store — CasOS handles the setup."),
-      action: t("simple:Open App Store"),
+      action: t("onboarding:Open App Store"),
     },
   };
   const advancedLabels = {

@@ -162,7 +162,7 @@ function RevisionTable({namespace, name, onRolledBack}) {
   const columns = [
     {
       key: "revision",
-      title: i18next.t("launchpad:Version"),
+      title: i18next.t("general:Version"),
       dataIndex: "revision",
       width: 120,
       render: (value, record) => (
@@ -172,8 +172,8 @@ function RevisionTable({namespace, name, onRolledBack}) {
         </span>
       ),
     },
-    {key: "image", title: i18next.t("launchpad:Image"), dataIndex: "image", minWidth: 240, ellipsis: true},
-    {key: "createdAt", title: i18next.t("launchpad:Created"), dataIndex: "createdAt", width: 170},
+    {key: "image", title: i18next.t("general:Image"), dataIndex: "image", minWidth: 240, ellipsis: true},
+    {key: "createdAt", title: i18next.t("general:Created"), dataIndex: "createdAt", width: 170},
     {
       key: "actions",
       title: "",
@@ -352,7 +352,7 @@ function LaunchpadDetailPage(props) {
     {key: "ready", title: i18next.t("launchpad:Ready"), dataIndex: "ready", width: 90},
     {key: "restarts", title: i18next.t("launchpad:Restarts"), dataIndex: "restarts", width: 100},
     {key: "nodeName", title: i18next.t("general:Node"), dataIndex: "nodeName", minWidth: 140, ellipsis: true},
-    {key: "createdAt", title: i18next.t("launchpad:Created"), dataIndex: "createdAt", width: 170},
+    {key: "createdAt", title: i18next.t("general:Created"), dataIndex: "createdAt", width: 170},
     {
       key: "actions",
       title: i18next.t("general:Action"),
@@ -360,7 +360,7 @@ function LaunchpadDetailPage(props) {
       align: "right",
       render: (_value, record) => (
         <div className="flex items-center justify-end gap-0.5">
-          <Button size="icon-sm" variant="ghost" title={i18next.t("launchpad:Logs")} aria-label={i18next.t("launchpad:Logs")} onClick={() => setLogsPod(record)}>
+          <Button size="icon-sm" variant="ghost" title={i18next.t("general:Logs")} aria-label={i18next.t("general:Logs")} onClick={() => setLogsPod(record)}>
             <ScrollText />
           </Button>
           <Button size="icon-sm" variant="ghost" title={i18next.t("desktop:Terminal")} aria-label={i18next.t("desktop:Terminal")} onClick={() => setTerminalPod(record)}>
@@ -392,7 +392,7 @@ function LaunchpadDetailPage(props) {
             {detail.status === "stopped" ? (
               <Button variant="outline" onClick={() => toggleRunning(true)}>
                 <Play />
-                {i18next.t("launchpad:Start")}
+                {i18next.t("general:Start")}
               </Button>
             ) : (
               <>
@@ -402,13 +402,13 @@ function LaunchpadDetailPage(props) {
                 </Button>
                 <Button variant="outline" onClick={() => toggleRunning(false)}>
                   <Square />
-                  {i18next.t("launchpad:Stop")}
+                  {i18next.t("general:Stop")}
                 </Button>
               </>
             )}
             <Button variant="destructive" onClick={() => setDeleteOpen(true)}>
               <Trash2 />
-              {i18next.t("launchpad:Delete")}
+              {i18next.t("general:Delete")}
             </Button>
           </div>
         }
@@ -505,7 +505,7 @@ function LaunchpadDetailPage(props) {
 
         <Card>
           <CardHeader>
-            <CardTitle className="text-base">{i18next.t("launchpad:Storage")}</CardTitle>
+            <CardTitle className="text-base">{i18next.t("general:Storage")}</CardTitle>
             <CardDescription>{i18next.t("launchpad:Disks that survive a restart")}</CardDescription>
           </CardHeader>
           <CardContent>
@@ -527,7 +527,7 @@ function LaunchpadDetailPage(props) {
 
       <DataTable
         testId="launchpad-pods-table"
-        title={i18next.t("launchpad:Pods")}
+        title={i18next.t("general:Pods")}
         columns={podColumns}
         dataSource={detail.pods ?? []}
         rowKey="name"
@@ -544,9 +544,9 @@ function LaunchpadDetailPage(props) {
       <ConfirmDialog
         open={deleteOpen}
         onOpenChange={setDeleteOpen}
-        title={`${i18next.t("launchpad:Delete")} ${detail.name}`}
+        title={`${i18next.t("general:Delete")} ${detail.name}`}
         description={i18next.t("launchpad:The app, its address and its autoscaler are removed. Its disks are kept unless you say otherwise.")}
-        confirmText={i18next.t("launchpad:Delete")}
+        confirmText={i18next.t("general:Delete")}
         onConfirm={uninstall}
         extra={
           <label className="flex items-center gap-2 text-sm">

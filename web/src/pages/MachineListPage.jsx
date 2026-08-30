@@ -98,21 +98,21 @@ function MachineListPage({account}) {
   async function handleSubmit() {
     const nextErrors = {};
     if (!form.name) {
-      nextErrors.name = i18next.t("policy:required");
+      nextErrors.name = i18next.t("general:required");
     } else if (!NAME_PATTERN.test(form.name)) {
       nextErrors.name = "lowercase letters, digits and dashes only";
     }
     if (!form.ip) {
-      nextErrors.ip = i18next.t("policy:required");
+      nextErrors.ip = i18next.t("general:required");
     }
     if (!form.username) {
-      nextErrors.username = i18next.t("policy:required");
+      nextErrors.username = i18next.t("general:required");
     }
     if (form.authType === "password" && !form.password) {
-      nextErrors.password = i18next.t("policy:required");
+      nextErrors.password = i18next.t("general:required");
     }
     if (form.authType === "privateKey" && !form.privateKey) {
-      nextErrors.privateKey = i18next.t("policy:required");
+      nextErrors.privateKey = i18next.t("general:required");
     }
     setErrors(nextErrors);
     if (Object.keys(nextErrors).length > 0) {

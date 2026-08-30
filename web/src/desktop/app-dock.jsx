@@ -75,7 +75,7 @@ function AppBar({items, processes, currentPid, hidden, label, onOpenLauncher, on
     >
       <button
         type="button"
-        aria-label={i18next.t("desktop:All apps")}
+        aria-label={i18next.t("general:All apps")}
         onClick={onOpenLauncher}
         className="flex size-9 shrink-0 items-center justify-center rounded-lg text-neutral-800 hover:bg-black/10 dark:text-neutral-100 dark:hover:bg-white/15"
       >
@@ -233,7 +233,7 @@ export function AppDock({apps, onOpenLauncher, hidden, onToggleHidden, mode = DO
         <div ref={(node) => (iconRefs.current["launcher"] = node)}>
           <DockIcon
             app={{key: "launcher", icon: Grid3x3, tint: "zinc"}}
-            label={i18next.t("desktop:All apps")}
+            label={i18next.t("general:All apps")}
             size={sizeOf("launcher")}
             running={false}
             onClick={onOpenLauncher}

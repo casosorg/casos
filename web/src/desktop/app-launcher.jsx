@@ -73,13 +73,13 @@ export function AppLauncher({open, apps, layout, onClose, onOpenApp, onLayoutCha
               setTerm(event.target.value);
               setPage(0);
             }}
-            placeholder={i18next.t("desktop:Search apps")}
+            placeholder={i18next.t("general:Search apps")}
             className="h-10 w-full rounded-xl border border-white/20 bg-white/15 pr-3 pl-9 text-sm text-white placeholder:text-white/60 focus:outline-none"
           />
         </div>
         <button
           type="button"
-          aria-label={i18next.t("desktop:Close")}
+          aria-label={i18next.t("general:Close")}
           onClick={onClose}
           className="flex size-10 items-center justify-center rounded-xl border border-white/20 bg-white/15 text-white"
         >

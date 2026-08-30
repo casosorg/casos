@@ -61,7 +61,7 @@ function VulnerabilityDetail({record}) {
       ),
     },
     {key: "pkg", title: i18next.t("trivy:Package"), dataIndex: "PkgName", width: 170, sortable: true},
-    {key: "installed", title: i18next.t("trivy:Installed"), dataIndex: "InstalledVersion", width: 130},
+    {key: "installed", title: i18next.t("trivy:Installed version"), dataIndex: "InstalledVersion", width: 130},
     {
       key: "fixed",
       title: i18next.t("trivy:Fixed In"),

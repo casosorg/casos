@@ -498,7 +498,7 @@ export default function HelmReleasePage() {
       dataIndex: "chart",
       render: (value, release) => (
         <span className="flex items-center gap-1.5">
-          {release.kind === "image" ? <Badge variant="info">{t("image:Image")}</Badge> : null}
+          {release.kind === "image" ? <Badge variant="info">{t("general:Image")}</Badge> : null}
           {release.kind === "template" ? <Badge variant="info">{t("template:Template")}</Badge> : null}
           <span className="truncate">{release.chartName || parseChartName(value)}</span>
           {/* A template has no version of its own; an empty badge would only
@@ -558,14 +558,14 @@ export default function HelmReleasePage() {
               </Button>
             </SimpleTooltip>
           ) : (
-            <SimpleTooltip title={t("helm:Logs")}>
+            <SimpleTooltip title={t("general:Logs")}>
               <Button variant="outline" size="icon-sm" onClick={() => openLogs(release)} aria-label="Logs">
                 <ScrollText className="size-4" />
               </Button>
             </SimpleTooltip>
           )}
           {release.kind === "image" ? (
-            <SimpleTooltip title={release.status === "stopped" ? t("image:Start") : t("image:Stop")}>
+            <SimpleTooltip title={release.status === "stopped" ? t("general:Start") : t("general:Stop")}>
               <Button
                 variant="outline"
                 size="icon-sm"
@@ -584,7 +584,7 @@ export default function HelmReleasePage() {
             </SimpleTooltip>
           )}
           {release.kind === "image" || release.kind === "template" ? null : (
-            <SimpleTooltip title={t("helm:History")}>
+            <SimpleTooltip title={t("general:History")}>
               <Button variant="outline" size="icon-sm" onClick={() => openHistory(release)} aria-label="History">
                 <History className="size-4" />
               </Button>
@@ -656,7 +656,7 @@ export default function HelmReleasePage() {
       .some((field) => field.toLowerCase().includes(needle));
   });
   const filters = [
-    {key: "all", label: t("simple:All apps")},
+    {key: "all", label: t("general:All apps")},
     {key: "running", label: t("simple:Running")},
     {key: "attention", label: t("simple:Needs attention")},
     {key: "updating", label: t("simple:Updating")},
@@ -682,7 +682,7 @@ export default function HelmReleasePage() {
               <SimpleSelect
                 value={namespace}
                 onChange={setNamespace}
-                options={[{value: "all", label: t("helm:All namespaces")}]}
+                options={[{value: "all", label: t("general:All namespaces")}]}
                 className="w-44"
               />
               <Button variant="outline" size="sm" onClick={() => fetchReleases()} loading={loading}>
@@ -691,7 +691,7 @@ export default function HelmReleasePage() {
               </Button>
               <Button size="sm" onClick={() => router.push(resolvePath("/app-store"))}>
                 <Plus />
-                {t("helm:Install")}
+                {t("general:Install")}
               </Button>
             </>
           }
@@ -722,7 +722,7 @@ export default function HelmReleasePage() {
                 <Input
                   value={query}
                   onChange={(event) => setQuery(event.target.value)}
-                  placeholder={t("simple:Search apps")}
+                  placeholder={t("general:Search apps")}
                   className="pl-9"
                 />
               </div>
@@ -779,7 +779,7 @@ export default function HelmReleasePage() {
       <ResourceSheet
         open={Boolean(historyRelease)}
         onOpenChange={(next) => (next ? null : setHistoryRelease(null))}
-        title={historyRelease ? `${t("helm:History")}: ${historyRelease.name}` : ""}
+        title={historyRelease ? `${t("general:History")}: ${historyRelease.name}` : ""}
         size="md"
         bodyClassName="overflow-y-auto scrollbar-thin"
       >

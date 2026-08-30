@@ -78,7 +78,7 @@ function TemplateInstancePage(props) {
   if (!instance) {
     return (
       <PageContainer>
-        <MessageAlert title={error ?? i18next.t("template:App not found")} />
+        <MessageAlert title={error ?? i18next.t("launchpad:App not found")} />
         <div>
           <Button variant="outline" onClick={() => history.push("/helm-releases")}>
             <ArrowLeft />
@@ -91,7 +91,7 @@ function TemplateInstancePage(props) {
 
   const objectColumns = [
     {key: "kind", title: i18next.t("template:Kind"), dataIndex: "kind", width: 180, sortable: true},
-    {key: "name", title: i18next.t("template:Name"), dataIndex: "name", minWidth: 220, ellipsis: true},
+    {key: "name", title: i18next.t("general:Name"), dataIndex: "name", minWidth: 220, ellipsis: true},
     {
       key: "group",
       title: i18next.t("template:API group"),
@@ -119,7 +119,7 @@ function TemplateInstancePage(props) {
             </Button>
             <Button variant="destructive" onClick={() => setDeleteOpen(true)}>
               <Trash2 />
-              {i18next.t("launchpad:Delete")}
+              {i18next.t("general:Delete")}
             </Button>
           </div>
         }
@@ -212,9 +212,9 @@ function TemplateInstancePage(props) {
       <ConfirmDialog
         open={deleteOpen}
         onOpenChange={setDeleteOpen}
-        title={`${i18next.t("launchpad:Delete")} ${instance.title || instance.name}`}
+        title={`${i18next.t("general:Delete")} ${instance.title || instance.name}`}
         description={i18next.t("template:Everything this app created is removed. Databases keep their data unless you say otherwise.")}
-        confirmText={i18next.t("launchpad:Delete")}
+        confirmText={i18next.t("general:Delete")}
         onConfirm={remove}
         extra={
           <label className="flex items-center gap-2 text-sm">

@@ -102,7 +102,7 @@ function MoreAppsFolder({apps, light, onOpen, onDrop}) {
           light ? "text-neutral-900" : "text-white drop-shadow-[0_1px_2px_rgba(0,0,0,0.6)]"
         )}
       >
-        {i18next.t("desktop:All apps")}
+        {i18next.t("general:All apps")}
       </span>
     </button>
   );

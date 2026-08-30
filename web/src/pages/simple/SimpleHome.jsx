@@ -205,7 +205,7 @@ function SimpleHome({stats, releases, machines, checklist}) {
             <UsageRow
               label={t("simple:Processing power in use")}
               percent={cpuPercent}
-              detail={`${(stats.clusterCPUUsedM / 1000).toFixed(1)} / ${(cpuTotal / 1000).toFixed(1)} ${t("simple:cores")}`}
+              detail={`${(stats.clusterCPUUsedM / 1000).toFixed(1)} / ${(cpuTotal / 1000).toFixed(1)} ${t("general:cores")}`}
             />
             <UsageRow
               label={t("simple:Memory in use")}

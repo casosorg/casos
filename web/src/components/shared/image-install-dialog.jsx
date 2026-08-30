@@ -300,7 +300,7 @@ export function ImageInstallDialog({open, image, action = "install", app, onClos
         envVars: envRows.map((row) => ({name: row.key, value: row.value})),
         volumes: form.volumes.map((volume) => ({mountPath: volume.mountPath})),
       }),
-      {successMessage: t("image:App updated")}
+      {successMessage: t("launchpad:App updated")}
     );
     return Boolean(updated);
   }
@@ -327,7 +327,7 @@ export function ImageInstallDialog({open, image, action = "install", app, onClos
             .map((entry) => ({name: entry.key, value: entry.value})),
           volumes: [{mountPath: engine.mountPath, size: database.size}],
         }),
-        {successMessage: t("image:Database created")}
+        {successMessage: t("database:Database created")}
       );
       if (!created) {
         return false;
@@ -362,14 +362,14 @@ export function ImageInstallDialog({open, image, action = "install", app, onClos
     }
     const nextErrors = {};
     if (!form.name.trim()) {
-      nextErrors.name = t("policy:required");
+      nextErrors.name = t("general:required");
     }
     if (database?.enabled) {
       if (!database.name.trim()) {
-        nextErrors.databaseName = t("policy:required");
+        nextErrors.databaseName = t("general:required");
       }
       if (!database.password) {
-        nextErrors.databasePassword = t("policy:required");
+        nextErrors.databasePassword = t("general:required");
       }
     }
     setErrors(nextErrors);
@@ -396,7 +396,7 @@ export function ImageInstallDialog({open, image, action = "install", app, onClos
       title={upgrading ? app?.name : config?.title || repository}
       description={repository}
       size="lg"
-      submitText={upgrading ? t("helm:Upgrade") : t("helm:Install")}
+      submitText={upgrading ? t("helm:Upgrade") : t("general:Install")}
       cancelText={t("general:Cancel")}
       submitting={submitting}
       submitDisabled={loading || !form || Boolean(error)}
@@ -415,7 +415,7 @@ export function ImageInstallDialog({open, image, action = "install", app, onClos
           {config.description ? <p className="text-muted-foreground text-xs leading-relaxed">{config.description}</p> : null}
 
           <div className="grid gap-4 sm:grid-cols-2">
-            <Field label={t("image:App name")} htmlFor="image-install-name" required error={errors.name}>
+            <Field label={t("general:App name")} htmlFor="image-install-name" required error={errors.name}>
               <Input
                 id="image-install-name"
                 value={form.name}
@@ -472,7 +472,7 @@ export function ImageInstallDialog({open, image, action = "install", app, onClos
           </Field>
 
           <Field
-            label={t("image:Storage")}
+            label={t("general:Storage")}
             hint={upgrading ? "" : t("image:Prefilled from the paths the image declares as volumes")}
           >
             <DeploymentStorageEditor
@@ -482,13 +482,13 @@ export function ImageInstallDialog({open, image, action = "install", app, onClos
             />
           </Field>
 
-          <Field label={t("image:Environment")}>
+          <Field label={t("general:Environment")}>
             <KeyValueEditor
               value={form.env}
               onChange={(next) => updateForm({env: next})}
               keyPlaceholder="NAME"
               valuePlaceholder="value"
-              addLabel={t("image:Add variable")}
+              addLabel={t("launchpad:Add variable")}
             />
             {hiddenEnv.length > 0 ? (
               <Button
@@ -529,7 +529,7 @@ export function ImageInstallDialog({open, image, action = "install", app, onClos
 
               {database.enabled ? (
                 <div className="grid gap-4 sm:grid-cols-3">
-                  <Field label={t("image:Database name")} htmlFor="image-db-name" required error={errors.databaseName}>
+                  <Field label={t("database:Database name")} htmlFor="image-db-name" required error={errors.databaseName}>
                     <Input
                       id="image-db-name"
                       value={database.name}

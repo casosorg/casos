@@ -222,7 +222,7 @@ export function NotificationCenter({stats, onOpenApp}) {
               {i18next.t("desktop:Unread")}
               {unread.length > 0 ? ` (${unread.length})` : ""}
             </TabsTrigger>
-            <TabsTrigger value="all">{i18next.t("desktop:All")}</TabsTrigger>
+            <TabsTrigger value="all">{i18next.t("general:All")}</TabsTrigger>
           </TabsList>
           <TabsContent value="unread">
             <NotificationList notifications={unread} empty={i18next.t("desktop:Nothing needs attention")} onOpen={openTarget} />

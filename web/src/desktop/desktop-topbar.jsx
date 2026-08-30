@@ -68,7 +68,7 @@ function AppSearch({apps, onOpenApp}) {
         data-testid="desktop-search"
         value={term}
         onChange={(event) => setTerm(event.target.value)}
-        placeholder={i18next.t("desktop:Search apps")}
+        placeholder={i18next.t("general:Search apps")}
         className="h-8 w-full rounded-lg border border-white/20 bg-white/15 pr-3 pl-9 text-sm text-white placeholder:text-white/60 focus:outline-none"
       />
       {matches.length > 0 && (

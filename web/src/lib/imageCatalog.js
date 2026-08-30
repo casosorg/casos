@@ -7,7 +7,9 @@
  * an install actually needs still comes from the image's own config, read at
  * install time.
  *
- * `description` doubles as the i18next key in the `image` namespace.
+ * `description` doubles as the i18next key, in the `image` namespace unless the
+ * simple-mode catalog already describes the same app in the same words — an
+ * i18n key lives in one namespace only (see i18n/deduplicate_test.go).
  */
 export const IMAGE_STARTER_APPS = [
   {
@@ -23,7 +25,7 @@ export const IMAGE_STARTER_APPS = [
   {
     image: "nextcloud",
     name: "Nextcloud",
-    description: "image:Your own private cloud drive for files, photos and calendars.",
+    description: "simple:Your own private cloud drive for files, photos and calendars.",
   },
   {
     image: "gitea/gitea",
@@ -58,12 +60,12 @@ export const IMAGE_STARTER_APPS = [
   {
     image: "mariadb",
     name: "MariaDB",
-    description: "image:The database most websites and blogs expect.",
+    description: "simple:The database most websites and blogs expect.",
   },
   {
     image: "postgres",
     name: "PostgreSQL",
-    description: "image:A reliable database other apps can store their data in.",
+    description: "simple:A reliable database other apps can store their data in.",
   },
   {
     image: "redis",

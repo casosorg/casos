@@ -205,16 +205,16 @@ function DatabaseEditPage(props) {
           </div>
 
           <div className="grid gap-4 sm:grid-cols-3">
-            <FormRow label={i18next.t("database:Version")}>
+            <FormRow label={i18next.t("general:Version")}>
               <SimpleSelect
                 value={form.version || engine?.versions?.[0] || ""}
                 onChange={(next) => set({version: next})}
                 options={(engine?.versions ?? []).map((version) => ({label: version, value: version}))}
-                placeholder={i18next.t("database:Version")}
+                placeholder={i18next.t("general:Version")}
               />
             </FormRow>
             <FormRow
-              label={i18next.t("database:Name")}
+              label={i18next.t("general:Name")}
               error={errors.name === "required"
                 ? i18next.t("launchpad:A name is required")
                 : errors.name ? i18next.t("launchpad:Lowercase letters, digits and dashes only") : null}
@@ -248,7 +248,7 @@ function DatabaseEditPage(props) {
           </CardHeader>
           <CardContent className="grid gap-4 sm:grid-cols-3">
             <FormRow
-              label={i18next.t("launchpad:Username")}
+              label={i18next.t("general:Username")}
               hint={engine?.fixedUser ? i18next.t("database:This engine only has one superuser.") : null}
             >
               <Input
@@ -269,7 +269,7 @@ function DatabaseEditPage(props) {
                 placeholder={form.name || "app"}
               />
             </FormRow>
-            <FormRow label={i18next.t("launchpad:Password")}>
+            <FormRow label={i18next.t("general:Password")}>
               <PasswordInput
                 value={form.password}
                 onChange={(event) => set({password: event.target.value})}
@@ -295,7 +295,7 @@ function DatabaseEditPage(props) {
             </FormRow>
           </div>
           <FormRow
-            label={i18next.t("database:Storage")}
+            label={i18next.t("general:Storage")}
             error={errors.storage ? i18next.t("database:Use a size like 10Gi") : null}
           >
             <PresetRow value={form.storage} presets={STORAGE_PRESETS} onChange={(next) => set({storage: next})} placeholder="e.g. 20Gi" />

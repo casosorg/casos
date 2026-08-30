@@ -12,7 +12,7 @@ import {ALL_WORKSPACES, useWorkspace} from "@/hooks/use-workspace";
  */
 export function WorkspaceSelect({className, onDark = false}) {
   const {workspace, setWorkspace, namespaces, refresh} = useWorkspace();
-  const label = workspace || i18next.t("workspace:All namespaces");
+  const label = workspace || i18next.t("general:All namespaces");
 
   // Namespaces come and go while the desktop stays open, so the list is read
   // again each time it is asked for rather than once at startup.
@@ -36,7 +36,7 @@ export function WorkspaceSelect({className, onDark = false}) {
       <DropdownMenuContent align="start" className="max-h-80 w-56 overflow-auto">
         <DropdownMenuItem onClick={() => setWorkspace(ALL_WORKSPACES)}>
           <Check className={cn("size-4", workspace ? "opacity-0" : "opacity-100")} />
-          {i18next.t("workspace:All namespaces")}
+          {i18next.t("general:All namespaces")}
         </DropdownMenuItem>
         <DropdownMenuSeparator />
         {namespaces.map((namespace) => (

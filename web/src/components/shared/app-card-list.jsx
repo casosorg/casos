@@ -155,12 +155,12 @@ function AppCard({release, resources, pending, onOpenLogs, onUpgrade, onToggleRu
           </Button>
         ) : null}
         {release.kind === "image" ? (
-          <SimpleTooltip title={release.status === "stopped" ? t("image:Start") : t("image:Stop")}>
+          <SimpleTooltip title={release.status === "stopped" ? t("general:Start") : t("general:Stop")}>
             <Button
               variant="ghost"
               size="icon-sm"
               onClick={() => onToggleRunning(release)}
-              aria-label={release.status === "stopped" ? t("image:Start") : t("image:Stop")}
+              aria-label={release.status === "stopped" ? t("general:Start") : t("general:Stop")}
             >
               {release.status === "stopped" ? <Play /> : <Square />}
             </Button>
@@ -171,8 +171,8 @@ function AppCard({release, resources, pending, onOpenLogs, onUpgrade, onToggleRu
             <CircleArrowUp />
           </Button>
         </SimpleTooltip>
-        <SimpleTooltip title={t("simple:Logs")}>
-          <Button variant="ghost" size="icon-sm" onClick={() => onOpenLogs(release)} aria-label={t("simple:Logs")}>
+        <SimpleTooltip title={t("general:Logs")}>
+          <Button variant="ghost" size="icon-sm" onClick={() => onOpenLogs(release)} aria-label={t("general:Logs")}>
             <ScrollText />
           </Button>
         </SimpleTooltip>
@@ -198,7 +198,7 @@ function AppCard({release, resources, pending, onOpenLogs, onUpgrade, onToggleRu
             variant="ghost"
             size="icon-sm"
             className="text-muted-foreground hover:text-destructive hover:bg-destructive/10"
-            aria-label={t("simple:Remove")}
+            aria-label={t("general:Remove")}
           >
             <Trash2 />
           </Button>

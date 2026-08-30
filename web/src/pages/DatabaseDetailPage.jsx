@@ -225,7 +225,7 @@ function DatabaseDetailPage(props) {
       width: 90,
       align: "right",
       render: (_value, record) => (
-        <Button size="icon-sm" variant="ghost" title={i18next.t("launchpad:Logs")} aria-label={i18next.t("launchpad:Logs")} onClick={() => setLogsPod(record)}>
+        <Button size="icon-sm" variant="ghost" title={i18next.t("general:Logs")} aria-label={i18next.t("general:Logs")} onClick={() => setLogsPod(record)}>
           <ScrollText />
         </Button>
       ),
@@ -266,8 +266,8 @@ function DatabaseDetailPage(props) {
           <Button
             size="icon-sm"
             variant="ghost"
-            title={i18next.t("launchpad:Delete")}
-            aria-label={i18next.t("launchpad:Delete")}
+            title={i18next.t("general:Delete")}
+            aria-label={i18next.t("general:Delete")}
             onClick={() => setBackupTarget(record)}
           >
             <Trash2 />
@@ -314,17 +314,17 @@ function DatabaseDetailPage(props) {
             {detail.status === "stopped" ? (
               <Button variant="outline" onClick={() => toggleRunning(true)}>
                 <Play />
-                {i18next.t("launchpad:Start")}
+                {i18next.t("general:Start")}
               </Button>
             ) : (
               <Button variant="outline" onClick={() => toggleRunning(false)}>
                 <Square />
-                {i18next.t("launchpad:Stop")}
+                {i18next.t("general:Stop")}
               </Button>
             )}
             <Button variant="destructive" onClick={() => setDeleteOpen(true)}>
               <Trash2 />
-              {i18next.t("launchpad:Delete")}
+              {i18next.t("general:Delete")}
             </Button>
           </div>
         }
@@ -340,7 +340,7 @@ function DatabaseDetailPage(props) {
           tone={running ? "success" : detail.status === "failed" ? "danger" : "default"}
         />
         <StatCard label={i18next.t("database:Instances")} value={`${detail.readyReplicas ?? 0} / ${detail.replicas ?? 0}`} icon={Boxes} />
-        <StatCard label={i18next.t("database:Storage")} value={detail.storage || "—"} icon={HardDrive} />
+        <StatCard label={i18next.t("general:Storage")} value={detail.storage || "—"} icon={HardDrive} />
         <StatCard label={i18next.t("launchpad:Memory limit")} value={detail.memoryLimit || "—"} icon={Save} />
       </div>
 
@@ -353,8 +353,8 @@ function DatabaseDetailPage(props) {
           <div className="grid gap-3">
             <CopyField label={i18next.t("database:Host")} value={detail.internalHost} />
             <CopyField label={i18next.t("database:Port")} value={String(detail.port ?? "")} />
-            <CopyField label={i18next.t("launchpad:Username")} value={detail.user} />
-            <CopyField label={i18next.t("launchpad:Password")} value={detail.password} secret />
+            <CopyField label={i18next.t("general:Username")} value={detail.user} />
+            <CopyField label={i18next.t("general:Password")} value={detail.password} secret />
           </div>
           <div className="grid gap-3">
             <CopyField label={i18next.t("database:Connection string")} value={detail.internalUri} secret />
@@ -393,7 +393,7 @@ function DatabaseDetailPage(props) {
 
       <DataTable
         testId="database-pods-table"
-        title={i18next.t("launchpad:Pods")}
+        title={i18next.t("general:Pods")}
         columns={podColumns}
         dataSource={detail.pods ?? []}
         rowKey="name"
@@ -445,16 +445,16 @@ function DatabaseDetailPage(props) {
         onOpenChange={(open) => (open ? null : setBackupTarget(null))}
         title={i18next.t("database:Delete this backup")}
         description={backupTarget?.name}
-        confirmText={i18next.t("launchpad:Delete")}
+        confirmText={i18next.t("general:Delete")}
         onConfirm={removeBackup}
       />
 
       <ConfirmDialog
         open={deleteOpen}
         onOpenChange={setDeleteOpen}
-        title={`${i18next.t("launchpad:Delete")} ${detail.name}`}
+        title={`${i18next.t("general:Delete")} ${detail.name}`}
         description={i18next.t("database:The engine and its address are removed. Its data and backups are kept unless you say otherwise.")}
-        confirmText={i18next.t("launchpad:Delete")}
+        confirmText={i18next.t("general:Delete")}
         onConfirm={remove}
         extra={
           <label className="flex items-center gap-2 text-sm">
