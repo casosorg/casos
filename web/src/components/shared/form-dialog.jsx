@@ -71,7 +71,10 @@ export function FormDialog({
  */
 export function Field({label, htmlFor, required = false, hint, error, children, className}) {
   return (
-    <div className={cn("grid gap-2", className)}>
+    // content-start: in a grid row made tall by a neighbouring field, stretched
+    // rows push the label down and drag absolutely-positioned input adornments
+    // below the control.
+    <div className={cn("grid content-start gap-2", className)}>
       {label ? (
         <Label htmlFor={htmlFor}>
           {label}

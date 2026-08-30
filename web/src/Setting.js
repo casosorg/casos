@@ -154,17 +154,47 @@ export function getShortName(s) {
   return (s || "").charAt(0).toUpperCase();
 }
 
-// The site record carries a per-deployment accent colour. Tailwind reads it as
-// the --brand custom property, so setting it here re-tints every `brand`
-// utility without a rebuild.
+// `brand` alone tints nothing, so the accent is pushed onto the shadcn tokens
+// that buttons, active sidebar rows and focus rings actually paint with. Inline
+// on <html> it also outranks the `.dark` block, so one value covers both themes.
+const THEME_COLOR_TOKENS = ["--brand", "--primary", "--sidebar-primary", "--ring", "--sidebar-ring"];
+const THEME_COLOR_FOREGROUND_TOKENS = ["--primary-foreground", "--sidebar-primary-foreground"];
+
+function normalizeThemeColor(color) {
+  const value = (color || "").trim();
+  return (/^#([0-9a-f]{3}|[0-9a-f]{6})$/i).test(value) ? value : "";
+}
+
+// Text sitting on the accent has to flip with it, or a pale brand colour leaves
+// white-on-white buttons.
+function getThemeForegroundColor(hex) {
+  const digits = hex.slice(1);
+  const full = digits.length === 3 ? digits.split("").map((c) => c + c).join("") : digits;
+  const channel = (offset) => {
+    const c = parseInt(full.slice(offset, offset + 2), 16) / 255;
+    return c <= 0.04045 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4);
+  };
+  const luminance = 0.2126 * channel(0) + 0.7152 * channel(2) + 0.0722 * channel(4);
+  return luminance > 0.45 ? "oklch(0.145 0 0)" : "oklch(0.985 0 0)";
+}
+
 export function setThemeColor(color) {
-  if (!color) {return;}
-  localStorage.setItem("themeColor", color);
-  document.documentElement.style.setProperty("--brand", color);
+  const root = document.documentElement;
+  const value = normalizeThemeColor(color);
+  if (!value) {
+    localStorage.removeItem("themeColor");
+    THEME_COLOR_TOKENS.concat(THEME_COLOR_FOREGROUND_TOKENS).forEach((token) => root.style.removeProperty(token));
+    return;
+  }
+
+  localStorage.setItem("themeColor", value);
+  const foreground = getThemeForegroundColor(value);
+  THEME_COLOR_TOKENS.forEach((token) => root.style.setProperty(token, value));
+  THEME_COLOR_FOREGROUND_TOKENS.forEach((token) => root.style.setProperty(token, foreground));
 }
 
 export function getThemeColor() {
-  return localStorage.getItem("themeColor") || "#404040";
+  return localStorage.getItem("themeColor") || "";
 }
 
 export function isDarkTheme(themeAlgorithm) {

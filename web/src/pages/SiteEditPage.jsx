@@ -74,7 +74,7 @@ function SiteEditPage({onUpdateSite}) {
           return;
         }
         Setting.showMessage("success", i18next.t("general:Successfully saved"));
-        Setting.setThemeColor(site.themeColor || Setting.getThemeColor());
+        Setting.setThemeColor(site.themeColor);
         onUpdateSite?.();
         // The name is editable, so the URL has to follow it or a reload 404s.
         history.push(`/sites/${site.name}`);
