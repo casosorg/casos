@@ -27,11 +27,14 @@ function Alert({className, variant = "default", ...props}) {
   );
 }
 
+// Unlike the upstream shadcn title this one wraps: the title here is usually a
+// whole backend error message, and clamping it to one line hides the part that
+// says what actually went wrong.
 function AlertTitle({className, ...props}) {
   return (
     <div
       data-slot="alert-title"
-      className={cn("col-start-2 line-clamp-1 min-h-4 font-medium tracking-tight", className)}
+      className={cn("col-start-2 min-h-4 font-medium tracking-tight break-words whitespace-pre-wrap", className)}
       {...props}
     />
   );

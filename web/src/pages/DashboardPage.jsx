@@ -233,7 +233,7 @@ function DashboardPage({account, accountUpdatedAt, onOpenAccount}) {
       <div className="grid gap-4">
         <Alert variant={healthStatus === "unknown" ? "warning" : "destructive"}>
           <TriangleAlert />
-          <AlertTitle className="line-clamp-none break-words">{healthMessage}</AlertTitle>
+          <AlertTitle>{healthMessage}</AlertTitle>
           {listUnhealthy ? <AlertDescription>{t("dashboard:alert inspect pods")}</AlertDescription> : null}
         </Alert>
         {listUnhealthy ? (
