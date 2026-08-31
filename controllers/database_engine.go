@@ -267,8 +267,10 @@ var databaseEngines = map[string]databaseEngine{
 		},
 		Params: []databaseParam{
 			{Key: "maxmemory", Label: "Memory limit", Kind: "size", Default: "0", Hint: "0 means no limit of its own."},
-			{Key: "maxmemory-policy", Label: "What to drop when full", Kind: "enum", Default: "noeviction",
-				Options: []string{"noeviction", "allkeys-lru", "allkeys-lfu", "volatile-lru", "volatile-lfu", "volatile-ttl", "volatile-random", "allkeys-random"}},
+			{
+				Key: "maxmemory-policy", Label: "What to drop when full", Kind: "enum", Default: "noeviction",
+				Options: []string{"noeviction", "allkeys-lru", "allkeys-lfu", "volatile-lru", "volatile-lfu", "volatile-ttl", "volatile-random", "allkeys-random"},
+			},
 			{Key: "timeout", Label: "Idle client timeout (s)", Kind: "int", Default: "0"},
 		},
 		BackupSuffix: ".rdb.gz",
