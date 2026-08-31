@@ -31,9 +31,9 @@ const (
 // waiting on. Helm then returns its own error, and Reason supplies the sentence
 // that says what was actually wrong.
 type helmInstallFailFast struct {
-	cancel context.CancelFunc
-	done   chan struct{}
-	stop   sync.Once
+	cancelWatch context.CancelFunc
+	done        chan struct{}
+	stopOnce    sync.Once
 
 	mu     sync.Mutex
 	reason string
@@ -43,28 +43,38 @@ type helmInstallFailFast struct {
 // container has crashed past the threshold. cancel must be the cancel function
 // of the context Helm's Wait is using.
 func startHelmInstallFailFast(ctx context.Context, cancel context.CancelFunc, cfg *rest.Config, releaseName, namespace string) *helmInstallFailFast {
-	watcher := &helmInstallFailFast{cancel: cancel, done: make(chan struct{})}
+	watcher := &helmInstallFailFast{done: make(chan struct{})}
 	client, err := kubernetes.NewForConfig(cfg)
 	if err != nil || cancel == nil {
 		close(watcher.done)
 		return watcher
+	}
+	if ctx == nil {
+		ctx = context.Background()
 	}
 	if namespace == "" {
 		namespace = "default"
 	}
 	selector := labels.SelectorFromSet(labels.Set{"app.kubernetes.io/instance": releaseName}).String()
 
+	// The watch gets a context of its own so Stop can end it without cancelling
+	// the install: the install's own context outlives a successful Wait, so a
+	// watch tied to it would keep Stop waiting for the whole install timeout.
+	watchCtx, cancelWatch := context.WithCancel(ctx)
+	watcher.cancelWatch = cancelWatch
+
 	go func() {
 		defer close(watcher.done)
+		defer cancelWatch()
 		ticker := time.NewTicker(helmFailFastPollInterval)
 		defer ticker.Stop()
 		for {
 			select {
-			case <-ctx.Done():
+			case <-watchCtx.Done():
 				return
 			case <-ticker.C:
 			}
-			pods, err := client.CoreV1().Pods(namespace).List(ctx, metav1.ListOptions{LabelSelector: selector})
+			pods, err := client.CoreV1().Pods(namespace).List(watchCtx, metav1.ListOptions{LabelSelector: selector})
 			if err != nil {
 				// A transient list failure must not end the install; the next
 				// tick tries again.
@@ -99,7 +109,12 @@ func (w *helmInstallFailFast) Stop() {
 	if w == nil {
 		return
 	}
-	w.stop.Do(func() { <-w.done })
+	w.stopOnce.Do(func() {
+		if w.cancelWatch != nil {
+			w.cancelWatch()
+		}
+		<-w.done
+	})
 }
 
 func helmFailFastReason(pods []corev1.Pod) string {
