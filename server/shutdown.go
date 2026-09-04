@@ -1,4 +1,4 @@
-package main
+package server
 
 import (
 	"context"
@@ -14,7 +14,7 @@ import (
 // that a Ctrl+C never leaves the user waiting on a subsystem that is stuck.
 const shutdownTimeout = 10 * time.Second
 
-// shutdownOnSignal ends the process once the first SIGINT or SIGTERM cancels
+// ShutdownOnSignal ends the process once the first SIGINT or SIGTERM cancels
 // ctx.
 //
 // signal.NotifyContext takes those signals away from the Go runtime: with a
@@ -22,7 +22,7 @@ const shutdownTimeout = 10 * time.Second
 // cancels ctx. beego.Run blocks forever and never watches ctx, so without this
 // goroutine the web server keeps serving after Ctrl+C and only killing the
 // process stops it.
-func shutdownOnSignal(ctx context.Context, stop context.CancelFunc) {
+func ShutdownOnSignal(ctx context.Context, stop context.CancelFunc) {
 	<-ctx.Done()
 
 	// Hand the signals back to the runtime first, so a second Ctrl+C kills
