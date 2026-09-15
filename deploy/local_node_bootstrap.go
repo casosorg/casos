@@ -189,6 +189,49 @@ func localWSLNodeMachine(ctx context.Context) (*object.Machine, error) {
 	return result.Machine, nil
 }
 
+// ResumeWSLKeepAlives holds open every WSL distro that already hosts a worker
+// node, so that a restart of CasOS does not cost the cluster its nodes.
+//
+// The keepalive that startWSLKeepAlive starts lives in this process, so it dies
+// with it. Enrolling a distro is what used to start one, and a restart enrolls
+// nothing: the machine is already there. The distro was then left with nothing
+// attached to it, and WSL stopped it about a minute later, taking the kubelet
+// and everything the cluster was running down with it. That is a restart of
+// CasOS quietly ending every app on the node.
+//
+// This runs whatever autoEnrollLocalNode says. Declining to have nodes enrolled
+// automatically is not declining to keep the ones already deployed running.
+func ResumeWSLKeepAlives(ctx context.Context) {
+	if runtime.GOOS != "windows" {
+		return
+	}
+	if err := wsl.Available(); err != nil {
+		return
+	}
+	status, err := wsl.Detect(ctx)
+	if err != nil || status == nil {
+		return
+	}
+	machines, err := object.GetGlobalMachines()
+	if err != nil {
+		logs.Warning("wsl keepalive: cannot list machines: %v", err)
+		return
+	}
+	deployed := map[string]bool{}
+	for _, machine := range machines {
+		if machine != nil && machine.Status == object.MachineStatusDeployed {
+			deployed[machine.Name] = true
+		}
+	}
+	for i := range status.Distros {
+		distro := status.Distros[i]
+		if !distro.Usable() || !deployed[localWSLMachineName(distro.Name)] {
+			continue
+		}
+		startWSLKeepAlive(ctx, distro.Name)
+	}
+}
+
 // startWSLKeepAlive keeps the distro that hosts the worker node running for as
 // long as CasOS does. WSL stops a distro once nothing is attached to it, which
 // takes the kubelet down with it, so without this the node goes NotReady a
