@@ -33,7 +33,17 @@ func appendContainerLogDiagnostics(ctx context.Context, client kubernetes.Interf
 			if !ok {
 				continue
 			}
-			tail := containerLogTail(ctx, client, namespace, pod.Name, status.Name, previous)
+			tail, err := containerLogTail(ctx, client, namespace, pod.Name, status.Name, previous)
+			if err != nil {
+				// Saying why the log could not be read is worth as much as the
+				// log: a reader who is told the apiserver cannot reach the
+				// kubelet knows to go and look at the node, whereas silence
+				// here leaves "CrashLoopBackOff" as the whole explanation.
+				lines = append(lines, fmt.Sprintf("    could not read the log of container %s in %s: %s",
+					status.Name, pod.Name, oneLineDiagnosticText(err.Error(), helmDiagnosticsLogLineLen)))
+				reported++
+				break
+			}
 			if tail == "" {
 				continue
 			}
@@ -65,7 +75,7 @@ func failedContainerLogSource(status corev1.ContainerStatus) (previous bool, ok 
 	return false, false
 }
 
-func containerLogTail(ctx context.Context, client kubernetes.Interface, namespace, podName, containerName string, previous bool) string {
+func containerLogTail(ctx context.Context, client kubernetes.Interface, namespace, podName, containerName string, previous bool) (string, error) {
 	tailLines := int64(helmDiagnosticsLogTailLines)
 	limit := int64(helmDiagnosticsLogReadBudget)
 	request := client.CoreV1().Pods(namespace).GetLogs(podName, &corev1.PodLogOptions{
@@ -76,7 +86,7 @@ func containerLogTail(ctx context.Context, client kubernetes.Interface, namespac
 	})
 	stream, err := request.Stream(ctx)
 	if err != nil {
-		return ""
+		return "", err
 	}
 	defer stream.Close()
 
@@ -93,5 +103,8 @@ func containerLogTail(ctx context.Context, client kubernetes.Interface, namespac
 			collected = collected[1:]
 		}
 	}
-	return strings.Join(collected, "\n")
+	if err := scanner.Err(); err != nil && len(collected) == 0 {
+		return "", err
+	}
+	return strings.Join(collected, "\n"), nil
 }
