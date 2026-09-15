@@ -136,6 +136,10 @@ func main() {
 				logs.Warning("start controller-manager: %v", err)
 			}
 			server.RegisterInstallImageVulnerabilityReporter()
+			// Before the bootstrap, and whatever it decides to do: a node
+			// deployed by an earlier run needs its distro held open again, or
+			// WSL stops it and the node goes with it.
+			deploy.ResumeWSLKeepAlives(ctx)
 			// Last, because it deploys a worker node and therefore needs the
 			// scheduler, the controller-manager and the cluster networking that
 			// Bootstrap installs to be running already.
