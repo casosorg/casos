@@ -258,11 +258,6 @@ var kubeBlocksEngines = map[string]string{
 	"redis":          "redis",
 }
 
-// sealosDefaultDatabaseName is the initial schema sealos's own KubeBlocks
-// provider creates for an engine, which templates hardcode rather than read
-// back from the connection secret. mongodb and redis are absent: neither has
-// an equivalent fixed-name convention in the templates that use them, so they
-// keep falling back to the cluster's own name.
 var sealosDefaultDatabaseName = map[string]string{
 	"mysql":      "mydb",
 	"postgresql": "postgres",
@@ -310,15 +305,7 @@ func (a *templateApplier) applyDatabase(item *unstructured.Unstructured) (string
 		Name:      item.GetName(),
 		Engine:    engine.Key,
 		Version:   engineVersionFromRef(engine, versionRef),
-		// Leaving Database empty falls back to the cluster's own generated
-		// name (createDatabase in database.go), but sealos templates are
-		// written against its provider's own initial-database convention and
-		// hardcode that name rather than reading it from the connection
-		// secret (e.g. the gitea and wordpress templates both set
-		// GITEA__database__NAME / WORDPRESS_DB_NAME to the literal "mydb").
-		// Without this, every sealos template that asks for an external
-		// MySQL database points at a schema that was never created.
-		Database: sealosDefaultDatabaseName[engine.Key],
+		Database:  sealosDefaultDatabaseName[engine.Key],
 	}
 
 	components, _, _ := unstructured.NestedSlice(item.Object, "spec", "componentSpecs")
