@@ -660,7 +660,16 @@ func (c *ApiController) DeleteTemplateInstance() {
 		c.ResponseError(err.Error())
 		return
 	}
+	// The claims a StatefulSet had minted for it outlive the objects the
+	// instance recorded, so they have to be named while their StatefulSet is
+	// still there to name them from.
+	var claims []string
+	if req.DeleteData {
+		claims = applier.statefulSetClaimNames(c.Ctx.Request.Context(), instance.Objects)
+	}
+
 	failures := applier.deleteApplied(c.Ctx.Request.Context(), instance.Objects)
+	failures = append(failures, applier.deleteClaims(c.Ctx.Request.Context(), req.Namespace, claims)...)
 
 	for _, database := range instance.Databases {
 		failures = append(failures, deleteDatabaseObjects(cfg, req.Namespace, database, req.DeleteData)...)
