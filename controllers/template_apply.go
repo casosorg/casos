@@ -373,6 +373,64 @@ func (a *templateApplier) writeConnCredential(name string, credentials databaseC
 	return err
 }
 
+// statefulSetClaimNames names the PersistentVolumeClaims a template's
+// StatefulSets have had minted for them. The StatefulSet controller creates one
+// per volumeClaimTemplate per replica and deliberately leaves them behind, and
+// they never appear in the manifest the instance recorded, so deleteApplied has
+// nothing to delete them by. Their names are built the way the controller
+// builds them, which is the only handle on them that does not depend on labels
+// the template happened to set.
+//
+// Read this before deleteApplied runs: afterwards the StatefulSet whose
+// volumeClaimTemplates name them is gone.
+func (a *templateApplier) statefulSetClaimNames(ctx context.Context, objects []appliedObject) []string {
+	names := []string{}
+	for _, item := range objects {
+		if item.Kind != "StatefulSet" || item.Namespace == "" {
+			continue
+		}
+		gvr := schema.GroupVersionResource{Group: item.Group, Version: item.Version, Resource: item.Resource}
+		set, err := a.dynamic.Resource(gvr).Namespace(item.Namespace).Get(ctx, item.Name, metav1.GetOptions{})
+		if err != nil {
+			continue
+		}
+		replicas, found, _ := unstructured.NestedInt64(set.Object, "spec", "replicas")
+		if !found || replicas < 1 {
+			replicas = 1
+		}
+		claims, _, _ := unstructured.NestedSlice(set.Object, "spec", "volumeClaimTemplates")
+		for _, entry := range claims {
+			claim, ok := entry.(map[string]any)
+			if !ok {
+				continue
+			}
+			claimName, _, _ := unstructured.NestedString(claim, "metadata", "name")
+			if claimName == "" {
+				continue
+			}
+			for ordinal := int64(0); ordinal < replicas; ordinal++ {
+				names = append(names, fmt.Sprintf("%s-%s-%d", claimName, item.Name, ordinal))
+			}
+		}
+	}
+	return names
+}
+
+// deleteClaims removes the volumes statefulSetClaimNames found. A claim a pod
+// has not finished releasing stays until it has, which is the cluster's own
+// business rather than something to wait on here.
+func (a *templateApplier) deleteClaims(ctx context.Context, namespace string, names []string) []string {
+	failures := []string{}
+	gvr := schema.GroupVersionResource{Version: "v1", Resource: "persistentvolumeclaims"}
+	for _, name := range names {
+		err := a.dynamic.Resource(gvr).Namespace(namespace).Delete(ctx, name, metav1.DeleteOptions{})
+		if err != nil && !errors.IsNotFound(err) {
+			failures = append(failures, fmt.Sprintf("volume %s (%v)", name, err))
+		}
+	}
+	return failures
+}
+
 // deleteApplied removes what an instance created, newest first so that an
 // object is never left pointing at one that is already gone.
 func (a *templateApplier) deleteApplied(ctx context.Context, objects []appliedObject) []string {
