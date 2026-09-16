@@ -373,18 +373,10 @@ func (a *templateApplier) writeConnCredential(name string, credentials databaseC
 	return err
 }
 
-// statefulSetClaimNames names the PersistentVolumeClaims a template's
-// StatefulSets have had minted for them. The StatefulSet controller creates one
-// per volumeClaimTemplate per replica and deliberately leaves them behind, and
-// they never appear in the manifest the instance recorded, so deleteApplied has
-// nothing to delete them by. Their names are built the way the controller
-// builds them, which is the only handle on them that does not depend on labels
-// the template happened to set.
-//
-// Read this before deleteApplied runs: afterwards the StatefulSet whose
-// volumeClaimTemplates name them is gone.
-func (a *templateApplier) statefulSetClaimNames(ctx context.Context, objects []appliedObject) []string {
-	names := []string{}
+// statefulSetClaims names the PVCs minted from volumeClaimTemplates: they
+// outlive their StatefulSet, so call this before deleteApplied removes it.
+func (a *templateApplier) statefulSetClaims(ctx context.Context, objects []appliedObject) []appliedObject {
+	claims := []appliedObject{}
 	for _, item := range objects {
 		if item.Kind != "StatefulSet" || item.Namespace == "" {
 			continue
@@ -398,8 +390,8 @@ func (a *templateApplier) statefulSetClaimNames(ctx context.Context, objects []a
 		if !found || replicas < 1 {
 			replicas = 1
 		}
-		claims, _, _ := unstructured.NestedSlice(set.Object, "spec", "volumeClaimTemplates")
-		for _, entry := range claims {
+		templates, _, _ := unstructured.NestedSlice(set.Object, "spec", "volumeClaimTemplates")
+		for _, entry := range templates {
 			claim, ok := entry.(map[string]any)
 			if !ok {
 				continue
@@ -409,26 +401,17 @@ func (a *templateApplier) statefulSetClaimNames(ctx context.Context, objects []a
 				continue
 			}
 			for ordinal := int64(0); ordinal < replicas; ordinal++ {
-				names = append(names, fmt.Sprintf("%s-%s-%d", claimName, item.Name, ordinal))
+				claims = append(claims, appliedObject{
+					Version:   "v1",
+					Resource:  "persistentvolumeclaims",
+					Kind:      "PersistentVolumeClaim",
+					Namespace: item.Namespace,
+					Name:      fmt.Sprintf("%s-%s-%d", claimName, item.Name, ordinal),
+				})
 			}
 		}
 	}
-	return names
-}
-
-// deleteClaims removes the volumes statefulSetClaimNames found. A claim a pod
-// has not finished releasing stays until it has, which is the cluster's own
-// business rather than something to wait on here.
-func (a *templateApplier) deleteClaims(ctx context.Context, namespace string, names []string) []string {
-	failures := []string{}
-	gvr := schema.GroupVersionResource{Version: "v1", Resource: "persistentvolumeclaims"}
-	for _, name := range names {
-		err := a.dynamic.Resource(gvr).Namespace(namespace).Delete(ctx, name, metav1.DeleteOptions{})
-		if err != nil && !errors.IsNotFound(err) {
-			failures = append(failures, fmt.Sprintf("volume %s (%v)", name, err))
-		}
-	}
-	return failures
+	return claims
 }
 
 // deleteApplied removes what an instance created, newest first so that an
