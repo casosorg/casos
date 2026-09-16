@@ -88,6 +88,8 @@ export function HelmInstallDialog({open, chart, action = "install", onClose, onI
   const [optionsOpen, setOptionsOpen] = useState(false);
 
   const [namespaces, setNamespaces] = useState([]);
+  // The namespace comes from this fetch; submitting before it lands fails validation.
+  const [namespacesLoading, setNamespacesLoading] = useState(false);
   const [form, setForm] = useState({releaseName: "", namespace: "", repoURL: "", version: ""});
   const [formErrors, setFormErrors] = useState({});
 
@@ -270,6 +272,7 @@ export function HelmInstallDialog({open, chart, action = "install", onClose, onI
     setValuesBaselineYAML("");
     setValuesLoading(false);
     setValuesProgress(null);
+    setNamespacesLoading(true);
     setDone(false);
     setInstalling(false);
     setPollingPaused(false);
@@ -319,6 +322,10 @@ export function HelmInstallDialog({open, chart, action = "install", onClose, onI
         const preferred = list.find((item) => item.name === "default") ? "default" : list[0]?.name ?? "default";
         return {...previous, namespace: preferred};
       });
+    }).finally(() => {
+      if (mountedRef.current) {
+        setNamespacesLoading(false);
+      }
     });
   }, [open, chart, isUpgrade, action, monitorTask, stopStreamIdleTimer, stopTaskPolling]);
 
@@ -435,7 +442,7 @@ export function HelmInstallDialog({open, chart, action = "install", onClose, onI
       handleClose();
       return;
     }
-    if (submittingRef.current || valuesLoading || valuesLoadError) {
+    if (submittingRef.current || valuesLoading || namespacesLoading || valuesLoadError) {
       return;
     }
     if (!validate()) {
@@ -766,8 +773,8 @@ export function HelmInstallDialog({open, chart, action = "install", onClose, onI
           </Button>
           {!done && !pollingPaused ? (
             <Button
-              loading={installing || (!advanced && valuesLoading)}
-              disabled={valuesLoading || Boolean(valuesLoadError)}
+              loading={installing || namespacesLoading || (!advanced && valuesLoading)}
+              disabled={valuesLoading || namespacesLoading || Boolean(valuesLoadError)}
               onClick={handleSubmit}
             >
               {t(isUpgrade ? "helm:Upgrade" : "general:Install")}
