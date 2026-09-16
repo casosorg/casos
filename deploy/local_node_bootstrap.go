@@ -189,6 +189,24 @@ func localWSLNodeMachine(ctx context.Context) (*object.Machine, error) {
 	return result.Machine, nil
 }
 
+// ResumeWSLKeepAlives holds open the distros that already host a deployed node.
+// A restart enrolls nothing, so nothing else would start their keepalive again.
+func ResumeWSLKeepAlives(ctx context.Context) {
+	if err := wsl.Available(); err != nil {
+		return
+	}
+	local, err := ListLocalWSLDistros(ctx, "admin")
+	if err != nil {
+		logs.Warning("wsl keepalive: cannot list WSL distributions: %v", err)
+		return
+	}
+	for _, distro := range local.Distros {
+		if distro.Usable && distro.Deployed {
+			startWSLKeepAlive(ctx, distro.Name)
+		}
+	}
+}
+
 // startWSLKeepAlive keeps the distro that hosts the worker node running for as
 // long as CasOS does. WSL stops a distro once nothing is attached to it, which
 // takes the kubelet down with it, so without this the node goes NotReady a
