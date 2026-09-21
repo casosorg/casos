@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/client-go/rest"
 
 	"github.com/casosorg/casos/object"
 )
@@ -81,6 +82,20 @@ func (c *ApiController) DeployApp() {
 		c.ResponseError("invalid request body: " + err.Error())
 		return
 	}
+	result, err := deployAppWorkload(cfg, req, nil)
+	if err != nil {
+		c.ResponseError(err.Error())
+		return
+	}
+	c.ResponseOk(result)
+}
+
+// deployAppWorkload builds an app's Deployment and everything around it —
+// Service, config, registry, autoscaler — from one form payload, and is the
+// shared body behind both the launchpad's deploy and the presets built on top
+// of it (a DevBox is one). extraLabels stamp the workload with the kind of app
+// it is, so a preset's list can find its own without walking the whole cluster.
+func deployAppWorkload(cfg *rest.Config, req deployAppRequest, extraLabels map[string]string) (*deployAppResult, error) {
 	if req.Namespace == "" {
 		req.Namespace = "default"
 	}
@@ -89,6 +104,9 @@ func (c *ApiController) DeployApp() {
 		owner = req.Name
 	}
 	labels := appOwnershipLabels(owner, req.Component)
+	for k, v := range extraLabels {
+		labels[k] = v
+	}
 
 	deplReq := deploymentRequest{
 		Namespace: req.Namespace,
@@ -100,28 +118,24 @@ func (c *ApiController) DeployApp() {
 	}
 	depl, err := buildDeployment(deplReq)
 	if err != nil {
-		c.ResponseError(err.Error())
-		return
+		return nil, err
 	}
 	applyLabels(&depl.ObjectMeta, labels)
 	applyLabels(&depl.Spec.Template.ObjectMeta, labels)
 	applyAnnotation(&depl.ObjectMeta, appImageAnnotation, req.Image)
 
 	if err := ensureDeploymentPVCs(cfg, req.Namespace, req.Name, req.Volumes, labels); err != nil {
-		c.ResponseError(err.Error())
-		return
+		return nil, err
 	}
 
 	configVolume, configMounts, pullSecret, err := reconcileAppExtras(cfg, req, labels, nil)
 	if err != nil {
-		c.ResponseError(err.Error())
-		return
+		return nil, err
 	}
 
 	container := &depl.Spec.Template.Spec.Containers[0]
 	if err := applyAppContainer(container, req); err != nil {
-		c.ResponseError(err.Error())
-		return
+		return nil, err
 	}
 	if len(req.Ports) > 0 {
 		container.Ports = containerPortsFor(req.Ports)
@@ -141,20 +155,18 @@ func (c *ApiController) DeployApp() {
 
 	createdDepl, err := object.AddDeployment(cfg, depl)
 	if err != nil {
-		c.ResponseError(err.Error())
-		return
+		return nil, err
 	}
 
-	result := deployAppResult{Deployment: toDeploymentSummary(*createdDepl)}
+	result := &deployAppResult{Deployment: toDeploymentSummary(*createdDepl)}
 
 	if err := reconcileAppNetworkAndScaling(cfg, req, labels); err != nil {
-		c.ResponseError(err.Error())
-		return
+		return nil, err
 	}
 	if svc, svcErr := object.GetService(cfg, req.Namespace, req.Name); svcErr == nil {
 		summary := toSvcSummary(*svc)
 		result.Service = &summary
 	}
 
-	c.ResponseOk(result)
+	return result, nil
 }

@@ -57,6 +57,9 @@ func InitAPI() {
 	beego.Router("/api/uninstall-image-app", &controllers.ApiController{}, "POST:UninstallImageApp")
 	beego.Router("/api/scale-image-app", &controllers.ApiController{}, "POST:ScaleImageApp")
 
+	beego.Router("/api/deploy-devbox", &controllers.ApiController{}, "POST:DeployDevbox")
+	beego.Router("/api/get-devboxes", &controllers.ApiController{}, "GET:GetDevboxes")
+
 	beego.Router("/api/get-database-engines", &controllers.ApiController{}, "GET:GetDatabaseEngines")
 	beego.Router("/api/get-databases", &controllers.ApiController{}, "GET:GetDatabases")
 	beego.Router("/api/get-database", &controllers.ApiController{}, "GET:GetDatabase")
