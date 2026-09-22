@@ -180,7 +180,7 @@ function DevboxPage() {
             }}
           >
             <ExternalLink />
-            {i18next.t("devbox:Open")}
+            {i18next.t("general:Open")}
           </Button>
           {record.status === "stopped" ? (
             <Button
@@ -274,7 +274,7 @@ function DevboxPage() {
         title={i18next.t("devbox:New DevBox")}
         description={i18next.t("devbox:A code-server container, reachable over a node port. Leave a field blank for its default.")}
         onSubmit={submitCreate}
-        submitText={i18next.t("devbox:Create")}
+        submitText={i18next.t("general:Create")}
         submitting={submitting}
         submitDisabled={!form.name.trim()}
       >
@@ -320,7 +320,7 @@ function DevboxPage() {
           />
         </Field>
         <Field
-          label={i18next.t("devbox:Password")}
+          label={i18next.t("general:Password")}
           htmlFor="devbox-password"
           hint={i18next.t("devbox:Leave blank to have one generated.")}
         >
@@ -368,7 +368,7 @@ function DevboxPage() {
               label: i18next.t("general:URL"),
               value: created?.url ? <CodeText copyable>{created.url}</CodeText> : i18next.t("devbox:Assigned shortly"),
             },
-            {label: i18next.t("devbox:Password"), value: <CodeText copyable>{created?.password}</CodeText>},
+            {label: i18next.t("general:Password"), value: <CodeText copyable>{created?.password}</CodeText>},
           ]}
         />
       </FormDialog>

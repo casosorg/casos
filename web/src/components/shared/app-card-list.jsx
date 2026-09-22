@@ -149,7 +149,7 @@ function AppCard({release, resources, pending, onOpenLogs, onUpgrade, onToggleRu
         {primaryUrl ? (
           <Button asChild size="sm" className="flex-1">
             <a href={primaryUrl} target="_blank" rel="noreferrer">
-              {t("simple:Open")}
+              {t("general:Open")}
               <ExternalLink />
             </a>
           </Button>

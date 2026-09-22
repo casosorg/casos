@@ -103,7 +103,6 @@
     "Connection": "Connection",
     "Connection string": "Connection string",
     "Console": "Console",
-    "Create": "Create",
     "Credentials": "Credentials",
     "Database": "Database",
     "Database created": "Database created",
@@ -202,7 +201,6 @@
     "Also delete its home disk": "Also delete its home disk",
     "Assigned shortly": "Assigned shortly",
     "Copy the password now — it is not shown again.": "Copy the password now — it is not shown again.",
-    "Create": "Create",
     "Defaults to codercom/code-server:latest.": "Defaults to codercom/code-server:latest.",
     "DevBox": "DevBox",
     "DevBox created": "DevBox created",
@@ -216,9 +214,7 @@
     "New DevBox": "New DevBox",
     "No DevBoxes yet. Create one to get a VS Code workspace on the cluster.": "No DevBoxes yet. Create one to get a VS Code workspace on the cluster.",
     "Not reachable yet": "Not reachable yet",
-    "Open": "Open",
     "Open VS Code": "Open VS Code",
-    "Password": "Password",
     "Spin up a VS Code workspace in a container and connect from your browser — no Kubernetes to learn.": "Spin up a VS Code workspace in a container and connect from your browser — no Kubernetes to learn.",
     "The workspace and its address are removed. Its home disk is kept unless you say otherwise.": "The workspace and its address are removed. Its home disk is kept unless you say otherwise."
   },
@@ -333,7 +329,9 @@
     "Version": "Version",
     "Workloads": "Workloads",
     "cores": "cores",
-    "required": "required"
+    "required": "required",
+    "Create": "Create",
+    "Open": "Open"
   },
   "helm": {
     "Add Helm Repo": "Add Helm repo",
@@ -767,7 +765,6 @@
     "Nobody else should be able to sign in with the password CasOS shipped with.": "Nobody else should be able to sign in with the password CasOS shipped with.",
     "Not working": "Not working",
     "One login for all your apps, with users and groups you manage.": "One login for all your apps, with users and groups you manage.",
-    "Open": "Open",
     "Open Devices": "Open Devices",
     "Open Health to see what went wrong and read the messages.": "Open Health to see what went wrong and read the messages.",
     "Open-source apps": "Open-source apps",

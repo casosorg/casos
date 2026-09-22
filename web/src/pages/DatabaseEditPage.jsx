@@ -165,7 +165,7 @@ function DatabaseEditPage(props) {
             </Button>
             <Button onClick={submit} disabled={submitting} data-testid="database-submit">
               <Save />
-              {editing ? i18next.t("launchpad:Save changes") : i18next.t("database:Create")}
+              {editing ? i18next.t("launchpad:Save changes") : i18next.t("general:Create")}
             </Button>
           </div>
         }

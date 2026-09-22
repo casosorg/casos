@@ -103,7 +103,6 @@
     "Connection": "连接信息",
     "Connection string": "连接字符串",
     "Console": "控制台",
-    "Create": "创建",
     "Credentials": "账号密码",
     "Database": "数据库",
     "Database created": "数据库已创建",
@@ -202,7 +201,6 @@
     "Also delete its home disk": "同时删除它的主目录磁盘",
     "Assigned shortly": "稍后分配",
     "Copy the password now — it is not shown again.": "现在复制密码——它不会再次显示。",
-    "Create": "创建",
     "Defaults to codercom/code-server:latest.": "默认使用 codercom/code-server:latest。",
     "DevBox": "开发环境",
     "DevBox created": "开发环境已创建",
@@ -216,9 +214,7 @@
     "New DevBox": "新建开发环境",
     "No DevBoxes yet. Create one to get a VS Code workspace on the cluster.": "还没有开发环境。创建一个即可在集群上获得 VS Code 工作区。",
     "Not reachable yet": "尚不可访问",
-    "Open": "打开",
     "Open VS Code": "打开 VS Code",
-    "Password": "密码",
     "Spin up a VS Code workspace in a container and connect from your browser — no Kubernetes to learn.": "在容器里启动一个 VS Code 工作区，直接用浏览器连接——无需了解 Kubernetes。",
     "The workspace and its address are removed. Its home disk is kept unless you say otherwise.": "工作区及其地址会被移除。除非你另行选择，否则保留它的主目录磁盘。"
   },
@@ -333,7 +329,9 @@
     "Version": "版本",
     "Workloads": "工作负载",
     "cores": "核",
-    "required": "必填"
+    "required": "必填",
+    "Create": "创建",
+    "Open": "打开"
   },
   "helm": {
     "Add Helm Repo": "添加 Helm 仓库",
@@ -767,7 +765,6 @@
     "Nobody else should be able to sign in with the password CasOS shipped with.": "别让人用 CasOS 出厂自带的密码登进来。",
     "Not working": "运行异常",
     "One login for all your apps, with users and groups you manage.": "所有应用共用一套登录，用户和分组由你管理。",
-    "Open": "打开",
     "Open Devices": "去设备页",
     "Open Health to see what went wrong and read the messages.": "去「运行状况」看看哪里出了问题，读一下日志。",
     "Open-source apps": "开源应用",
