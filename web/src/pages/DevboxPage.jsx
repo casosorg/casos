@@ -1,12 +1,13 @@
 import React, {useState} from "react";
 import i18next from "i18next";
 import {useTranslation} from "react-i18next";
-import {Code2, ExternalLink, Play, Plus, Square, Trash2} from "lucide-react";
+import {Code2, ExternalLink, Laptop, Play, Plus, Square, Trash2} from "lucide-react";
 import * as DevboxBackend from "@/backend/DevboxBackend";
 import * as ImageBackend from "@/backend/ImageBackend";
 import * as NamespaceBackend from "@/backend/NamespaceBackend";
 import {Button} from "@/components/ui/button";
 import {Input} from "@/components/ui/input";
+import {Textarea} from "@/components/ui/textarea";
 import {Checkbox} from "@/components/ui/checkbox";
 import {ConfirmDialog} from "@/components/shared/confirm-dialog";
 import {DataTable} from "@/components/shared/data-table";
@@ -14,7 +15,7 @@ import {Field, FormDialog} from "@/components/shared/form-dialog";
 import {PageContainer, PageHeader} from "@/components/shared/page-header";
 import {SimpleSelect} from "@/components/shared/simple-select";
 import {StatusBadge} from "@/components/shared/status-badge";
-import {CodeText, DescriptionList} from "@/components/shared/misc";
+import {CodeBlock, CodeText, DescriptionList} from "@/components/shared/misc";
 import {runAction, useResource} from "@/hooks/use-resource";
 import {useWorkspace} from "@/hooks/use-workspace";
 
@@ -27,7 +28,22 @@ const DEVBOX_STATUS_VARIANTS = {
   stopped: "muted",
 };
 
-const emptyForm = (namespace = "default") => ({name: "", namespace, image: "", diskSize: "5Gi", password: ""});
+const emptyForm = (namespace = "default") => ({name: "", namespace, image: "", diskSize: "5Gi", password: "", sshPublicKey: ""});
+
+const hasSsh = (box) => Boolean(box?.sshHost && box?.sshPort);
+
+/**
+ * The three spellings of the same address: what to type, what a desktop VS Code
+ * opens, and what to keep in ~/.ssh/config when the link needs a name to resolve.
+ */
+const sshCommand = (box) => `ssh -p ${box.sshPort} ${box.sshUser}@${box.sshHost}`;
+const vscodeLink = (box) => `vscode://vscode-remote/ssh-remote+${box.sshUser}@${box.sshHost}:${box.sshPort}${box.sshPath || ""}`;
+const sshConfigEntry = (box) => [
+  `Host ${box.name}`,
+  `  HostName ${box.sshHost}`,
+  `  User ${box.sshUser}`,
+  `  Port ${box.sshPort}`,
+].join("\n");
 
 /**
  * A DevBox is a browser VS Code (code-server) running in a container on the
@@ -44,6 +60,7 @@ function DevboxPage() {
   const [form, setForm] = useState(emptyForm);
   const [submitting, setSubmitting] = useState(false);
   const [created, setCreated] = useState(null);
+  const [connectTarget, setConnectTarget] = useState(null);
   const [deleteTarget, setDeleteTarget] = useState(null);
   const [deleteData, setDeleteData] = useState(false);
 
@@ -76,6 +93,7 @@ function DevboxPage() {
           image: form.image.trim(),
           diskSize: form.diskSize.trim(),
           password: form.password.trim(),
+          sshPublicKey: form.sshPublicKey.trim(),
         }),
         {
           onSuccess: (res) => {
@@ -163,7 +181,7 @@ function DevboxPage() {
     {
       key: "actions",
       title: i18next.t("general:Action"),
-      width: 200,
+      width: 240,
       align: "right",
       render: (_value, record) => (
         <div className="flex items-center justify-end gap-0.5">
@@ -181,6 +199,20 @@ function DevboxPage() {
           >
             <ExternalLink />
             {i18next.t("general:Open")}
+          </Button>
+          <Button
+            size="icon-sm"
+            variant="ghost"
+            disabled={!hasSsh(record)}
+            aria-label={i18next.t("devbox:Connect from desktop VS Code")}
+            title={hasSsh(record) ? i18next.t("devbox:Connect from desktop VS Code") : i18next.t("devbox:Created without an SSH key, so this one is browser-only.")}
+            data-testid="devbox-connect"
+            onClick={(event) => {
+              event.stopPropagation();
+              setConnectTarget(record);
+            }}
+          >
+            <Laptop />
           </Button>
           {record.status === "stopped" ? (
             <Button
@@ -331,6 +363,21 @@ function DevboxPage() {
             placeholder="••••••••"
           />
         </Field>
+        <Field
+          label={i18next.t("devbox:SSH public key")}
+          htmlFor="devbox-ssh-key"
+          hint={i18next.t("devbox:Paste a .pub key to also reach this box from the VS Code on your machine, over Remote-SSH. Blank keeps it browser-only.")}
+        >
+          <Textarea
+            id="devbox-ssh-key"
+            rows={3}
+            className="font-mono text-xs"
+            value={form.sshPublicKey}
+            onChange={(e) => setField("sshPublicKey", e.target.value)}
+            placeholder="ssh-ed25519 AAAA... you@laptop"
+            data-testid="devbox-ssh-key-input"
+          />
+        </Field>
       </FormDialog>
 
       <FormDialog
@@ -369,8 +416,62 @@ function DevboxPage() {
               value: created?.url ? <CodeText copyable>{created.url}</CodeText> : i18next.t("devbox:Assigned shortly"),
             },
             {label: i18next.t("general:Password"), value: <CodeText copyable>{created?.password}</CodeText>},
+            ...(hasSsh(created) ? [{label: i18next.t("devbox:SSH"), value: <CodeText copyable>{sshCommand(created)}</CodeText>}] : []),
           ]}
         />
+      </FormDialog>
+
+      <FormDialog
+        open={Boolean(connectTarget)}
+        onOpenChange={(open) => {
+          if (!open) {
+            setConnectTarget(null);
+          }
+        }}
+        title={i18next.t("devbox:Connect from desktop VS Code")}
+        description={i18next.t("devbox:Open this workspace in the VS Code on your machine. It needs the Remote - SSH extension and the private key that matches the one you gave the box.")}
+        footer={
+          <>
+            <Button variant="outline" onClick={() => setConnectTarget(null)}>
+              {i18next.t("general:Close")}
+            </Button>
+            {connectTarget && hasSsh(connectTarget) ? (
+              <Button
+                data-testid="devbox-open-desktop"
+                onClick={() => {
+                  // A vscode:// link is handed to the OS, not opened in a tab.
+                  window.location.href = vscodeLink(connectTarget);
+                  setConnectTarget(null);
+                }}
+              >
+                <Laptop />
+                {i18next.t("devbox:Open in VS Code")}
+              </Button>
+            ) : null}
+          </>
+        }
+      >
+        {connectTarget && hasSsh(connectTarget) ? (
+          <div className="space-y-4">
+            <DescriptionList
+              items={[
+                {label: i18next.t("general:Name"), value: connectTarget.name},
+                {label: i18next.t("devbox:SSH"), value: <CodeText copyable>{sshCommand(connectTarget)}</CodeText>},
+                {label: i18next.t("devbox:Workspace folder"), value: <CodeText copyable>{connectTarget.sshPath}</CodeText>},
+              ]}
+            />
+            <div className="space-y-1.5">
+              <div className="text-muted-foreground text-xs">
+                {i18next.t("devbox:If the button does not reach it, add this to ~/.ssh/config and pick the host in VS Code.")}
+              </div>
+              <CodeBlock copyable>{sshConfigEntry(connectTarget)}</CodeBlock>
+            </div>
+          </div>
+        ) : (
+          <div className="text-muted-foreground text-sm">
+            {i18next.t("devbox:Created without an SSH key, so this one is browser-only.")}
+          </div>
+        )}
       </FormDialog>
 
       <ConfirmDialog
