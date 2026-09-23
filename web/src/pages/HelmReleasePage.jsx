@@ -657,7 +657,7 @@ export default function HelmReleasePage() {
   });
   const filters = [
     {key: "all", label: t("general:All apps")},
-    {key: "running", label: t("simple:Running")},
+    {key: "running", label: t("general:Running")},
     {key: "attention", label: t("simple:Needs attention")},
     {key: "updating", label: t("simple:Updating")},
   ].filter((filter) => filter.key === "all" || (counts[filter.key] ?? 0) > 0);

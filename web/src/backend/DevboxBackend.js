@@ -16,3 +16,24 @@ export function getDevboxes(namespace = "") {
     credentials: "include", headers: lang(),
   }).then(r => r.json());
 }
+
+export function freezeDevbox(payload) {
+  return fetch(`${Setting.ServerUrl}/api/freeze-devbox`, {
+    method: "POST", credentials: "include", headers: jsonHeaders(), body: JSON.stringify(payload),
+  }).then(r => r.json());
+}
+
+export function getDevboxRuns(namespace = "", devbox = "") {
+  const params = new URLSearchParams();
+  if (namespace) {params.set("namespace", namespace);}
+  if (devbox) {params.set("devbox", devbox);}
+  return fetch(`${Setting.ServerUrl}/api/get-devbox-runs?${params}`, {
+    credentials: "include", headers: lang(),
+  }).then(r => r.json());
+}
+
+export function cancelDevboxRun(payload) {
+  return fetch(`${Setting.ServerUrl}/api/cancel-devbox-run`, {
+    method: "POST", credentials: "include", headers: jsonHeaders(), body: JSON.stringify(payload),
+  }).then(r => r.json());
+}

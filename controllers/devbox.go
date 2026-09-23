@@ -89,6 +89,11 @@ type devboxSummary struct {
 	SshUser string `json:"sshUser"`
 	// SshPath is the folder to open on the far side.
 	SshPath string `json:"sshPath"`
+	// The run this workspace was last frozen for, if it has one: a frozen box
+	// with nothing queued is just a stopped box, and the two should not look
+	// the same in a list.
+	RunName   string `json:"runName"`
+	RunStatus string `json:"runStatus"`
 }
 
 type deployDevboxResult struct {
@@ -217,13 +222,19 @@ func (c *ApiController) GetDevboxes() {
 		return
 	}
 
+	latestRuns := latestDevboxRuns(cfg, namespace)
 	nodeIP := clusterNodeIP(cfg)
 	result := []devboxSummary{}
 	for _, d := range deployments {
 		if d.Labels[devboxLabel] != "true" {
 			continue
 		}
-		result = append(result, devboxSummaryOf(cfg, d, nodeIP))
+		summary := devboxSummaryOf(cfg, d, nodeIP)
+		if run, ok := latestRuns[d.Name]; ok {
+			summary.RunName = run.Name
+			summary.RunStatus = run.Status
+		}
+		result = append(result, summary)
 	}
 	sort.Slice(result, func(i, j int) bool { return result[i].CreatedAt > result[j].CreatedAt })
 	c.ResponseOk(result)

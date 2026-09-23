@@ -25,7 +25,7 @@ function displayUrl(url) {
 }
 
 const STATUS_TONE = {
-  deployed: {label: "simple:Running", dot: "bg-success", pill: "border-success/25 bg-success/10 text-success", bar: "bg-success/70"},
+  deployed: {label: "general:Running", dot: "bg-success", pill: "border-success/25 bg-success/10 text-success", bar: "bg-success/70"},
   stopped: {label: "simple:Stopped", dot: "bg-muted-foreground", pill: "border-border bg-muted text-muted-foreground", bar: "bg-border"},
   failed: {label: "simple:Not working", dot: "bg-destructive", pill: "border-destructive/25 bg-destructive/10 text-destructive", bar: "bg-destructive/70"},
   superseded: {label: "simple:Replaced", dot: "bg-muted-foreground", pill: "border-border bg-muted text-muted-foreground", bar: "bg-border"},
