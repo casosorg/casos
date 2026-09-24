@@ -23,21 +23,21 @@ const (
 	devboxDefaultDisk   = "5Gi"
 	devboxHttpPortName  = "http"
 
-	devboxSshImage     = "lscr.io/linuxserver/openssh-server:latest"
-	devboxSshPortName  = "ssh"
-	devboxSshPort      = 2222
-	devboxSshUser      = "coder"
-	devboxSshHome      = "/config"
-	devboxSshStatePath = "ssh-server"
-	// Must match code-server's uid, or files made over SSH are read-only in the browser.
-	devboxUid = "1000"
+	devboxSshPortName = "ssh"
+	devboxSshPort     = 2222
+	devboxSshUser     = "coder"
 )
 
 type deployDevboxRequest struct {
 	Namespace string `json:"namespace"`
 	Name      string `json:"name"`
-	Image     string `json:"image"`
-	Password  string `json:"password"`
+	// Any glibc image; the editor is injected. Empty means code-server's own.
+	Image  string `json:"image"`
+	Repo   string `json:"repo"`
+	Branch string `json:"branch"`
+	// Run once in the checkout before the editor first starts.
+	Setup    string `json:"setup"`
+	Password string `json:"password"`
 	// "0" means no disk: a stateless box.
 	DiskSize     string  `json:"diskSize"`
 	SshPublicKey string  `json:"sshPublicKey"`
@@ -58,6 +58,17 @@ type devboxSummary struct {
 	SshPort   int32  `json:"sshPort"`
 	SshUser   string `json:"sshUser"`
 	SshPath   string `json:"sshPath"`
+	// Where the workspace opens and its runs start.
+	Folder string `json:"folder"`
+	Repo   string `json:"repo"`
+	// As of the last start, read from the clone step's termination message.
+	Branch      string `json:"branch"`
+	Commit      string `json:"commit"`
+	CloneError  string `json:"cloneError"`
+	PrepareStep string `json:"prepareStep"`
+	SetupFailed bool   `json:"setupFailed"`
+	HasSetup    bool   `json:"hasSetup"`
+	PodName     string `json:"podName"`
 	// The latest run frozen from this box, so a frozen box doesn't look merely stopped.
 	RunName   string `json:"runName"`
 	RunStatus string `json:"runStatus"`
@@ -117,8 +128,24 @@ func (c *ApiController) DeployDevbox() {
 		volumes = []volumeRequest{{MountPath: devboxHomeMount, Size: size}}
 	}
 
-	publicKey := strings.TrimSpace(req.SshPublicKey)
-	if publicKey != "" && !looksLikeSshPublicKey(publicKey) {
+	env := devboxEnvironment{
+		image:  image,
+		repo:   strings.TrimSpace(req.Repo),
+		branch: strings.TrimSpace(req.Branch),
+		setup:  strings.TrimSpace(req.Setup),
+		folder: devboxHomeMount,
+	}
+	if env.repo != "" {
+		name, err := devboxRepoFolder(env.repo)
+		if err != nil {
+			c.ResponseError(err.Error())
+			return
+		}
+		env.folder = devboxHomeMount + "/" + name
+	}
+
+	env.sshPublicKey = strings.TrimSpace(req.SshPublicKey)
+	if env.sshPublicKey != "" && !looksLikeSshPublicKey(env.sshPublicKey) {
 		c.ResponseError("that does not look like an SSH public key — paste the contents of a .pub file, one line starting with ssh-ed25519 or ssh-rsa")
 		return
 	}
@@ -128,7 +155,7 @@ func (c *ApiController) DeployDevbox() {
 		ContainerPort: devboxContainerPort,
 		Protocol:      "TCP",
 	}}
-	if publicKey != "" {
+	if env.sshPublicKey != "" {
 		ports = append(ports, appPortRequest{
 			Name:          devboxSshPortName,
 			ContainerPort: devboxSshPort,
@@ -150,9 +177,9 @@ func (c *ApiController) DeployDevbox() {
 		},
 	}
 
-	opts := workloadOptions{labels: map[string]string{devboxLabel: "true"}}
-	if publicKey != "" {
-		opts.mutate = addDevboxSshSidecar(publicKey)
+	opts := workloadOptions{
+		labels: map[string]string{devboxLabel: "true"},
+		mutate: applyDevboxEnvironment(env),
 	}
 	if _, err := deployAppWorkload(cfg, appReq, opts); err != nil {
 		c.ResponseError(err.Error())
@@ -161,7 +188,7 @@ func (c *ApiController) DeployDevbox() {
 
 	summary := devboxSummary{Name: req.Name, Namespace: req.Namespace, Image: image, Status: "pending"}
 	if depl, err := object.GetDeployment(cfg, req.Namespace, req.Name); err == nil {
-		summary = devboxSummaryOf(cfg, *depl, clusterNodeIP(cfg))
+		summary = devboxSummaryOf(cfg, *depl, clusterNodeIP(cfg), nil)
 	}
 
 	c.ResponseOk(deployDevboxResult{devboxSummary: summary, Password: password})
@@ -187,13 +214,22 @@ func (c *ApiController) GetDevboxes() {
 	}
 
 	latestRuns := latestDevboxRuns(cfg, namespace)
+	podsByBox := map[string][]corev1.Pod{}
+	if pods, err := object.GetPods(cfg, namespace); err == nil {
+		for _, pod := range pods {
+			if pod.Labels[devboxLabel] == "true" {
+				key := pod.Namespace + "/" + pod.Labels[appInstanceLabel]
+				podsByBox[key] = append(podsByBox[key], pod)
+			}
+		}
+	}
 	nodeIP := clusterNodeIP(cfg)
 	result := []devboxSummary{}
 	for _, d := range deployments {
 		if d.Labels[devboxLabel] != "true" {
 			continue
 		}
-		summary := devboxSummaryOf(cfg, d, nodeIP)
+		summary := devboxSummaryOf(cfg, d, nodeIP, podsByBox[d.Namespace+"/"+d.Name])
 		if run, ok := latestRuns[d.Name]; ok {
 			summary.RunName = run.Name
 			summary.RunStatus = run.Status
@@ -204,7 +240,7 @@ func (c *ApiController) GetDevboxes() {
 	c.ResponseOk(result)
 }
 
-func devboxSummaryOf(cfg *rest.Config, d appsv1.Deployment, nodeIP string) devboxSummary {
+func devboxSummaryOf(cfg *rest.Config, d appsv1.Deployment, nodeIP string, pods []corev1.Pod) devboxSummary {
 	status, _ := deploymentAppStatus(d)
 	replicas := int32(0)
 	if d.Spec.Replicas != nil {
@@ -218,6 +254,24 @@ func devboxSummaryOf(cfg *rest.Config, d appsv1.Deployment, nodeIP string) devbo
 		Replicas:  replicas,
 		Ready:     d.Status.ReadyReplicas,
 		CreatedAt: d.CreationTimestamp.UTC().Format("2006-01-02 15:04:05"),
+		Folder:    devboxFolder(d),
+		Repo:      d.Annotations[devboxRepoAnnotation],
+	}
+	for _, init := range d.Spec.Template.Spec.InitContainers {
+		if init.Name == devboxSetupInit {
+			summary.HasSetup = true
+		}
+	}
+	if status != "stopped" {
+		state := devboxPodStateOf(pods)
+		summary.PodName = state.podName
+		summary.Branch = state.branch
+		summary.Commit = state.commit
+		summary.CloneError = state.cloneError
+		summary.SetupFailed = state.setupFailed
+		if status == "pending" {
+			summary.PrepareStep = state.prepareStep
+		}
 	}
 	if svc, err := object.GetService(cfg, d.Namespace, d.Name); err == nil {
 		if host, port := devboxAddress(svc, nodeIP, devboxHttpPortName); host != "" {
@@ -227,7 +281,7 @@ func devboxSummaryOf(cfg *rest.Config, d appsv1.Deployment, nodeIP string) devbo
 			summary.SshHost = host
 			summary.SshPort = port
 			summary.SshUser = devboxSshUser
-			summary.SshPath = devboxHomeMount
+			summary.SshPath = summary.Folder
 		}
 	}
 	return summary
@@ -279,56 +333,4 @@ func looksLikeSshPublicKey(key string) bool {
 	}
 	fields := strings.Fields(key)
 	return len(fields) >= 2 && (strings.HasPrefix(fields[0], "ssh-") || strings.HasPrefix(fields[0], "ecdsa-") || strings.HasPrefix(fields[0], "sk-"))
-}
-
-func addDevboxSshSidecar(publicKey string) func(*appsv1.Deployment) error {
-	return func(depl *appsv1.Deployment) error {
-		spec := &depl.Spec.Template.Spec
-		if len(spec.Containers) == 0 {
-			return fmt.Errorf("the workspace has no container to attach SSH to")
-		}
-		editor := &spec.Containers[0]
-
-		// The sidecar declares the SSH port; the service targets it by number.
-		kept := editor.Ports[:0]
-		for _, port := range editor.Ports {
-			if port.Name != devboxSshPortName {
-				kept = append(kept, port)
-			}
-		}
-		editor.Ports = kept
-
-		sidecar := corev1.Container{
-			Name:  "sshd",
-			Image: devboxSshImage,
-			Env: buildEnvVars([]envVarRequest{
-				{Name: "PUBLIC_KEY", Value: publicKey},
-				{Name: "USER_NAME", Value: devboxSshUser},
-				{Name: "PUID", Value: devboxUid},
-				{Name: "PGID", Value: devboxUid},
-				{Name: "PASSWORD_ACCESS", Value: "false"},
-				{Name: "SUDO_ACCESS", Value: "false"},
-			}),
-			Ports: []corev1.ContainerPort{{
-				Name:          devboxSshPortName,
-				ContainerPort: devboxSshPort,
-				Protocol:      corev1.ProtocolTCP,
-			}},
-		}
-
-		for _, mount := range editor.VolumeMounts {
-			if mount.MountPath != devboxHomeMount {
-				continue
-			}
-			// SSH's own home is a corner of the disk, so host keys survive restarts.
-			sidecar.VolumeMounts = []corev1.VolumeMount{
-				mount,
-				{Name: mount.Name, MountPath: devboxSshHome, SubPath: devboxSshStatePath},
-			}
-			break
-		}
-
-		spec.Containers = append(spec.Containers, sidecar)
-		return nil
-	}
 }

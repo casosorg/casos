@@ -253,12 +253,15 @@ func buildDevboxRunJob(depl appsv1.Deployment, req freezeDevboxRequest, command 
 	}
 
 	container := corev1.Container{
-		Name:         "run",
-		Image:        editor.Image,
-		Command:      []string{"/bin/sh", "-lc", command},
-		WorkingDir:   devboxHomeMount,
-		VolumeMounts: editor.VolumeMounts,
+		Name:  "run",
+		Image: editor.Image,
+		// Same PATH as the editor's terminal, so pip --user tools resolve.
+		Command:      []string{"/bin/sh", "-lc", `export PATH="$HOME/.local/bin:$PATH"` + "\n" + command},
+		WorkingDir:   devboxFolder(depl),
+		VolumeMounts: runVolumeMounts(editor.VolumeMounts),
 		Env:          runEnv(editor.Env),
+		// Same uid as the editor, or its outputs are read-only in the workspace.
+		SecurityContext: editor.SecurityContext,
 	}
 	if err := applyResources(&container, resourceRequest{CpuLimit: req.CpuLimit, MemoryLimit: req.MemoryLimit}); err != nil {
 		return nil, err
@@ -313,12 +316,16 @@ func devboxEditorContainer(depl appsv1.Deployment) *corev1.Container {
 }
 
 func runEnv(env []corev1.EnvVar) []corev1.EnvVar {
-	result := []corev1.EnvVar{}
-	for _, item := range env {
-		if item.Name == "PASSWORD" {
-			continue
+	return withoutEnv(env, "PASSWORD", "CASOS_SSH_PUBLIC_KEY")
+}
+
+// The tools volume is empty in a run, and a missing /etc/passwd subPath would block the container.
+func runVolumeMounts(mounts []corev1.VolumeMount) []corev1.VolumeMount {
+	result := []corev1.VolumeMount{}
+	for _, mount := range mounts {
+		if mount.Name != devboxToolsVolume {
+			result = append(result, mount)
 		}
-		result = append(result, item)
 	}
 	return result
 }
