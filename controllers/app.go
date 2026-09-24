@@ -3,6 +3,7 @@ package controllers
 import (
 	"encoding/json"
 
+	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/client-go/rest"
 
@@ -82,7 +83,7 @@ func (c *ApiController) DeployApp() {
 		c.ResponseError("invalid request body: " + err.Error())
 		return
 	}
-	result, err := deployAppWorkload(cfg, req, nil)
+	result, err := deployAppWorkload(cfg, req, workloadOptions{})
 	if err != nil {
 		c.ResponseError(err.Error())
 		return
@@ -90,12 +91,13 @@ func (c *ApiController) DeployApp() {
 	c.ResponseOk(result)
 }
 
-// deployAppWorkload builds an app's Deployment and everything around it —
-// Service, config, registry, autoscaler — from one form payload, and is the
-// shared body behind both the launchpad's deploy and the presets built on top
-// of it (a DevBox is one). extraLabels stamp the workload with the kind of app
-// it is, so a preset's list can find its own without walking the whole cluster.
-func deployAppWorkload(cfg *rest.Config, req deployAppRequest, extraLabels map[string]string) (*deployAppResult, error) {
+// workloadOptions lets a preset such as DevBox label its apps and adjust the built Deployment.
+type workloadOptions struct {
+	labels map[string]string
+	mutate func(*appsv1.Deployment) error
+}
+
+func deployAppWorkload(cfg *rest.Config, req deployAppRequest, opts workloadOptions) (*deployAppResult, error) {
 	if req.Namespace == "" {
 		req.Namespace = "default"
 	}
@@ -104,7 +106,7 @@ func deployAppWorkload(cfg *rest.Config, req deployAppRequest, extraLabels map[s
 		owner = req.Name
 	}
 	labels := appOwnershipLabels(owner, req.Component)
-	for k, v := range extraLabels {
+	for k, v := range opts.labels {
 		labels[k] = v
 	}
 
@@ -151,6 +153,12 @@ func deployAppWorkload(cfg *rest.Config, req deployAppRequest, extraLabels map[s
 	if req.Hpa != nil && req.Hpa.Enabled && req.Hpa.MinReplicas > 0 {
 		minReplicas := req.Hpa.MinReplicas
 		depl.Spec.Replicas = &minReplicas
+	}
+
+	if opts.mutate != nil {
+		if err := opts.mutate(depl); err != nil {
+			return nil, err
+		}
 	}
 
 	createdDepl, err := object.AddDeployment(cfg, depl)
