@@ -203,6 +203,7 @@
     "Assigned shortly": "稍后分配",
     "Branch": "分支",
     "Bring the workspace back when the run ends": "运行结束后自动恢复工作区",
+    "Bringing in the SSH server": "正在注入 SSH 服务",
     "Bringing in the editor": "正在注入编辑器",
     "Cancel run": "取消这次运行",
     "Clone": "克隆",

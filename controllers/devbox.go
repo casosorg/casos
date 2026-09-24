@@ -29,27 +29,19 @@ import (
 const (
 	devboxLabel        = "casos.io/devbox"
 	devboxDefaultImage = "codercom/code-server:latest"
-	// code-server binds this port and reads PASSWORD from the environment; the
-	// official image already serves on 0.0.0.0:8080, so no command is needed.
+	// code-server binds this port and reads PASSWORD from the environment.
 	devboxContainerPort = 8080
 	devboxHomeMount     = "/home/coder"
 	devboxDefaultDisk   = "5Gi"
 	devboxHttpPortName  = "http"
 
-	// A DevBox that is handed a public key also runs an SSH server beside
-	// code-server, so a desktop VS Code can open the same files over Remote-SSH
-	// — the same workspace, edited with the editor the user already has set up.
-	// It is a sidecar rather than a second image because the two have to share
-	// the home disk: what one writes, the other sees.
-	devboxSshImage     = "lscr.io/linuxserver/openssh-server:latest"
-	devboxSshPortName  = "ssh"
-	devboxSshPort      = 2222
-	devboxSshUser      = "coder"
-	devboxSshHome      = "/config"
-	devboxSshStatePath = "ssh-server"
-	// The code-server image runs as uid 1000; the SSH user has to be the same
-	// one, or files made over SSH would be unwritable in the browser.
-	devboxUid = "1000"
+	// A DevBox that is handed a public key also answers SSH, so a desktop VS
+	// Code can open the same workspace over Remote-SSH. The server runs inside
+	// the workspace container (see devbox_env.go), so a terminal opened that way
+	// is in the workspace's image, not in some other container beside it.
+	devboxSshPortName = "ssh"
+	devboxSshPort     = 2222
+	devboxSshUser     = "coder"
 )
 
 type deployDevboxRequest struct {
@@ -191,8 +183,8 @@ func (c *ApiController) DeployDevbox() {
 		env.folder = devboxHomeMount + "/" + name
 	}
 
-	publicKey := strings.TrimSpace(req.SshPublicKey)
-	if publicKey != "" && !looksLikeSshPublicKey(publicKey) {
+	env.sshPublicKey = strings.TrimSpace(req.SshPublicKey)
+	if env.sshPublicKey != "" && !looksLikeSshPublicKey(env.sshPublicKey) {
 		c.ResponseError("that does not look like an SSH public key — paste the contents of a .pub file, one line starting with ssh-ed25519 or ssh-rsa")
 		return
 	}
@@ -202,7 +194,7 @@ func (c *ApiController) DeployDevbox() {
 		ContainerPort: devboxContainerPort,
 		Protocol:      "TCP",
 	}}
-	if publicKey != "" {
+	if env.sshPublicKey != "" {
 		ports = append(ports, appPortRequest{
 			Name:          devboxSshPortName,
 			ContainerPort: devboxSshPort,
@@ -224,18 +216,9 @@ func (c *ApiController) DeployDevbox() {
 		},
 	}
 
-	// The environment goes first: it settles where home is, and the SSH sidecar
-	// has to mount the same one.
-	withEnv := applyDevboxEnvironment(env)
-	opts := workloadOptions{labels: map[string]string{devboxLabel: "true"}, mutate: withEnv}
-	if publicKey != "" {
-		withSsh := addDevboxSshSidecar(publicKey)
-		opts.mutate = func(depl *appsv1.Deployment) error {
-			if err := withEnv(depl); err != nil {
-				return err
-			}
-			return withSsh(depl)
-		}
+	opts := workloadOptions{
+		labels: map[string]string{devboxLabel: "true"},
+		mutate: applyDevboxEnvironment(env),
 	}
 	if _, err := deployAppWorkload(cfg, appReq, opts); err != nil {
 		c.ResponseError(err.Error())
@@ -393,64 +376,4 @@ func looksLikeSshPublicKey(key string) bool {
 	}
 	fields := strings.Fields(key)
 	return len(fields) >= 2 && (strings.HasPrefix(fields[0], "ssh-") || strings.HasPrefix(fields[0], "ecdsa-") || strings.HasPrefix(fields[0], "sk-"))
-}
-
-// addDevboxSshSidecar puts an SSH server in the pod beside code-server, sharing
-// the home disk so both editors see the same files.
-func addDevboxSshSidecar(publicKey string) func(*appsv1.Deployment) error {
-	return func(depl *appsv1.Deployment) error {
-		spec := &depl.Spec.Template.Spec
-		if len(spec.Containers) == 0 {
-			return fmt.Errorf("the workspace has no container to attach SSH to")
-		}
-		editor := &spec.Containers[0]
-
-		// SSH is answered by the sidecar, so the port is declared there; the
-		// service's target port is a number and reaches it either way.
-		kept := editor.Ports[:0]
-		for _, port := range editor.Ports {
-			if port.Name != devboxSshPortName {
-				kept = append(kept, port)
-			}
-		}
-		editor.Ports = kept
-
-		sidecar := corev1.Container{
-			Name:  "sshd",
-			Image: devboxSshImage,
-			Env: buildEnvVars([]envVarRequest{
-				{Name: "PUBLIC_KEY", Value: publicKey},
-				{Name: "USER_NAME", Value: devboxSshUser},
-				{Name: "PUID", Value: devboxUid},
-				{Name: "PGID", Value: devboxUid},
-				{Name: "PASSWORD_ACCESS", Value: "false"},
-				{Name: "SUDO_ACCESS", Value: "false"},
-			}),
-			Ports: []corev1.ContainerPort{{
-				Name:          devboxSshPortName,
-				ContainerPort: devboxSshPort,
-				Protocol:      corev1.ProtocolTCP,
-			}},
-		}
-
-		for _, mount := range editor.VolumeMounts {
-			if mount.MountPath != devboxHomeMount {
-				continue
-			}
-			// The home disk, twice: once at the path code-server uses, so both
-			// editors open the same files, and once as the SSH user's own home in
-			// a corner of it — that is where the host keys live, and where a
-			// desktop VS Code installs its remote server, and both should survive
-			// a restart rather than greet the user with a changed host key and a
-			// fresh download. A stateless box has no disk and keeps neither.
-			sidecar.VolumeMounts = []corev1.VolumeMount{
-				mount,
-				{Name: mount.Name, MountPath: devboxSshHome, SubPath: devboxSshStatePath},
-			}
-			break
-		}
-
-		spec.Containers = append(spec.Containers, sidecar)
-		return nil
-	}
 }

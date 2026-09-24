@@ -42,6 +42,7 @@ const emptyForm = (namespace = "default") => ({
 
 const PREPARE_STEP_LABELS = {
   editor: "devbox:Bringing in the editor",
+  ssh: "devbox:Bringing in the SSH server",
   clone: "devbox:Cloning the repository",
   setup: "devbox:Running the setup script",
 };

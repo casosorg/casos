@@ -290,7 +290,7 @@ func buildDevboxRunJob(depl appsv1.Deployment, req freezeDevboxRequest, command 
 		// the user runs here as it did there.
 		Command:      []string{"/bin/sh", "-lc", `export PATH="$HOME/.local/bin:$PATH"` + "\n" + command},
 		WorkingDir:   devboxFolder(depl),
-		VolumeMounts: editor.VolumeMounts,
+		VolumeMounts: runVolumeMounts(editor.VolumeMounts),
 		Env:          runEnv(editor.Env),
 		// The run writes into the same home as the editor, so it has to be the
 		// same user, or the next time the workspace opens its outputs are read-only.
@@ -352,15 +352,21 @@ func devboxEditorContainer(depl appsv1.Deployment) *corev1.Container {
 	return &depl.Spec.Template.Spec.Containers[0]
 }
 
-// runEnv keeps the workspace's environment minus the editor's own password:
-// the run serves nothing, so handing it that secret buys nothing either.
+// runEnv keeps the workspace's environment minus what only the editor and its
+// SSH server use: the run serves nothing, so handing it those buys nothing.
 func runEnv(env []corev1.EnvVar) []corev1.EnvVar {
-	result := []corev1.EnvVar{}
-	for _, item := range env {
-		if item.Name == "PASSWORD" {
-			continue
+	return withoutEnv(env, "PASSWORD", "CASOS_SSH_PUBLIC_KEY")
+}
+
+// runVolumeMounts leaves out the editor's tools volume. The run has no init
+// containers to fill it, and an /etc/passwd mounted from a path that does not
+// exist would be created as a directory and stop the container starting.
+func runVolumeMounts(mounts []corev1.VolumeMount) []corev1.VolumeMount {
+	result := []corev1.VolumeMount{}
+	for _, mount := range mounts {
+		if mount.Name != devboxToolsVolume {
+			result = append(result, mount)
 		}
-		result = append(result, item)
 	}
 	return result
 }

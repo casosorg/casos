@@ -18,28 +18,77 @@ import (
 // the pod's own status says which step it is on and its log says what went
 // wrong.
 //
-// The image is not required to contain code-server. The editor is copied out of
-// the code-server image into a scratch volume and run from there, so any
-// glibc-based image — python, pytorch, a lab's own — becomes a workspace as it
-// is, and a run frozen from it trains in that same image.
+// The image is not required to contain code-server or an SSH server. Both are
+// copied out of images that have them into a scratch volume and run from
+// there, inside the workspace container, so any glibc-based image — python,
+// pytorch, a lab's own — becomes a workspace as it is; whether it is opened in
+// the browser, from a desktop VS Code, or frozen into a run, the work happens
+// in that one image.
 
 const (
 	devboxRepoAnnotation   = "casos.io/devbox-repo"
 	devboxFolderAnnotation = "casos.io/devbox-folder"
 
-	devboxGitImage     = "alpine/git:latest"
-	devboxEditorVolume = "casos-editor"
-	devboxEditorMount  = "/opt/casos"
-	devboxHomeVolume   = "home"
+	devboxGitImage = "alpine/git:latest"
+	// sshd, its helpers and the musl libraries they need are taken from here;
+	// the image itself never runs. Pinned, because the copy script names files
+	// inside it that a later build is free to move.
+	devboxSshImage = "lscr.io/linuxserver/openssh-server:10.3_p1-r1-ls237"
+
+	// The scripts below name this path literally.
+	devboxToolsVolume = "casos-tools"
+	devboxToolsMount  = "/opt/casos"
+	devboxHomeVolume  = "home"
 
 	devboxEditorInit = "editor"
+	devboxSshInit    = "ssh"
+	devboxUserInit   = "user"
 	devboxCloneInit  = "clone"
 	devboxSetupInit  = "setup"
+
+	devboxBundledCodeServer  = "/usr/lib/code-server/bin/code-server"
+	devboxInjectedCodeServer = devboxToolsMount + "/code-server/bin/code-server"
 
 	// Written in the home disk once the setup script has succeeded, so a restart
 	// does not reinstall everything; deleting it runs the script again.
 	devboxSetupMarker = devboxHomeMount + "/.casos/setup-done"
 )
+
+// The Alpine sshd is dynamically linked against musl, which a glibc image does
+// not have, so it is run through the musl loader it came with. sshd starts its
+// per-connection helpers by path, which is why those are small wrappers that
+// do the same.
+const devboxSshCopyScript = `d=/opt/casos/ssh
+mkdir -p "$d/lib"
+cp /lib/ld-musl-*.so.1 "$d/ld-musl"
+cp /usr/sbin/sshd.pam "$d/sshd"
+cp /usr/lib/ssh/sshd-session.pam "$d/sshd-session.bin"
+cp /usr/lib/ssh/sshd-auth.pam "$d/sshd-auth.bin"
+cp /usr/lib/ssh/sftp-server "$d/sftp-server.bin"
+cp /usr/bin/ssh-keygen "$d/ssh-keygen"
+for bin in "$d"/sshd "$d"/*.bin "$d"/ssh-keygen; do
+  ldd "$bin" | awk '$2 == "=>" && $3 !~ /ld-musl/ {print $3}'
+done | sort -u | while read -r lib; do cp -L "$lib" "$d/lib/"; done
+for name in sshd-session sshd-auth sftp-server; do
+  printf '#!/bin/sh\nexec %s/ld-musl --library-path %s/lib %s/%s.bin "$@"\n' "$d" "$d" "$d" "$name" > "$d/$name"
+  chmod 755 "$d/$name"
+done
+`
+
+// Most images have no user 1000, and sshd refuses a login it cannot look up —
+// a shell prompt says "I have no name!" for the same reason. The image's own
+// accounts are kept and coder added as 1000, along with the unprivileged user
+// sshd expects to exist; the result is mounted over /etc/passwd and /etc/group.
+const devboxUserScript = `e=/opt/casos/etc
+mkdir -p "$e"
+awk -F: '$3 != 1000 && $1 != "coder" && $1 != "sshd"' /etc/passwd > "$e/passwd"
+shell=/bin/sh; [ -x /bin/bash ] && shell=/bin/bash
+echo "coder:x:1000:1000:coder:/home/coder:$shell" >> "$e/passwd"
+echo "sshd:x:22:22:sshd privsep:/var/empty:/sbin/nologin" >> "$e/passwd"
+awk -F: '$3 != 1000 && $1 != "coder" && $1 != "sshd"' /etc/group > "$e/group"
+echo "coder:x:1000:" >> "$e/group"
+echo "sshd:x:22:" >> "$e/group"
+`
 
 // The clone never overwrites: a folder that already holds a checkout is where
 // the user's uncommitted work lives. It reports the branch and commit it left
@@ -79,16 +128,63 @@ else
 fi
 `
 
-const devboxEditorLaunch = `export PATH="$HOME/.local/bin:$PATH"
-exec ` + devboxEditorMount + `/code-server/bin/code-server --bind-addr 0.0.0.0:8080 --auth password --disable-telemetry "$CASOS_FOLDER"
+// The launcher starts sshd, when there is a key, beside code-server. sshd gives
+// every session a fresh environment, which would lose the image's own — PATH
+// with conda on it, the CUDA variables — so the container's is written into
+// its config as SetEnv (one line; sshd keeps only the first), and into a file
+// ~/.profile reads, since login shells such as tmux's reset PATH afterwards.
+// The shell stays in the foreground rather than exec'ing the editor, so that
+// sshd's session processes have a parent that reaps them.
+const devboxLaunchScript = `export PATH="$HOME/.local/bin:$PATH"
+if [ -n "$CASOS_SSH_PUBLIC_KEY" ]; then
+  d=/opt/casos/ssh; s="$HOME/.casos/ssh"
+  mkdir -p "$s" && chmod 700 "$s"
+  [ -f "$s/host_ed25519" ] || "$d/ld-musl" --library-path "$d/lib" "$d/ssh-keygen" -q -t ed25519 -N "" -f "$s/host_ed25519"
+  printf '%s\n' "$CASOS_SSH_PUBLIC_KEY" > "$s/authorized_keys"
+  (unset PASSWORD CASOS_SSH_PUBLIC_KEY PWD OLDPWD SHLVL HOSTNAME _; export -p) > "$HOME/.casos/env.sh"
+  touch "$HOME/.profile"
+  grep -q '.casos/env.sh' "$HOME/.profile" || printf '\n# Added by CasOS: the workspace image environment, which login shells otherwise reset.\n[ -f "$HOME/.casos/env.sh" ] && . "$HOME/.casos/env.sh"\n' >> "$HOME/.profile"
+  cat > "$s/sshd_config" <<CFG
+Port 2222
+HostKey $s/host_ed25519
+PidFile none
+AuthorizedKeysFile $s/authorized_keys
+PasswordAuthentication no
+KbdInteractiveAuthentication no
+UsePAM no
+StrictModes no
+AllowTcpForwarding yes
+X11Forwarding no
+SshdSessionPath $d/sshd-session
+SshdAuthPath $d/sshd-auth
+Subsystem sftp $d/sftp-server
+CFG
+  awk 'BEGIN {
+    printf "SetEnv"
+    for (name in ENVIRON) {
+      value = ENVIRON[name]
+      if (name !~ /^[A-Za-z_][A-Za-z0-9_]*$/ || value ~ /\n/) continue
+      if (name ~ /^(PASSWORD|CASOS_SSH_PUBLIC_KEY|HOSTNAME|PWD|OLDPWD|SHLVL|_)$/) continue
+      gsub(/\\/, "\\\\", value); gsub(/"/, "\\\"", value)
+      printf " \"%s=%s\"", name, value
+    }
+    print ""
+  }' >> "$s/sshd_config"
+  "$d/ld-musl" --library-path "$d/lib" "$d/sshd" -D -e -f "$s/sshd_config" &
+fi
+"$CASOS_CODE_SERVER" --bind-addr 0.0.0.0:8080 --auth password --disable-telemetry "$CASOS_FOLDER" &
+editor=$!
+trap 'kill -TERM $editor 2>/dev/null' TERM INT
+wait $editor
 `
 
 type devboxEnvironment struct {
-	image  string
-	repo   string
-	branch string
-	setup  string
-	folder string
+	image        string
+	repo         string
+	branch       string
+	setup        string
+	folder       string
+	sshPublicKey string
 }
 
 var devboxFolderPattern = regexp.MustCompile(`^[A-Za-z0-9._-]+$`)
@@ -124,7 +220,7 @@ func devboxRunsAsUser() *corev1.SecurityContext {
 
 // applyDevboxEnvironment lays the environment onto a built workspace: the home
 // disk every step shares, then the steps themselves in the order they depend on
-// each other — editor, repository, setup.
+// each other — tools, accounts, repository, setup.
 func applyDevboxEnvironment(env devboxEnvironment) func(*appsv1.Deployment) error {
 	return func(depl *appsv1.Deployment) error {
 		spec := &depl.Spec.Template.Spec
@@ -136,55 +232,53 @@ func applyDevboxEnvironment(env devboxEnvironment) func(*appsv1.Deployment) erro
 		home, ok := devboxHomeMountOf(*editor)
 		if !ok {
 			// A stateless box still needs one home that the clone, the setup
-			// script, the editor and SSH all see; it just ends with the pod.
-			spec.Volumes = append(spec.Volumes, corev1.Volume{
-				Name:         devboxHomeVolume,
-				VolumeSource: corev1.VolumeSource{EmptyDir: &corev1.EmptyDirVolumeSource{}},
-			})
+			// script and the editor all see; it just ends with the pod.
+			spec.Volumes = append(spec.Volumes, emptyDirVolume(devboxHomeVolume))
 			home = corev1.VolumeMount{Name: devboxHomeVolume, MountPath: devboxHomeMount}
 			editor.VolumeMounts = append(editor.VolumeMounts, home)
 		}
+		spec.Volumes = append(spec.Volumes, emptyDirVolume(devboxToolsVolume))
+		tools := corev1.VolumeMount{Name: devboxToolsVolume, MountPath: devboxToolsMount}
+		accounts := []corev1.VolumeMount{
+			{Name: devboxToolsVolume, MountPath: "/etc/passwd", SubPath: "etc/passwd", ReadOnly: true},
+			{Name: devboxToolsVolume, MountPath: "/etc/group", SubPath: "etc/group", ReadOnly: true},
+		}
+
+		codeServer := devboxBundledCodeServer
+		if env.image != devboxDefaultImage {
+			codeServer = devboxInjectedCodeServer
+			spec.InitContainers = append(spec.InitContainers, devboxInitContainer(devboxEditorInit, devboxDefaultImage,
+				"cp -a /usr/lib/code-server "+devboxToolsMount+"/", nil, tools))
+		}
+		if env.sshPublicKey != "" {
+			spec.InitContainers = append(spec.InitContainers, devboxInitContainer(devboxSshInit, devboxSshImage,
+				devboxSshCopyScript, nil, tools))
+		}
+		spec.InitContainers = append(spec.InitContainers, devboxInitContainer(devboxUserInit, env.image,
+			devboxUserScript, nil, tools))
 
 		folderEnv := corev1.EnvVar{Name: "CASOS_FOLDER", Value: env.folder}
 		homeEnv := corev1.EnvVar{Name: "HOME", Value: devboxHomeMount}
-		editor.Env = append(editor.Env, folderEnv)
+		editor.Command = []string{"/bin/sh", "-c", devboxLaunchScript}
+		editor.Args = nil
 		editor.SecurityContext = devboxRunsAsUser()
-
-		if env.image == devboxDefaultImage {
-			// The image's own entrypoint opens ".", so the folder is where it starts.
-			editor.WorkingDir = env.folder
-		} else {
-			spec.Volumes = append(spec.Volumes, corev1.Volume{
-				Name:         devboxEditorVolume,
-				VolumeSource: corev1.VolumeSource{EmptyDir: &corev1.EmptyDirVolumeSource{}},
-			})
-			editorMount := corev1.VolumeMount{Name: devboxEditorVolume, MountPath: devboxEditorMount}
-			spec.InitContainers = append(spec.InitContainers, corev1.Container{
-				Name:            devboxEditorInit,
-				Image:           devboxDefaultImage,
-				Command:         []string{"/bin/sh", "-c", "cp -a /usr/lib/code-server " + devboxEditorMount + "/"},
-				VolumeMounts:    []corev1.VolumeMount{editorMount},
-				SecurityContext: devboxRunsAsUser(),
-			})
-			editor.Command = []string{"/bin/sh", "-c", devboxEditorLaunch}
-			editor.Args = nil
-			editor.VolumeMounts = append(editor.VolumeMounts, editorMount)
-			// Most images have no user 1000, so nothing else would say where home
-			// is; conda is told to keep environments there too, since the one it
-			// ships with belongs to root.
-			editor.Env = append(editor.Env,
-				homeEnv,
-				corev1.EnvVar{Name: "CONDA_ENVS_PATH", Value: devboxHomeMount + "/.conda/envs"},
-				corev1.EnvVar{Name: "CONDA_PKGS_DIRS", Value: devboxHomeMount + "/.conda/pkgs"},
-			)
+		editor.VolumeMounts = append(append(editor.VolumeMounts, tools), accounts...)
+		// conda is told to keep environments in home, since the one an image
+		// ships with belongs to root and only home outlives a restart anyway.
+		editor.Env = append(editor.Env,
+			folderEnv,
+			homeEnv,
+			corev1.EnvVar{Name: "CASOS_CODE_SERVER", Value: codeServer},
+			corev1.EnvVar{Name: "CONDA_ENVS_PATH", Value: devboxHomeMount + "/.conda/envs"},
+			corev1.EnvVar{Name: "CONDA_PKGS_DIRS", Value: devboxHomeMount + "/.conda/pkgs"},
+		)
+		if env.sshPublicKey != "" {
+			editor.Env = append(editor.Env, corev1.EnvVar{Name: "CASOS_SSH_PUBLIC_KEY", Value: env.sshPublicKey})
 		}
 
 		if env.repo != "" {
-			spec.InitContainers = append(spec.InitContainers, corev1.Container{
-				Name:    devboxCloneInit,
-				Image:   devboxGitImage,
-				Command: []string{"/bin/sh", "-c", devboxCloneScript},
-				Env: []corev1.EnvVar{
+			spec.InitContainers = append(spec.InitContainers, devboxInitContainer(devboxCloneInit, devboxGitImage,
+				devboxCloneScript, []corev1.EnvVar{
 					{Name: "CASOS_REPO", Value: env.repo},
 					{Name: "CASOS_BRANCH", Value: env.branch},
 					folderEnv,
@@ -192,30 +286,21 @@ func applyDevboxEnvironment(env devboxEnvironment) func(*appsv1.Deployment) erro
 					// Without this, a repository that wants a password waits forever
 					// on a prompt nobody can see.
 					{Name: "GIT_TERMINAL_PROMPT", Value: "0"},
-				},
-				VolumeMounts:    []corev1.VolumeMount{home},
-				SecurityContext: devboxRunsAsUser(),
-			})
+				}, home))
 		}
 
 		if env.setup != "" {
 			// The script runs in the workspace's own image, so what it installs
 			// matches what the editor runs — but only what lands in the home disk
 			// outlives it, which is why pip and conda are pointed there.
-			setupEnv := append(withoutEnv(editor.Env, "PASSWORD", "HOME"),
-				homeEnv,
+			setupEnv := append(withoutEnv(editor.Env, "PASSWORD", "CASOS_SSH_PUBLIC_KEY"),
 				corev1.EnvVar{Name: "CASOS_SETUP", Value: env.setup},
 				corev1.EnvVar{Name: "CASOS_SETUP_MARKER", Value: devboxSetupMarker},
 			)
-			spec.InitContainers = append(spec.InitContainers, corev1.Container{
-				Name:            devboxSetupInit,
-				Image:           env.image,
-				Command:         []string{"/bin/sh", "-c", devboxSetupScript},
-				Env:             setupEnv,
-				VolumeMounts:    []corev1.VolumeMount{home},
-				Resources:       editor.Resources,
-				SecurityContext: devboxRunsAsUser(),
-			})
+			setup := devboxInitContainer(devboxSetupInit, env.image, devboxSetupScript, setupEnv, home)
+			setup.VolumeMounts = append(setup.VolumeMounts, accounts...)
+			setup.Resources = editor.Resources
+			spec.InitContainers = append(spec.InitContainers, setup)
 		}
 
 		applyAnnotation(&depl.ObjectMeta, devboxFolderAnnotation, env.folder)
@@ -224,6 +309,21 @@ func applyDevboxEnvironment(env devboxEnvironment) func(*appsv1.Deployment) erro
 		}
 		return nil
 	}
+}
+
+func devboxInitContainer(name, image, script string, env []corev1.EnvVar, mounts ...corev1.VolumeMount) corev1.Container {
+	return corev1.Container{
+		Name:            name,
+		Image:           image,
+		Command:         []string{"/bin/sh", "-c", script},
+		Env:             env,
+		VolumeMounts:    mounts,
+		SecurityContext: devboxRunsAsUser(),
+	}
+}
+
+func emptyDirVolume(name string) corev1.Volume {
+	return corev1.Volume{Name: name, VolumeSource: corev1.VolumeSource{EmptyDir: &corev1.EmptyDirVolumeSource{}}}
 }
 
 func devboxHomeMountOf(c corev1.Container) (corev1.VolumeMount, bool) {

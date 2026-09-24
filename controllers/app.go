@@ -94,8 +94,8 @@ func (c *ApiController) DeployApp() {
 // workloadOptions is what a preset adds on top of the form the launchpad
 // sends: labels marking the kind of app this is, so the preset's list can find
 // its own without walking the whole cluster, and a last look at the built
-// Deployment for the parts of a pod no form describes — a DevBox's SSH sidecar
-// is the one caller of that.
+// Deployment for the parts of a pod no form describes — a DevBox's environment
+// is the one user of that.
 type workloadOptions struct {
 	labels map[string]string
 	mutate func(*appsv1.Deployment) error
