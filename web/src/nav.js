@@ -105,7 +105,10 @@ export const navGroups = [
     key: "/infrastructure",
     label: "general:Infrastructure",
     icon: Server,
-    children: [{key: "/machines", label: "general:Machines", path: "/machines"}],
+    children: [
+      {key: "/devices", label: "device:Idle Devices", path: "/devices"},
+      {key: "/machines", label: "general:Machines", path: "/machines"},
+    ],
   },
   {
     key: "/admin",

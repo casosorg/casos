@@ -44,6 +44,7 @@ const MonitorPage = lazy(() => import("@/pages/MonitorPage"));
 const TerminalPage = lazy(() => import("@/pages/TerminalPage"));
 const LaunchpadPage = lazy(() => import("@/pages/LaunchpadPage"));
 const DevboxPage = lazy(() => import("@/pages/DevboxPage"));
+const IdleDevicesPage = lazy(() => import("@/pages/IdleDevicesPage"));
 const LaunchpadEditPage = lazy(() => import("@/pages/LaunchpadEditPage"));
 const LaunchpadDetailPage = lazy(() => import("@/pages/LaunchpadDetailPage"));
 const DatabasePage = lazy(() => import("@/pages/DatabasePage"));
@@ -124,6 +125,7 @@ export function AppRoutes({account, accountUpdatedAt, onOpenAccount, onUpdateSit
         <Route exact path="/launchpad/:namespace/:name" component={LaunchpadDetailPage} />
         <Route exact path="/launchpad/:namespace/:name/edit" component={LaunchpadEditPage} />
         <Route exact path="/devboxes" component={DevboxPage} />
+        <Route exact path="/devices" component={IdleDevicesPage} />
         <Route exact path="/databases" component={DatabasePage} />
         <Route exact path="/databases/new" component={DatabaseEditPage} />
         <Route exact path="/databases/:namespace/:name" component={DatabaseDetailPage} />
