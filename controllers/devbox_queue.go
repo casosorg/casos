@@ -48,7 +48,8 @@ const (
 type freezeDevboxRequest struct {
 	Namespace string `json:"namespace"`
 	Name      string `json:"name"`
-	// Command is a shell line, run in the workspace's home directory.
+	// Command is a shell line, run in the workspace's folder — its checkout
+	// when it has one, home otherwise.
 	Command string `json:"command"`
 	// Gpu is how many accelerators the run asks for, in GpuResource units
 	// (nvidia.com/gpu unless the cluster counts them under another name).
@@ -283,12 +284,17 @@ func buildDevboxRunJob(depl appsv1.Deployment, req freezeDevboxRequest, command 
 	}
 
 	container := corev1.Container{
-		Name:         "run",
-		Image:        editor.Image,
-		Command:      []string{"/bin/sh", "-lc", command},
-		WorkingDir:   devboxHomeMount,
+		Name:  "run",
+		Image: editor.Image,
+		// The same PATH the editor's terminal has, so a tool pip installed for
+		// the user runs here as it did there.
+		Command:      []string{"/bin/sh", "-lc", `export PATH="$HOME/.local/bin:$PATH"` + "\n" + command},
+		WorkingDir:   devboxFolder(depl),
 		VolumeMounts: editor.VolumeMounts,
 		Env:          runEnv(editor.Env),
+		// The run writes into the same home as the editor, so it has to be the
+		// same user, or the next time the workspace opens its outputs are read-only.
+		SecurityContext: editor.SecurityContext,
 	}
 	if err := applyResources(&container, resourceRequest{CpuLimit: req.CpuLimit, MemoryLimit: req.MemoryLimit}); err != nil {
 		return nil, err

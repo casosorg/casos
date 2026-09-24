@@ -55,9 +55,17 @@ const (
 type deployDevboxRequest struct {
 	Namespace string `json:"namespace"`
 	Name      string `json:"name"`
-	// Image overrides the code-server image, for a lab that keeps its own or a
-	// pinned digest; empty uses the default.
+	// Image is the environment to work in. It need not contain code-server —
+	// the editor is brought in beside it — so python, pytorch or a lab's own
+	// image all work; empty uses the code-server image on its own.
 	Image string `json:"image"`
+	// Repo is cloned into the home disk on first start and opened as the
+	// workspace; Branch picks one other than the default.
+	Repo   string `json:"repo"`
+	Branch string `json:"branch"`
+	// Setup is a shell script run once, in the checkout, before the editor
+	// first starts — installing requirements, say.
+	Setup string `json:"setup"`
 	// Password guards the editor. Empty means "generate one", handed back once
 	// so the user can copy it — it is never read back afterwards.
 	Password string `json:"password"`
@@ -89,6 +97,21 @@ type devboxSummary struct {
 	SshUser string `json:"sshUser"`
 	// SshPath is the folder to open on the far side.
 	SshPath string `json:"sshPath"`
+	// Folder is where the workspace opens and where its runs start.
+	Folder string `json:"folder"`
+	Repo   string `json:"repo"`
+	// Where the checkout stands as of the last start, which is as much as the
+	// cluster can tell without reaching into the disk.
+	Branch     string `json:"branch"`
+	Commit     string `json:"commit"`
+	CloneError string `json:"cloneError"`
+	// PrepareStep is the init step a starting workspace is on — editor, clone
+	// or setup — and SetupFailed says the setup script did not finish; the
+	// editor starts either way, so the user can see why and fix it.
+	PrepareStep string `json:"prepareStep"`
+	SetupFailed bool   `json:"setupFailed"`
+	HasSetup    bool   `json:"hasSetup"`
+	PodName     string `json:"podName"`
 	// The run this workspace was last frozen for, if it has one: a frozen box
 	// with nothing queued is just a stopped box, and the two should not look
 	// the same in a list.
@@ -152,6 +175,22 @@ func (c *ApiController) DeployDevbox() {
 		volumes = []volumeRequest{{MountPath: devboxHomeMount, Size: size}}
 	}
 
+	env := devboxEnvironment{
+		image:  image,
+		repo:   strings.TrimSpace(req.Repo),
+		branch: strings.TrimSpace(req.Branch),
+		setup:  strings.TrimSpace(req.Setup),
+		folder: devboxHomeMount,
+	}
+	if env.repo != "" {
+		name, err := devboxRepoFolder(env.repo)
+		if err != nil {
+			c.ResponseError(err.Error())
+			return
+		}
+		env.folder = devboxHomeMount + "/" + name
+	}
+
 	publicKey := strings.TrimSpace(req.SshPublicKey)
 	if publicKey != "" && !looksLikeSshPublicKey(publicKey) {
 		c.ResponseError("that does not look like an SSH public key — paste the contents of a .pub file, one line starting with ssh-ed25519 or ssh-rsa")
@@ -185,9 +224,18 @@ func (c *ApiController) DeployDevbox() {
 		},
 	}
 
-	opts := workloadOptions{labels: map[string]string{devboxLabel: "true"}}
+	// The environment goes first: it settles where home is, and the SSH sidecar
+	// has to mount the same one.
+	withEnv := applyDevboxEnvironment(env)
+	opts := workloadOptions{labels: map[string]string{devboxLabel: "true"}, mutate: withEnv}
 	if publicKey != "" {
-		opts.mutate = addDevboxSshSidecar(publicKey)
+		withSsh := addDevboxSshSidecar(publicKey)
+		opts.mutate = func(depl *appsv1.Deployment) error {
+			if err := withEnv(depl); err != nil {
+				return err
+			}
+			return withSsh(depl)
+		}
 	}
 	if _, err := deployAppWorkload(cfg, appReq, opts); err != nil {
 		c.ResponseError(err.Error())
@@ -196,7 +244,7 @@ func (c *ApiController) DeployDevbox() {
 
 	summary := devboxSummary{Name: req.Name, Namespace: req.Namespace, Image: image, Status: "pending"}
 	if depl, err := object.GetDeployment(cfg, req.Namespace, req.Name); err == nil {
-		summary = devboxSummaryOf(cfg, *depl, clusterNodeIP(cfg))
+		summary = devboxSummaryOf(cfg, *depl, clusterNodeIP(cfg), nil)
 	}
 
 	c.ResponseOk(deployDevboxResult{devboxSummary: summary, Password: password})
@@ -223,13 +271,22 @@ func (c *ApiController) GetDevboxes() {
 	}
 
 	latestRuns := latestDevboxRuns(cfg, namespace)
+	podsByBox := map[string][]corev1.Pod{}
+	if pods, err := object.GetPods(cfg, namespace); err == nil {
+		for _, pod := range pods {
+			if pod.Labels[devboxLabel] == "true" {
+				key := pod.Namespace + "/" + pod.Labels[appInstanceLabel]
+				podsByBox[key] = append(podsByBox[key], pod)
+			}
+		}
+	}
 	nodeIP := clusterNodeIP(cfg)
 	result := []devboxSummary{}
 	for _, d := range deployments {
 		if d.Labels[devboxLabel] != "true" {
 			continue
 		}
-		summary := devboxSummaryOf(cfg, d, nodeIP)
+		summary := devboxSummaryOf(cfg, d, nodeIP, podsByBox[d.Namespace+"/"+d.Name])
 		if run, ok := latestRuns[d.Name]; ok {
 			summary.RunName = run.Name
 			summary.RunStatus = run.Status
@@ -240,7 +297,7 @@ func (c *ApiController) GetDevboxes() {
 	c.ResponseOk(result)
 }
 
-func devboxSummaryOf(cfg *rest.Config, d appsv1.Deployment, nodeIP string) devboxSummary {
+func devboxSummaryOf(cfg *rest.Config, d appsv1.Deployment, nodeIP string, pods []corev1.Pod) devboxSummary {
 	status, _ := deploymentAppStatus(d)
 	replicas := int32(0)
 	if d.Spec.Replicas != nil {
@@ -254,6 +311,24 @@ func devboxSummaryOf(cfg *rest.Config, d appsv1.Deployment, nodeIP string) devbo
 		Replicas:  replicas,
 		Ready:     d.Status.ReadyReplicas,
 		CreatedAt: d.CreationTimestamp.UTC().Format("2006-01-02 15:04:05"),
+		Folder:    devboxFolder(d),
+		Repo:      d.Annotations[devboxRepoAnnotation],
+	}
+	for _, init := range d.Spec.Template.Spec.InitContainers {
+		if init.Name == devboxSetupInit {
+			summary.HasSetup = true
+		}
+	}
+	if status != "stopped" {
+		state := devboxPodStateOf(pods)
+		summary.PodName = state.podName
+		summary.Branch = state.branch
+		summary.Commit = state.commit
+		summary.CloneError = state.cloneError
+		summary.SetupFailed = state.setupFailed
+		if status == "pending" {
+			summary.PrepareStep = state.prepareStep
+		}
 	}
 	if svc, err := object.GetService(cfg, d.Namespace, d.Name); err == nil {
 		if host, port := devboxAddress(svc, nodeIP, devboxHttpPortName); host != "" {
@@ -263,7 +338,7 @@ func devboxSummaryOf(cfg *rest.Config, d appsv1.Deployment, nodeIP string) devbo
 			summary.SshHost = host
 			summary.SshPort = port
 			summary.SshUser = devboxSshUser
-			summary.SshPath = devboxHomeMount
+			summary.SshPath = summary.Folder
 		}
 	}
 	return summary
