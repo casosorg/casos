@@ -135,7 +135,7 @@ function SimpleHome({stats, releases, machines, checklist}) {
 
   const badgeVariant = {success: "success", warning: "warning", danger: "danger"}[statusTone];
   const badgeLabel = {
-    success: t("simple:Running"),
+    success: t("general:Running"),
     warning: t("simple:Needs attention"),
     danger: t("simple:Not working"),
   }[statusTone];

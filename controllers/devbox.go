@@ -16,8 +16,8 @@ import (
 )
 
 const (
-	devboxLabel        = "casos.io/devbox"
-	devboxDefaultImage = "codercom/code-server:latest"
+	devboxLabel         = "casos.io/devbox"
+	devboxDefaultImage  = "codercom/code-server:latest"
 	devboxContainerPort = 8080
 	devboxHomeMount     = "/home/coder"
 	devboxDefaultDisk   = "5Gi"
@@ -36,10 +36,10 @@ const (
 type deployDevboxRequest struct {
 	Namespace string `json:"namespace"`
 	Name      string `json:"name"`
-	Image string `json:"image"`
-	Password string `json:"password"`
+	Image     string `json:"image"`
+	Password  string `json:"password"`
 	// "0" means no disk: a stateless box.
-	DiskSize string `json:"diskSize"`
+	DiskSize     string  `json:"diskSize"`
 	SshPublicKey string  `json:"sshPublicKey"`
 	CpuLimit     *string `json:"cpuLimit"`
 	MemoryLimit  *string `json:"memoryLimit"`
@@ -54,10 +54,13 @@ type devboxSummary struct {
 	Ready     int32  `json:"ready"`
 	Url       string `json:"url"`
 	CreatedAt string `json:"createdAt"`
-	SshHost string `json:"sshHost"`
-	SshPort int32  `json:"sshPort"`
-	SshUser string `json:"sshUser"`
-	SshPath string `json:"sshPath"`
+	SshHost   string `json:"sshHost"`
+	SshPort   int32  `json:"sshPort"`
+	SshUser   string `json:"sshUser"`
+	SshPath   string `json:"sshPath"`
+	// The latest run frozen from this box, so a frozen box doesn't look merely stopped.
+	RunName   string `json:"runName"`
+	RunStatus string `json:"runStatus"`
 }
 
 type deployDevboxResult struct {
@@ -183,13 +186,19 @@ func (c *ApiController) GetDevboxes() {
 		return
 	}
 
+	latestRuns := latestDevboxRuns(cfg, namespace)
 	nodeIP := clusterNodeIP(cfg)
 	result := []devboxSummary{}
 	for _, d := range deployments {
 		if d.Labels[devboxLabel] != "true" {
 			continue
 		}
-		result = append(result, devboxSummaryOf(cfg, d, nodeIP))
+		summary := devboxSummaryOf(cfg, d, nodeIP)
+		if run, ok := latestRuns[d.Name]; ok {
+			summary.RunName = run.Name
+			summary.RunStatus = run.Status
+		}
+		result = append(result, summary)
 	}
 	sort.Slice(result, func(i, j int) bool { return result[i].CreatedAt > result[j].CreatedAt })
 	c.ResponseOk(result)

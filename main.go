@@ -136,6 +136,8 @@ func main() {
 				logs.Warning("start controller-manager: %v", err)
 			}
 			server.RegisterInstallImageVulnerabilityReporter()
+			// Gives a frozen workspace back once the run it was frozen for ends.
+			controllers.StartDevboxQueue(ctx)
 			// Runs even when autoEnrollLocalNode is off: a node deployed by an
 			// earlier run still needs its distro held open, or WSL stops both.
 			deploy.ResumeWSLKeepAlives(ctx)

@@ -1,7 +1,7 @@
 import React, {useState} from "react";
 import i18next from "i18next";
 import {useTranslation} from "react-i18next";
-import {Code2, ExternalLink, Laptop, Play, Plus, Square, Trash2} from "lucide-react";
+import {Code2, ExternalLink, Laptop, ListChecks, Play, Plus, Snowflake, Square, Trash2} from "lucide-react";
 import * as DevboxBackend from "@/backend/DevboxBackend";
 import * as ImageBackend from "@/backend/ImageBackend";
 import * as NamespaceBackend from "@/backend/NamespaceBackend";
@@ -16,6 +16,8 @@ import {PageContainer, PageHeader} from "@/components/shared/page-header";
 import {SimpleSelect} from "@/components/shared/simple-select";
 import {StatusBadge} from "@/components/shared/status-badge";
 import {CodeBlock, CodeText, DescriptionList} from "@/components/shared/misc";
+import {DevboxRunsSheet} from "@/components/shared/devbox-runs-sheet";
+import {Badge} from "@/components/ui/badge";
 import {runAction, useResource} from "@/hooks/use-resource";
 import {useWorkspace} from "@/hooks/use-workspace";
 
@@ -31,6 +33,10 @@ const DEVBOX_STATUS_VARIANTS = {
 const emptyForm = (namespace = "default") => ({name: "", namespace, image: "", diskSize: "5Gi", password: "", sshPublicKey: ""});
 
 const hasSsh = (box) => Boolean(box?.sshHost && box?.sshPort);
+
+const isQueued = (box) => box?.runStatus === "queued" || box?.runStatus === "running";
+
+const emptyFreezeForm = () => ({command: "", gpu: "1", cpuLimit: "", memoryLimit: "", thawOnFinish: true});
 
 const sshCommand = (box) => `ssh -p ${box.sshPort} ${box.sshUser}@${box.sshHost}`;
 const vscodeLink = (box) => `vscode://vscode-remote/ssh-remote+${box.sshUser}@${box.sshHost}:${box.sshPort}${box.sshPath || ""}`;
@@ -51,6 +57,10 @@ function DevboxPage() {
   const [submitting, setSubmitting] = useState(false);
   const [created, setCreated] = useState(null);
   const [connectTarget, setConnectTarget] = useState(null);
+  const [freezeTarget, setFreezeTarget] = useState(null);
+  const [freezeForm, setFreezeForm] = useState(emptyFreezeForm);
+  const [freezing, setFreezing] = useState(false);
+  const [runsTarget, setRunsTarget] = useState(null);
   const [deleteTarget, setDeleteTarget] = useState(null);
   const [deleteData, setDeleteData] = useState(false);
 
@@ -95,6 +105,44 @@ function DevboxPage() {
       );
     } finally {
       setSubmitting(false);
+    }
+  }
+
+  function setFreezeField(key, value) {
+    setFreezeForm((prev) => ({...prev, [key]: value}));
+  }
+
+  function openFreeze(box) {
+    setFreezeForm(emptyFreezeForm());
+    setFreezeTarget(box);
+  }
+
+  async function submitFreeze() {
+    if (!freezeTarget || !freezeForm.command.trim()) {
+      return;
+    }
+    setFreezing(true);
+    try {
+      await runAction(
+        DevboxBackend.freezeDevbox({
+          namespace: freezeTarget.namespace,
+          name: freezeTarget.name,
+          command: freezeForm.command.trim(),
+          gpu: Number(freezeForm.gpu) || 0,
+          cpuLimit: freezeForm.cpuLimit.trim() || null,
+          memoryLimit: freezeForm.memoryLimit.trim() || null,
+          thawOnFinish: freezeForm.thawOnFinish,
+        }),
+        {
+          successMessage: i18next.t("devbox:Workspace frozen and the run queued"),
+          onSuccess: () => {
+            setFreezeTarget(null);
+            refresh({silent: true});
+          },
+        }
+      );
+    } finally {
+      setFreezing(false);
     }
   }
 
@@ -143,9 +191,19 @@ function DevboxPage() {
       key: "status",
       title: i18next.t("general:Status"),
       dataIndex: "status",
-      width: 120,
+      width: 170,
       sortable: true,
-      render: (value) => <StatusBadge status={value} variants={DEVBOX_STATUS_VARIANTS} />,
+      render: (value, record) => (
+        <div className="flex flex-wrap items-center gap-1">
+          <StatusBadge status={value} variants={DEVBOX_STATUS_VARIANTS} />
+          {isQueued(record) ? (
+            <Badge variant="info" className="gap-1">
+              <Snowflake className="size-3" />
+              {i18next.t("devbox:Frozen")}
+            </Badge>
+          ) : null}
+        </div>
+      ),
     },
     {
       key: "image",
@@ -171,7 +229,7 @@ function DevboxPage() {
     {
       key: "actions",
       title: i18next.t("general:Action"),
-      width: 240,
+      width: 300,
       align: "right",
       render: (_value, record) => (
         <div className="flex items-center justify-end gap-0.5">
@@ -203,6 +261,31 @@ function DevboxPage() {
             }}
           >
             <Laptop />
+          </Button>
+          <Button
+            size="icon-sm"
+            variant="ghost"
+            aria-label={i18next.t("devbox:Freeze and queue a run")}
+            title={i18next.t("devbox:Freeze and queue a run")}
+            data-testid="devbox-freeze"
+            onClick={(event) => {
+              event.stopPropagation();
+              openFreeze(record);
+            }}
+          >
+            <Snowflake />
+          </Button>
+          <Button
+            size="icon-sm"
+            variant="ghost"
+            aria-label={i18next.t("devbox:Runs")}
+            title={i18next.t("devbox:Runs")}
+            onClick={(event) => {
+              event.stopPropagation();
+              setRunsTarget(record);
+            }}
+          >
+            <ListChecks />
           </Button>
           {record.status === "stopped" ? (
             <Button
@@ -463,6 +546,74 @@ function DevboxPage() {
           </div>
         )}
       </FormDialog>
+
+      <FormDialog
+        open={Boolean(freezeTarget)}
+        onOpenChange={(open) => {
+          if (!open) {
+            setFreezeTarget(null);
+          }
+        }}
+        title={i18next.t("devbox:Freeze and queue a run")}
+        description={i18next.t("devbox:The editor stops and the same container runs your command on the same home disk — so the run starts from the files you were just looking at, on the hardware the workspace lets go of.")}
+        onSubmit={submitFreeze}
+        submitText={i18next.t("devbox:Freeze and queue")}
+        submitting={freezing}
+        submitDisabled={!freezeForm.command.trim()}
+      >
+        <Field label={i18next.t("launchpad:Command")} htmlFor="devbox-run-command" required
+          hint={i18next.t("devbox:Run in /home/coder, as a shell line.")}>
+          <Textarea
+            id="devbox-run-command"
+            rows={3}
+            className="font-mono text-xs"
+            value={freezeForm.command}
+            onChange={(e) => setFreezeField("command", e.target.value)}
+            placeholder="python train.py --epochs 50"
+            data-testid="devbox-run-command-input"
+          />
+        </Field>
+        <Field label={i18next.t("devbox:GPUs")} htmlFor="devbox-run-gpu"
+          hint={i18next.t("devbox:Asks for this many nvidia.com/gpu. Use 0 for a CPU run.")}>
+          <Input
+            id="devbox-run-gpu"
+            type="number"
+            min="0"
+            value={freezeForm.gpu}
+            onChange={(e) => setFreezeField("gpu", e.target.value)}
+          />
+        </Field>
+        <Field label={i18next.t("launchpad:CPU limit")} htmlFor="devbox-run-cpu">
+          <Input
+            id="devbox-run-cpu"
+            value={freezeForm.cpuLimit}
+            onChange={(e) => setFreezeField("cpuLimit", e.target.value)}
+            placeholder="4"
+          />
+        </Field>
+        <Field label={i18next.t("launchpad:Memory limit")} htmlFor="devbox-run-memory">
+          <Input
+            id="devbox-run-memory"
+            value={freezeForm.memoryLimit}
+            onChange={(e) => setFreezeField("memoryLimit", e.target.value)}
+            placeholder="16Gi"
+          />
+        </Field>
+        <label className="flex items-center gap-2 text-sm">
+          <Checkbox
+            checked={freezeForm.thawOnFinish}
+            onCheckedChange={(checked) => setFreezeField("thawOnFinish", Boolean(checked))}
+          />
+          {i18next.t("devbox:Bring the workspace back when the run ends")}
+        </label>
+      </FormDialog>
+
+      <DevboxRunsSheet
+        devbox={runsTarget}
+        open={Boolean(runsTarget)}
+        onClose={() => setRunsTarget(null)}
+        onChanged={() => refresh({silent: true})}
+      />
 
       <ConfirmDialog
         open={Boolean(deleteTarget)}
