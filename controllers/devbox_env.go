@@ -99,7 +99,7 @@ func devboxRepoFolder(repo string) (string, error) {
 		return "", fmt.Errorf("the repository must be an http(s) or git:// address, such as https://github.com/owner/project.git")
 	}
 	if u.User != nil {
-		return "", fmt.Errorf("leave credentials out of the repository address: private repositories are not supported yet")
+		return "", fmt.Errorf("leave credentials out of the repository address")
 	}
 	name := strings.TrimSuffix(path.Base(strings.TrimRight(u.Path, "/")), ".git")
 	if !devboxFolderPattern.MatchString(name) || name == "." || name == ".." {

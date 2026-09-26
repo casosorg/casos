@@ -512,11 +512,12 @@
     "Wires your apps together into automated workflows.": "把各个应用串成自动化工作流。"
   },
   "launchpad": {
+    "A GitHub, GitLab or Gitea token that can read a private repository. Rebuilds reuse it.": "能读取私有仓库的 GitHub、GitLab 或 Gitea 令牌，重新构建时会继续使用。",
     "A build is already running": "已有一个构建在运行",
     "A domain needs an ingress controller in the cluster and DNS pointing at it.": "使用域名需要集群中已安装 Ingress 控制器，并将 DNS 指向它。",
     "A domain needs the port it forwards to": "域名需要填写它转发到的端口",
     "A name is required": "请填写名称",
-    "A public repository. Private ones are not supported yet.": "公开仓库。暂不支持私有仓库。",
+    "Access token": "访问令牌",
     "Add config file": "添加配置文件",
     "Add disk": "添加磁盘",
     "Add domain": "添加域名",
@@ -600,6 +601,7 @@
     "No pods are running for this app.": "该应用当前没有运行中的容器组。",
     "NodePort publishes the app on every node's address; ClusterIP keeps it inside the cluster.": "NodePort 会在每个节点地址上暴露应用；ClusterIP 则只在集群内部可访问。",
     "Not exposed": "未暴露",
+    "Not needed for a public repository": "公开仓库无需填写",
     "One container, everything it needs to be reachable and to stay up.": "一个容器，加上让它可访问、可持续运行所需的一切。",
     "Overrides the image's entrypoint": "覆盖镜像的 entrypoint",
     "Paste a docker-compose.yml. Each service runs in the project's own namespace and reaches the others by name; one that publishes a port gets an address.": "粘贴一个 docker-compose.yml。每个服务都运行在该项目自己的命名空间里，相互之间按服务名访问；发布了端口的服务会分配访问地址。",

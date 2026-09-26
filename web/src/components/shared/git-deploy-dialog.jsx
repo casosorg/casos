@@ -7,10 +7,10 @@ import {SimpleSelect} from "@/components/shared/simple-select";
 import {runAction} from "@/hooks/use-resource";
 import {nameFromRepo} from "@/lib/git";
 
-const emptyForm = (namespace) => ({repo: "", branch: "", path: "", name: "", nameTouched: false, port: "", namespace});
+const emptyForm = (namespace) => ({repo: "", token: "", branch: "", path: "", name: "", nameTouched: false, port: "", namespace});
 
 /**
- * Asks for a public Git repository and starts its first build; casos deploys
+ * Asks for a Git repository and starts its first build; casos deploys
  * the app once the build has pushed its image.
  */
 export function GitDeployDialog({open, onOpenChange, namespaces, defaultNamespace = "default", onStarted}) {
@@ -39,6 +39,7 @@ export function GitDeployDialog({open, onOpenChange, namespaces, defaultNamespac
           namespace: form.namespace,
           name: form.name.trim(),
           repo: form.repo.trim(),
+          token: form.token.trim(),
           branch: form.branch.trim(),
           path: form.path.trim(),
           port: Number(form.port) || 0,
@@ -71,7 +72,7 @@ export function GitDeployDialog({open, onOpenChange, namespaces, defaultNamespac
       submitting={submitting}
       submitDisabled={!form.repo.trim() || !form.name.trim()}
     >
-      <Field label={i18next.t("launchpad:Repository")} htmlFor="git-repo" required hint={i18next.t("launchpad:A public repository. Private ones are not supported yet.")}>
+      <Field label={i18next.t("launchpad:Repository")} htmlFor="git-repo" required>
         <Input
           id="git-repo"
           value={form.repo}
@@ -79,6 +80,17 @@ export function GitDeployDialog({open, onOpenChange, namespaces, defaultNamespac
           placeholder="https://github.com/owner/project.git"
           autoFocus
           data-testid="git-repo"
+        />
+      </Field>
+      <Field label={i18next.t("launchpad:Access token")} htmlFor="git-token" hint={i18next.t("launchpad:A GitHub, GitLab or Gitea token that can read a private repository. Rebuilds reuse it.")}>
+        <Input
+          id="git-token"
+          type="password"
+          autoComplete="new-password"
+          value={form.token}
+          onChange={(e) => setField("token", e.target.value)}
+          placeholder={i18next.t("launchpad:Not needed for a public repository")}
+          data-testid="git-token"
         />
       </Field>
       <div className="grid grid-cols-2 gap-3">

@@ -63,6 +63,8 @@ const (
 	gitBuildWatchInterval = 5 * time.Second
 	gitBuildTimeFormat    = "2006-01-02 15:04:05"
 
+	gitTokenKey = "token"
+
 	gitBuildDeployed     = "deployed"
 	gitBuildDeployFailed = "deploy-failed"
 	gitBuildFailed       = "failed"
@@ -75,6 +77,10 @@ fail() { printf 'error=%s\n' "$1" > /dev/termination-log; echo "error: $1" >&2; 
 mkdir -p "$HOME/.config/buildkit"
 printf '%s' "$BUILDKITD_TOML" > "$HOME/.config/buildkit/buildkitd.toml"
 
+if [ -n "${GIT_TOKEN:-}" ]; then
+  export GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=credential.helper \
+    GIT_CONFIG_VALUE_0='!f() { test "$1" = get && printf "username=oauth2\npassword=%s\n" "$GIT_TOKEN"; }; f'
+fi
 echo "==> Cloning $REPO${BRANCH:+ at $BRANCH}"
 set --
 if [ -n "$BRANCH" ]; then set -- --branch "$BRANCH"; fi
@@ -316,6 +322,7 @@ type gitBuildRequest struct {
 	// Port overrides the one the build finds; 0 keeps what it finds.
 	Port    int32           `json:"port"`
 	EnvVars []envVarRequest `json:"envVars"`
+	Token   string          `json:"token"`
 	// The domain the app gets its address under, from the address casos is
 	// reached by.
 	domain string
@@ -394,6 +401,11 @@ func startGitBuild(ctx context.Context, cfg *rest.Config, req gitBuildRequest) (
 	if err := ensureBuildRegistry(ctx, cfg); err != nil {
 		return nil, err
 	}
+	if token := strings.TrimSpace(req.Token); token != "" {
+		if err := saveGitToken(cfg, req.Namespace, req.Name, token); err != nil {
+			return nil, err
+		}
+	}
 
 	annotations := map[string]string{
 		gitRepoAnnotation:   req.Repo,
@@ -414,6 +426,9 @@ func startGitBuild(ctx context.Context, cfg *rest.Config, req gitBuildRequest) (
 
 	backoff := int32(0)
 	ttl := gitBuildTTLSeconds
+	optional := true
+	tokenEnv := secretEnv("GIT_TOKEN", gitTokenSecretName(req.Name), gitTokenKey)
+	tokenEnv.ValueFrom.SecretKeyRef.Optional = &optional
 	uid := int64(1000)
 	podLabels := map[string]string{gitBuildLabel: req.Name}
 	job := &batchv1.Job{
@@ -442,6 +457,7 @@ func startGitBuild(ctx context.Context, cfg *rest.Config, req gitBuildRequest) (
 							{Name: "BUILDKITD_TOML", Value: buildkitdConfig()},
 							{Name: "BUILDKITD_FLAGS", Value: "--oci-worker-no-process-sandbox"},
 							{Name: "GIT_TERMINAL_PROMPT", Value: "0"},
+							tokenEnv,
 						},
 						// Rootless BuildKit creates user namespaces, which the
 						// default seccomp and AppArmor profiles forbid.
@@ -467,6 +483,39 @@ func startGitBuild(ctx context.Context, cfg *rest.Config, req gitBuildRequest) (
 	}
 	build := gitBuildOf(*created, nil)
 	return &build, nil
+}
+
+func gitTokenSecretName(app string) string { return app + "-git" }
+
+// saveGitToken keeps the token beside the app, so rebuilds reuse it and
+// deleting the app removes it.
+func saveGitToken(cfg *rest.Config, namespace, app, token string) error {
+	name := gitTokenSecretName(app)
+	data := map[string][]byte{gitTokenKey: []byte(token)}
+	existing, err := object.GetSecret(cfg, namespace, name)
+	switch {
+	case errors.IsNotFound(err):
+		secret := &corev1.Secret{
+			ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: namespace, Labels: appOwnershipLabels(app, "")},
+			Data:       data,
+		}
+		_, err = object.AddSecret(cfg, secret)
+		return err
+	case err != nil:
+		return err
+	case !ownedByApp(existing.ObjectMeta, app):
+		return fmt.Errorf("the secret %s already exists and does not belong to %s; pick another name", name, app)
+	}
+	existing.Data = data
+	_, err = object.UpdateSecret(cfg, existing)
+	return err
+}
+
+func forgetGitToken(cfg *rest.Config, namespace, app string) {
+	name := gitTokenSecretName(app)
+	if secret, err := object.GetSecret(cfg, namespace, name); err == nil && ownedByApp(secret.ObjectMeta, app) {
+		_ = object.DeleteSecret(cfg, namespace, name)
+	}
 }
 
 func gitBuildOf(job batchv1.Job, pods []corev1.Pod) gitBuild {
@@ -593,6 +642,10 @@ func deployFinishedGitBuilds() {
 			continue
 		}
 		if condition.Type != batchv1.JobComplete {
+			// No app exists yet to delete the token along with.
+			if job.Annotations[gitFirstBuildAnnotation] == "true" {
+				forgetGitToken(cfg, job.Namespace, job.Labels[gitBuildLabel])
+			}
 			markGitBuild(cfg, job, gitBuildFailed, "")
 			continue
 		}
