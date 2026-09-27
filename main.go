@@ -137,6 +137,7 @@ func main() {
 			}
 			server.RegisterInstallImageVulnerabilityReporter()
 			go controllers.StartDevboxReaper(ctx)
+			go controllers.StartDevboxRepoUploader(ctx)
 			go controllers.StartGitBuildWatcher(ctx)
 			// Runs even when autoEnrollLocalNode is off: a node deployed by an
 			// earlier run still needs its distro held open, or WSL stops both.

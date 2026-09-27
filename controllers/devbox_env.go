@@ -18,8 +18,14 @@ import (
 // so what the setup installs lands on the home disk, the only thing kept.
 
 const (
-	devboxRepoAnnotation   = "casos.io/devbox-repo"
-	devboxFolderAnnotation = "casos.io/devbox-folder"
+	devboxRepoAnnotation      = "casos.io/devbox-repo"
+	devboxFolderAnnotation    = "casos.io/devbox-folder"
+	devboxSourceAnnotation    = "casos.io/devbox-source"
+	devboxLocalRepoAnnotation = "casos.io/devbox-local-repo"
+
+	devboxSourceGit   = "git"
+	devboxSourceLocal = "local"
+	devboxSourceEmpty = "empty"
 
 	devboxUid         = int64(1000)
 	devboxHomeVolume  = "home"
@@ -49,23 +55,43 @@ shell=/bin/sh; [ -x /bin/bash ] && shell=/bin/bash
 
 // Clone and setup exit 0 on failure: a bad URL or a broken requirements.txt
 // should leave an editor to fix it in, not a pod stuck in Init. The outcome is
-// in the termination message, which the list reads back.
+// in the termination message, which the list reads back. A local repository
+// arrives as a bundle that the backend execs into this container once it asks
+// for one (see devbox_local.go).
 const devboxCloneScript = `dir="$CASOS_FOLDER"
+fail() { printf 'error=%s\n' "$1" > /dev/termination-log; exit 0; }
 mkdir -p "$dir"
 if [ ! -d "$dir/.git" ]; then
-  if [ -n "$(ls -A "$dir")" ]; then
-    printf 'error=%s is not empty and is not a git checkout, so nothing was cloned into it\n' "$dir" > /dev/termination-log
-    exit 0
-  fi
-  set --
-  if [ -n "$CASOS_BRANCH" ]; then set -- --branch "$CASOS_BRANCH"; fi
-  { git clone --progress "$@" -- "$CASOS_REPO" "$dir"; echo $? > /tmp/clone.status; } 2>&1 | tee /tmp/clone.log
-  if [ "$(cat /tmp/clone.status)" != 0 ]; then
-    printf 'error=%s\n' "$(tr '\r' '\n' < /tmp/clone.log | grep -v '^Cloning into' | grep . | tail -n 1)" > /dev/termination-log
-    exit 0
+  if [ "$CASOS_SOURCE" = empty ]; then
+    git -c init.defaultBranch=main init -q "$dir" || fail "could not create a Git repository in $dir"
+  else
+    [ -z "$(ls -A "$dir")" ] || fail "$dir is not empty and is not a git checkout, so nothing was cloned into it"
+    src="$CASOS_REPO"
+    if [ "$CASOS_SOURCE" = local ]; then
+      src=/tmp/casos-repo.bundle
+      : > /tmp/casos-repo.wanted
+      echo "Waiting for casos to send $CASOS_LOCAL_REPO"
+      i=0
+      while [ ! -f "$src" ]; do
+        [ -f /tmp/casos-repo.error ] && fail "$(cat /tmp/casos-repo.error)"
+        i=$((i + 1))
+        [ "$i" -le 300 ] || fail "casos did not send $CASOS_LOCAL_REPO within five minutes"
+        sleep 1
+      done
+    fi
+    set --
+    if [ -n "$CASOS_BRANCH" ]; then set -- --branch "$CASOS_BRANCH"; fi
+    { git clone --progress "$@" -- "$src" "$dir"; echo $? > /tmp/clone.status; } 2>&1 | tee /tmp/clone.log
+    if [ "$(cat /tmp/clone.status)" != 0 ]; then
+      fail "$(tr '\r' '\n' < /tmp/clone.log | grep -v '^Cloning into' | grep . | tail -n 1)"
+    fi
+    if [ "$CASOS_SOURCE" = local ]; then
+      rm -f "$src"
+      if [ -n "$CASOS_ORIGIN" ]; then git -C "$dir" remote set-url origin "$CASOS_ORIGIN"; else git -C "$dir" remote remove origin; fi
+    fi
   fi
 fi
-printf 'branch=%s\ncommit=%s\n' "$(git -C "$dir" rev-parse --abbrev-ref HEAD)" "$(git -C "$dir" rev-parse --short HEAD)" > /dev/termination-log
+printf 'branch=%s\ncommit=%s\n' "$(git -C "$dir" symbolic-ref -q --short HEAD)" "$(git -C "$dir" rev-parse -q --verify --short HEAD)" > /dev/termination-log
 `
 
 const devboxSetupScript = `s="$HOME/.casos"
@@ -84,10 +110,12 @@ exit 0
 
 type devboxEnvironment struct {
 	image  string
+	source string
 	repo   string
 	branch string
 	setup  string
 	folder string
+	local  devboxLocalRepo
 }
 
 var devboxFolderPattern = regexp.MustCompile(`^[A-Za-z0-9._-]+$`)
@@ -171,9 +199,12 @@ func applyDevboxEnvironment(env devboxEnvironment, ssh bool) func(*appsv1.Deploy
 			}
 		}
 
-		if env.repo != "" {
+		if env.source != "" {
 			spec.InitContainers = append(spec.InitContainers, devboxInitContainer(devboxCloneInit, devboxDefaultImage, devboxCloneScript, []corev1.EnvVar{
+				{Name: "CASOS_SOURCE", Value: env.source},
 				{Name: "CASOS_REPO", Value: env.repo},
+				{Name: "CASOS_LOCAL_REPO", Value: env.local.root},
+				{Name: "CASOS_ORIGIN", Value: env.local.origin},
 				{Name: "CASOS_BRANCH", Value: env.branch},
 				{Name: "CASOS_FOLDER", Value: env.folder},
 				{Name: "HOME", Value: "/tmp"},
@@ -189,8 +220,14 @@ func applyDevboxEnvironment(env devboxEnvironment, ssh bool) func(*appsv1.Deploy
 		}
 
 		applyAnnotation(&depl.ObjectMeta, devboxFolderAnnotation, env.folder)
+		if env.source != "" {
+			applyAnnotation(&depl.ObjectMeta, devboxSourceAnnotation, env.source)
+		}
 		if env.repo != "" {
 			applyAnnotation(&depl.ObjectMeta, devboxRepoAnnotation, env.repo)
+		}
+		if env.local.root != "" {
+			applyAnnotation(&depl.ObjectMeta, devboxLocalRepoAnnotation, env.local.root)
 		}
 		return nil
 	}

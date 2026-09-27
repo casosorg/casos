@@ -72,7 +72,7 @@ export function GitDeployDialog({open, onOpenChange, namespaces, defaultNamespac
       submitting={submitting}
       submitDisabled={!form.repo.trim() || !form.name.trim()}
     >
-      <Field label={i18next.t("launchpad:Repository")} htmlFor="git-repo" required>
+      <Field label={i18next.t("general:Repository")} htmlFor="git-repo" required hint={i18next.t("launchpad:A public repository. Private ones are not supported yet.")}>
         <Input
           id="git-repo"
           value={form.repo}
@@ -94,10 +94,10 @@ export function GitDeployDialog({open, onOpenChange, namespaces, defaultNamespac
         />
       </Field>
       <div className="grid grid-cols-2 gap-3">
-        <Field label={i18next.t("launchpad:Branch")} htmlFor="git-branch">
+        <Field label={i18next.t("general:Branch")} htmlFor="git-branch">
           <Input id="git-branch" value={form.branch} onChange={(e) => setField("branch", e.target.value)} placeholder={i18next.t("devbox:Default branch")} />
         </Field>
-        <Field label={i18next.t("launchpad:Folder")} htmlFor="git-path" hint={i18next.t("launchpad:For a monorepo.")}>
+        <Field label={i18next.t("general:Folder")} htmlFor="git-path" hint={i18next.t("launchpad:For a monorepo.")}>
           <Input id="git-path" value={form.path} onChange={(e) => setField("path", e.target.value)} placeholder="apps/web" />
         </Field>
       </div>
@@ -114,7 +114,7 @@ export function GitDeployDialog({open, onOpenChange, namespaces, defaultNamespac
           <SimpleSelect id="git-namespace" value={form.namespace} onChange={(value) => setField("namespace", value)} options={namespaceOptions} />
         </Field>
       </div>
-      <Field label={i18next.t("launchpad:Port")} htmlFor="git-port" hint={i18next.t("launchpad:Leave blank to use the Dockerfile's EXPOSE, or the usual port for the stack.")}>
+      <Field label={i18next.t("general:Port")} htmlFor="git-port" hint={i18next.t("launchpad:Leave blank to use the Dockerfile's EXPOSE, or the usual port for the stack.")}>
         <Input id="git-port" type="number" min={1} max={65535} value={form.port} onChange={(e) => setField("port", e.target.value)} placeholder="3000" />
       </Field>
     </FormDialog>

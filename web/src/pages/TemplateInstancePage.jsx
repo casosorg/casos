@@ -82,7 +82,7 @@ function TemplateInstancePage(props) {
         <div>
           <Button variant="outline" onClick={() => history.push(resolvePath("/helm-releases"))}>
             <ArrowLeft />
-            {i18next.t("launchpad:Back")}
+            {i18next.t("general:Back")}
           </Button>
         </div>
       </PageContainer>
@@ -115,7 +115,7 @@ function TemplateInstancePage(props) {
           <div className="flex flex-wrap items-center gap-2">
             <Button variant="outline" onClick={() => history.push(resolvePath("/helm-releases"))}>
               <ArrowLeft />
-              {i18next.t("launchpad:Back")}
+              {i18next.t("general:Back")}
             </Button>
             <Button variant="destructive" onClick={() => setDeleteOpen(true)}>
               <Trash2 />

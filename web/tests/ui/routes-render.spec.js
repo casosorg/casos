@@ -69,6 +69,7 @@ const SIMPLE_MODE_ROUTES = [
   "/simple/apps",
   "/simple/launchpad",
   "/simple/launchpad/new",
+  "/simple/devboxes",
   "/simple/databases",
   "/simple/databases/new",
   "/simple/devices",

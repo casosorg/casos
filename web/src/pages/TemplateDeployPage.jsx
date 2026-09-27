@@ -123,7 +123,7 @@ function TemplateDeployPage(props) {
         <div>
           <Button variant="outline" onClick={() => history.push(resolvePath("/app-store/templates"))}>
             <ArrowLeft />
-            {i18next.t("launchpad:Back")}
+            {i18next.t("general:Back")}
           </Button>
         </div>
       </PageContainer>
@@ -144,7 +144,7 @@ function TemplateDeployPage(props) {
           <div className="flex flex-wrap items-center gap-2">
             <Button variant="outline" onClick={() => history.push(resolvePath("/app-store/templates"))}>
               <ArrowLeft />
-              {i18next.t("launchpad:Back")}
+              {i18next.t("general:Back")}
             </Button>
             {detail.readme ? (
               <Button variant="outline" asChild>

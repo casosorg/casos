@@ -119,7 +119,9 @@ func getAllFilePathsInFolder(folder string, fileSuffixes ...string) []string {
 				return err
 			}
 
-			if strings.HasSuffix(path, "node_modules") {
+			// Hidden directories include .claude/worktrees, whole checkouts of
+			// other branches whose keys must not leak into this one.
+			if info.IsDir() && path != folder && (info.Name() == "node_modules" || strings.HasPrefix(info.Name(), ".")) {
 				return filepath.SkipDir
 			}
 

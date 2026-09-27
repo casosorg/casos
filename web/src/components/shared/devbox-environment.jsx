@@ -1,6 +1,6 @@
 import React from "react";
 import i18next from "i18next";
-import {Code2, Cpu, FileCode2, Flame, FlaskConical, Hexagon, Package, Rabbit} from "lucide-react";
+import {Code2, Cpu, FileCode2, Flame, FlaskConical, FolderGit2, GitBranch, Hexagon, Package, Rabbit, Sparkles} from "lucide-react";
 import {cn} from "@/lib/utils";
 
 const PIP_REQUIREMENTS = "if [ -f requirements.txt ]; then pip install -r requirements.txt; fi";
@@ -39,34 +39,68 @@ export const DEVBOX_PRESETS = [
 
 export const presetByKey = (key) => DEVBOX_PRESETS.find((preset) => preset.key === key) ?? DEVBOX_PRESETS[0];
 
+export const DEVBOX_SOURCES = [
+  {key: "empty", icon: Sparkles, label: () => i18next.t("devbox:Start from scratch"), detail: () => i18next.t("devbox:A new, empty Git repository")},
+  {key: "git", icon: GitBranch, label: () => i18next.t("devbox:Git repository"), detail: () => i18next.t("devbox:GitHub, GitLab or any Git address")},
+  {key: "local", icon: FolderGit2, label: () => i18next.t("devbox:Local repository"), detail: () => i18next.t("devbox:A folder on the computer running casos")},
+];
+
+function OptionCard({icon: Icon, selected, label, detail, mono, testId, onClick}) {
+  return (
+    <button
+      type="button"
+      role="radio"
+      aria-checked={selected}
+      data-testid={testId}
+      onClick={onClick}
+      className={cn(
+        "flex min-w-0 flex-col items-start gap-1 rounded-lg border p-2.5 text-left transition-colors outline-none",
+        "hover:bg-accent focus-visible:ring-ring/50 focus-visible:ring-[3px]",
+        selected && "border-primary bg-primary/5 ring-primary/30 ring-1"
+      )}
+    >
+      <Icon className={cn("size-4", selected ? "text-primary" : "text-muted-foreground")} />
+      <span className="text-sm font-medium">{label}</span>
+      <span className={cn("text-muted-foreground w-full truncate text-[11px]", mono && "font-mono")} title={detail}>
+        {detail}
+      </span>
+    </button>
+  );
+}
+
+export function DevboxSourcePicker({value, onChange}) {
+  return (
+    <div className="grid grid-cols-1 gap-2 sm:grid-cols-3" role="radiogroup" data-testid="devbox-source">
+      {DEVBOX_SOURCES.map((source) => (
+        <OptionCard
+          key={source.key}
+          icon={source.icon}
+          selected={source.key === value}
+          label={source.label()}
+          detail={source.detail()}
+          testId={`devbox-source-${source.key}`}
+          onClick={() => onChange(source.key)}
+        />
+      ))}
+    </div>
+  );
+}
+
 export function DevboxEnvironmentPicker({value, onChange}) {
   return (
     <div className="grid grid-cols-2 gap-2 sm:grid-cols-4" role="radiogroup" data-testid="devbox-environment">
-      {DEVBOX_PRESETS.map((preset) => {
-        const Icon = preset.icon;
-        const selected = preset.key === value;
-        return (
-          <button
-            key={preset.key}
-            type="button"
-            role="radio"
-            aria-checked={selected}
-            data-testid={`devbox-preset-${preset.key}`}
-            onClick={() => onChange(preset)}
-            className={cn(
-              "flex min-w-0 flex-col items-start gap-1 rounded-lg border p-2.5 text-left transition-colors outline-none",
-              "hover:bg-accent focus-visible:ring-ring/50 focus-visible:ring-[3px]",
-              selected && "border-primary bg-primary/5 ring-primary/30 ring-1"
-            )}
-          >
-            <Icon className={cn("size-4", selected ? "text-primary" : "text-muted-foreground")} />
-            <span className="text-sm font-medium">{preset.label()}</span>
-            <span className="text-muted-foreground w-full truncate font-mono text-[11px]">
-              {preset.key === "general" ? "code-server" : preset.image || "—"}
-            </span>
-          </button>
-        );
-      })}
+      {DEVBOX_PRESETS.map((preset) => (
+        <OptionCard
+          key={preset.key}
+          icon={preset.icon}
+          selected={preset.key === value}
+          label={preset.label()}
+          detail={preset.key === "general" ? "code-server" : preset.image || "—"}
+          mono
+          testId={`devbox-preset-${preset.key}`}
+          onClick={() => onChange(preset)}
+        />
+      ))}
     </div>
   );
 }

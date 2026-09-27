@@ -161,7 +161,7 @@ function DatabaseEditPage(props) {
           <div className="flex items-center gap-2">
             <Button variant="outline" onClick={() => history.push(resolvePath("/databases"))}>
               <ArrowLeft />
-              {i18next.t("launchpad:Back")}
+              {i18next.t("general:Back")}
             </Button>
             <Button onClick={submit} disabled={submitting} data-testid="database-submit">
               <Save />
@@ -198,7 +198,7 @@ function DatabaseEditPage(props) {
                 </span>
                 <span className="min-w-0">
                   <span className="block truncate text-sm font-medium">{item.label}</span>
-                  <span className="text-muted-foreground block truncate text-xs">{i18next.t("database:Port")} {item.port}</span>
+                  <span className="text-muted-foreground block truncate text-xs">{i18next.t("general:Port")} {item.port}</span>
                 </span>
               </button>
             ))}

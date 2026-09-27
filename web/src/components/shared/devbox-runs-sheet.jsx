@@ -19,10 +19,10 @@ import {runAction, useResource} from "@/hooks/use-resource";
 const POLL_INTERVAL = 5000;
 
 const RUN_STATUS = {
-  queued: {variant: "warning", label: "devbox:Queued"},
+  queued: {variant: "warning", label: "general:Queued"},
   running: {variant: "info", label: "simple:Running"},
   succeeded: {variant: "success", label: "devbox:Succeeded"},
-  failed: {variant: "danger", label: "devbox:Failed"},
+  failed: {variant: "danger", label: "general:Failed"},
 };
 
 const isActive = (run) => run.status === "queued" || run.status === "running";

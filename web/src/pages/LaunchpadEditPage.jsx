@@ -168,7 +168,7 @@ function LaunchpadEditPage(props) {
           <div className="flex items-center gap-2">
             <Button variant="outline" onClick={() => history.push(resolvePath("/launchpad"))}>
               <ArrowLeft />
-              {i18next.t("launchpad:Back")}
+              {i18next.t("general:Back")}
             </Button>
             <Button variant={showYaml ? "default" : "outline"} onClick={() => setShowYaml((open) => !open)}>
               <Code2 />

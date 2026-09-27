@@ -195,7 +195,7 @@ function DatabaseDetailPage(props) {
         <div>
           <Button variant="outline" onClick={() => history.push(resolvePath("/databases"))}>
             <ArrowLeft />
-            {i18next.t("launchpad:Back")}
+            {i18next.t("general:Back")}
           </Button>
         </div>
       </PageContainer>
@@ -293,7 +293,7 @@ function DatabaseDetailPage(props) {
           <div className="flex flex-wrap items-center gap-2">
             <Button variant="outline" onClick={() => history.push(resolvePath("/databases"))}>
               <ArrowLeft />
-              {i18next.t("launchpad:Back")}
+              {i18next.t("general:Back")}
             </Button>
             <Button variant="outline" disabled={!running} onClick={() => setConsoleOpen(true)} data-testid="database-console">
               <TerminalSquare />
@@ -352,7 +352,7 @@ function DatabaseDetailPage(props) {
         <CardContent className="grid gap-4 md:grid-cols-2">
           <div className="grid gap-3">
             <CopyField label={i18next.t("database:Host")} value={detail.internalHost} />
-            <CopyField label={i18next.t("database:Port")} value={String(detail.port ?? "")} />
+            <CopyField label={i18next.t("general:Port")} value={String(detail.port ?? "")} />
             <CopyField label={i18next.t("general:Username")} value={detail.user} />
             <CopyField label={i18next.t("general:Password")} value={detail.password} secret />
           </div>

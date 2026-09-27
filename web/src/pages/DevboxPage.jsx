@@ -1,7 +1,7 @@
 import React, {useState} from "react";
 import i18next from "i18next";
 import {useTranslation} from "react-i18next";
-import {Bot, ChevronRight, Code2, ExternalLink, GitBranch, Laptop, Pin, Play, Plus, Rocket, ScrollText, Square, Timer, Trash2} from "lucide-react";
+import {Bot, ChevronRight, Code2, ExternalLink, FolderGit2, GitBranch, Laptop, Pin, Play, Plus, Rocket, ScrollText, Sparkles, Square, Timer, Trash2} from "lucide-react";
 import * as DevboxBackend from "@/backend/DevboxBackend";
 import * as ImageBackend from "@/backend/ImageBackend";
 import * as NamespaceBackend from "@/backend/NamespaceBackend";
@@ -13,7 +13,7 @@ import {Checkbox} from "@/components/ui/checkbox";
 import {Collapsible, CollapsibleContent, CollapsibleTrigger} from "@/components/ui/collapsible";
 import {ConfirmDialog} from "@/components/shared/confirm-dialog";
 import {DataTable} from "@/components/shared/data-table";
-import {DevboxEnvironmentPicker, presetByKey} from "@/components/shared/devbox-environment";
+import {DevboxEnvironmentPicker, DevboxSourcePicker, presetByKey} from "@/components/shared/devbox-environment";
 import {DevboxRunsSheet} from "@/components/shared/devbox-runs-sheet";
 import {Field, FormDialog} from "@/components/shared/form-dialog";
 import {PageContainer, PageHeader} from "@/components/shared/page-header";
@@ -22,8 +22,9 @@ import {SimpleSelect} from "@/components/shared/simple-select";
 import {StatusBadge} from "@/components/shared/status-badge";
 import {CodeBlock, CodeText, DescriptionList} from "@/components/shared/misc";
 import {runAction, useResource} from "@/hooks/use-resource";
-import {nameFromRepo, repoPath} from "@/lib/git";
+import {folderOfPath, nameFromPath, nameFromRepo, repoPath} from "@/lib/git";
 import {cn} from "@/lib/utils";
+import {useUiMode} from "@/hooks/use-ui-mode";
 import {useWorkspace} from "@/hooks/use-workspace";
 
 const POLL_INTERVAL = 15000;
@@ -39,7 +40,9 @@ const emptyForm = (namespace = "default") => ({
   name: "",
   nameTouched: false,
   namespace,
+  source: "empty",
   repo: "",
+  localPath: "",
   branch: "",
   preset: "general",
   image: "",
@@ -49,11 +52,16 @@ const emptyForm = (namespace = "default") => ({
   sshPublicKeys: "",
 });
 
+const LOCAL_PATH_PLACEHOLDER = navigator.platform?.startsWith("Win") ? "D:\\code\\my-project" : "/home/me/my-project";
+
 const PREPARE_STEPS = {
   "editor": () => i18next.t("devbox:Installing the editor"),
   "user": () => i18next.t("devbox:Adding the user"),
   "ssh-tools": () => i18next.t("devbox:Installing SSH"),
-  "clone": () => i18next.t("devbox:Cloning the repository"),
+  "clone": (box) => ({
+    local: i18next.t("devbox:Copying the local repository"),
+    empty: i18next.t("devbox:Creating the project"),
+  })[box.source] ?? i18next.t("devbox:Cloning the repository"),
   "setup": () => i18next.t("devbox:Running the setup script"),
 };
 
@@ -95,6 +103,7 @@ function vscodeLink(box) {
 function DevboxPage() {
   useTranslation();
   const {workspace} = useWorkspace();
+  const {advanced} = useUiMode();
   const defaultNamespace = workspace && workspace !== "all" ? workspace : "default";
   const [namespace, setNamespace] = useState("all");
   const [createOpen, setCreateOpen] = useState(false);
@@ -122,6 +131,19 @@ function DevboxPage() {
     setForm((prev) => ({...prev, repo, name: prev.nameTouched ? prev.name : nameFromRepo(repo)}));
   }
 
+  function setLocalPath(localPath) {
+    setForm((prev) => ({...prev, localPath, name: prev.nameTouched ? prev.name : nameFromPath(localPath)}));
+  }
+
+  function chooseSource(source) {
+    setForm((prev) => {
+      const name = prev.nameTouched ? prev.name
+        : source === "git" ? nameFromRepo(prev.repo)
+          : source === "local" ? nameFromPath(prev.localPath) : "";
+      return {...prev, source, name};
+    });
+  }
+
   function choosePreset(preset) {
     setForm((prev) => ({...prev, preset: preset.key, image: preset.image, setup: preset.setup}));
   }
@@ -131,8 +153,10 @@ function DevboxPage() {
     setCreateOpen(true);
   }
 
+  const sourceMissing = (form.source === "git" && !form.repo.trim()) || (form.source === "local" && !form.localPath.trim());
+
   async function submitCreate() {
-    if (!form.name.trim()) {
+    if (!form.name.trim() || sourceMissing) {
       return;
     }
     setSubmitting(true);
@@ -141,8 +165,10 @@ function DevboxPage() {
         DevboxBackend.deployDevbox({
           name: form.name.trim(),
           namespace: form.namespace,
-          repo: form.repo.trim(),
-          branch: form.branch.trim(),
+          source: form.source,
+          repo: form.source === "git" ? form.repo.trim() : "",
+          localPath: form.source === "local" ? form.localPath.trim() : "",
+          branch: form.source === "empty" ? "" : form.branch.trim(),
           image: form.image.trim(),
           setup: form.setup.trim(),
           diskSize: form.diskSize.trim(),
@@ -193,6 +219,35 @@ function DevboxPage() {
     );
   }
 
+  const namespaceField = (
+    <Field label={i18next.t("general:Namespace")} htmlFor="devbox-namespace">
+      <SimpleSelect
+        value={form.namespace}
+        onChange={(value) => setField("namespace", value)}
+        options={namespaces.map((item) => ({label: item.name, value: item.name}))}
+        className="w-full"
+      />
+    </Field>
+  );
+
+  const sshKeysField = (
+    <Field
+      label={i18next.t("devbox:SSH public keys")}
+      htmlFor="devbox-ssh-keys"
+      hint={i18next.t("devbox:Paste a .pub key, one per line, to also open this box from the VS Code on your machine over Remote-SSH. Blank keeps it browser-only.")}
+    >
+      <Textarea
+        id="devbox-ssh-keys"
+        rows={2}
+        className="font-mono text-xs"
+        value={form.sshPublicKeys}
+        onChange={(e) => setField("sshPublicKeys", e.target.value)}
+        placeholder="ssh-ed25519 AAAA... you@laptop"
+        data-testid="devbox-ssh-keys-input"
+      />
+    </Field>
+  );
+
   const columns = [
     {
       key: "name",
@@ -229,7 +284,7 @@ function DevboxPage() {
         <div className="flex flex-wrap items-center gap-1.5">
           <StatusBadge status={value} variants={DEVBOX_STATUS_VARIANTS} />
           {record.prepareStep ? (
-            <Badge variant="muted">{PREPARE_STEPS[record.prepareStep]?.() ?? record.prepareStep}</Badge>
+            <Badge variant="muted">{PREPARE_STEPS[record.prepareStep]?.(record) ?? record.prepareStep}</Badge>
           ) : null}
           {record.cloneError ? (
             <Badge variant="danger" title={record.cloneError}>{i18next.t("devbox:Clone failed")}</Badge>
@@ -259,8 +314,18 @@ function DevboxPage() {
             <div className="truncate font-medium" title={record.repo}>
               {repoPath(record.repo)}
             </div>
+          ) : record.localRepo ? (
+            <div className="truncate font-medium" title={record.localRepo}>
+              <FolderGit2 className="text-muted-foreground mr-1 inline size-3.5 align-[-2px]" />
+              {folderOfPath(record.localRepo)}
+            </div>
+          ) : record.source === "empty" ? (
+            <div className="truncate font-medium" title={record.folder}>
+              <Sparkles className="text-muted-foreground mr-1 inline size-3.5 align-[-2px]" />
+              {i18next.t("devbox:New project")}
+            </div>
           ) : null}
-          <div className={cn("truncate font-mono text-xs", record.repo && "text-muted-foreground")}>
+          <div className={cn("truncate font-mono text-xs", record.source && "text-muted-foreground")}>
             {record.commit ? (
               <>
                 <GitBranch className="mr-0.5 inline size-3 align-[-2px]" />
@@ -429,16 +494,18 @@ function DevboxPage() {
         emptyText={i18next.t("devbox:No DevBoxes yet. Create one to get a VS Code workspace on the cluster.")}
         toolbar={
           <div className="flex items-center gap-2">
-            <SimpleSelect
-              value={namespace}
-              onChange={setNamespace}
-              options={[
-                {label: i18next.t("general:All namespaces"), value: "all"},
-                ...namespaces.map((item) => ({label: item.name, value: item.name})),
-              ]}
-              size="sm"
-              className="w-52"
-            />
+            {advanced ? (
+              <SimpleSelect
+                value={namespace}
+                onChange={setNamespace}
+                options={[
+                  {label: i18next.t("general:All namespaces"), value: "all"},
+                  ...namespaces.map((item) => ({label: item.name, value: item.name})),
+                ]}
+                size="sm"
+                className="w-52"
+              />
+            ) : null}
             <Button variant="outline" size="sm" onClick={() => refresh()}>
               {i18next.t("general:Refresh")}
             </Button>
@@ -454,35 +521,74 @@ function DevboxPage() {
         onSubmit={submitCreate}
         submitText={i18next.t("general:Create")}
         submitting={submitting}
-        submitDisabled={!form.name.trim()}
+        submitDisabled={!form.name.trim() || sourceMissing}
         size="lg"
       >
-        <div className="grid gap-4 sm:grid-cols-[1fr_12rem]">
+        <Field label={i18next.t("devbox:Project")}>
+          <DevboxSourcePicker value={form.source} onChange={chooseSource} />
+        </Field>
+        {form.source === "git" ? (
+          <div className="grid gap-4 sm:grid-cols-[1fr_12rem]">
+            <Field
+              label={i18next.t("general:Repository")}
+              htmlFor="devbox-repo"
+              required
+              hint={i18next.t("devbox:A public Git repository, cloned into the home disk on first start.")}
+            >
+              <Input
+                id="devbox-repo"
+                value={form.repo}
+                onChange={(e) => setRepo(e.target.value)}
+                placeholder="https://github.com/owner/project.git"
+                data-testid="devbox-repo-input"
+              />
+            </Field>
+            <Field label={i18next.t("general:Branch")} htmlFor="devbox-branch">
+              <Input
+                id="devbox-branch"
+                value={form.branch}
+                onChange={(e) => setField("branch", e.target.value)}
+                placeholder={i18next.t("devbox:Default branch")}
+              />
+            </Field>
+          </div>
+        ) : null}
+        {form.source === "local" ? (
+          <div className="grid gap-4 sm:grid-cols-[1fr_12rem]">
+            <Field
+              label={i18next.t("general:Folder")}
+              htmlFor="devbox-local-path"
+              required
+              hint={i18next.t("devbox:The full path of a Git repository on the computer running casos. Every committed branch is copied in; uncommitted changes stay where they are.")}
+            >
+              <Input
+                id="devbox-local-path"
+                value={form.localPath}
+                onChange={(e) => setLocalPath(e.target.value)}
+                placeholder={LOCAL_PATH_PLACEHOLDER}
+                className="font-mono"
+                data-testid="devbox-local-path-input"
+              />
+            </Field>
+            <Field label={i18next.t("general:Branch")} htmlFor="devbox-local-branch">
+              <Input
+                id="devbox-local-branch"
+                value={form.branch}
+                onChange={(e) => setField("branch", e.target.value)}
+                placeholder={i18next.t("devbox:Current branch")}
+              />
+            </Field>
+          </div>
+        ) : null}
+        <div className={cn("grid gap-4", advanced && "sm:grid-cols-2")}>
           <Field
-            label={i18next.t("devbox:Repository")}
-            htmlFor="devbox-repo"
-            hint={i18next.t("devbox:A public Git repository, cloned into the home disk on first start. Blank starts an empty workspace.")}
+            label={i18next.t("general:Name")}
+            htmlFor="devbox-name"
+            required
+            hint={form.source === "empty" && form.name.trim()
+              ? i18next.t("devbox:The project is created in ~/{{name}}.", {name: form.name.trim()})
+              : null}
           >
-            <Input
-              id="devbox-repo"
-              value={form.repo}
-              onChange={(e) => setRepo(e.target.value)}
-              placeholder="https://github.com/owner/project.git"
-              data-testid="devbox-repo-input"
-            />
-          </Field>
-          <Field label={i18next.t("devbox:Branch")} htmlFor="devbox-branch">
-            <Input
-              id="devbox-branch"
-              value={form.branch}
-              onChange={(e) => setField("branch", e.target.value)}
-              placeholder={i18next.t("devbox:Default branch")}
-              disabled={!form.repo.trim()}
-            />
-          </Field>
-        </div>
-        <div className="grid gap-4 sm:grid-cols-2">
-          <Field label={i18next.t("general:Name")} htmlFor="devbox-name" required>
             <Input
               id="devbox-name"
               value={form.name}
@@ -491,14 +597,7 @@ function DevboxPage() {
               data-testid="devbox-name-input"
             />
           </Field>
-          <Field label={i18next.t("general:Namespace")} htmlFor="devbox-namespace">
-            <SimpleSelect
-              value={form.namespace}
-              onChange={(value) => setField("namespace", value)}
-              options={namespaces.map((item) => ({label: item.name, value: item.name}))}
-              className="w-full"
-            />
-          </Field>
+          {advanced ? namespaceField : null}
         </div>
         <Field label={i18next.t("general:Environment")} hint={presetByKey(form.preset).hint?.()}>
           <DevboxEnvironmentPicker value={form.preset} onChange={choosePreset} />
@@ -533,27 +632,14 @@ function DevboxPage() {
             data-testid="devbox-setup-input"
           />
         </Field>
-        <Field
-          label={i18next.t("devbox:SSH public keys")}
-          htmlFor="devbox-ssh-keys"
-          hint={i18next.t("devbox:Paste a .pub key, one per line, to also open this box from the VS Code on your machine over Remote-SSH. Blank keeps it browser-only.")}
-        >
-          <Textarea
-            id="devbox-ssh-keys"
-            rows={2}
-            className="font-mono text-xs"
-            value={form.sshPublicKeys}
-            onChange={(e) => setField("sshPublicKeys", e.target.value)}
-            placeholder="ssh-ed25519 AAAA... you@laptop"
-            data-testid="devbox-ssh-keys-input"
-          />
-        </Field>
+        {advanced ? sshKeysField : null}
         <Collapsible>
           <CollapsibleTrigger className="text-muted-foreground hover:text-foreground group flex items-center gap-1 text-sm">
             <ChevronRight className="size-4 transition-transform group-data-[state=open]:rotate-90" />
-            {i18next.t("devbox:Disk and password")}
+            {advanced ? i18next.t("devbox:Disk and password") : i18next.t("general:More options")}
           </CollapsibleTrigger>
           <CollapsibleContent className="grid gap-4 pt-4 sm:grid-cols-2">
+            {advanced ? null : namespaceField}
             <Field
               label={i18next.t("devbox:Home disk")}
               htmlFor="devbox-disk"
@@ -578,6 +664,7 @@ function DevboxPage() {
                 placeholder="••••••••"
               />
             </Field>
+            {advanced ? null : <div className="sm:col-span-2">{sshKeysField}</div>}
           </CollapsibleContent>
         </Collapsible>
       </FormDialog>
@@ -657,7 +744,7 @@ function DevboxPage() {
             <DescriptionList
               items={[
                 {label: i18next.t("devbox:SSH"), value: <CodeText copyable>{sshCommand(connectTarget)}</CodeText>},
-                {label: i18next.t("devbox:Folder"), value: <CodeText copyable>{connectTarget.sshPath}</CodeText>},
+                {label: i18next.t("general:Folder"), value: <CodeText copyable>{connectTarget.sshPath}</CodeText>},
               ]}
             />
             <div className="space-y-1.5">

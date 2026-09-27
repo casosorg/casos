@@ -449,6 +449,10 @@ func (b *tailBuffer) String() string {
 // execInSandbox runs command in the pod's first container. A command that exits
 // non-zero is a result, not an error.
 func execInSandbox(ctx context.Context, cfg *rest.Config, pod *corev1.Pod, command []string, stdin io.Reader, stdout, stderr io.Writer) (int, error) {
+	return execInContainer(ctx, cfg, pod, pod.Spec.Containers[0].Name, command, stdin, stdout, stderr)
+}
+
+func execInContainer(ctx context.Context, cfg *rest.Config, pod *corev1.Pod, container string, command []string, stdin io.Reader, stdout, stderr io.Writer) (int, error) {
 	clientset, err := kubernetes.NewForConfig(cfg)
 	if err != nil {
 		return 0, err
@@ -456,7 +460,7 @@ func execInSandbox(ctx context.Context, cfg *rest.Config, pod *corev1.Pod, comma
 	req := clientset.CoreV1().RESTClient().Post().
 		Resource("pods").Name(pod.Name).Namespace(pod.Namespace).SubResource("exec").
 		VersionedParams(&corev1.PodExecOptions{
-			Container: pod.Spec.Containers[0].Name,
+			Container: container,
 			Command:   command,
 			Stdin:     stdin != nil,
 			Stdout:    true,

@@ -126,9 +126,15 @@ type deployDevboxRequest struct {
 	// Image is the environment: any glibc image, as the editor is brought in.
 	// Empty uses the code-server image itself.
 	Image string `json:"image"`
+	// Source is where the project comes from: "git" clones Repo, "local" copies
+	// the Git repository at LocalPath on the machine running casos, "empty"
+	// starts a new repository named after the box. Empty with no Repo opens the
+	// bare home folder.
+	Source string `json:"source"`
 	// Repo is cloned into the home disk on first start, and opened as the workspace.
-	Repo   string `json:"repo"`
-	Branch string `json:"branch"`
+	Repo      string `json:"repo"`
+	LocalPath string `json:"localPath"`
+	Branch    string `json:"branch"`
 	// Setup runs once in the checkout, in the image, before the editor starts.
 	Setup string `json:"setup"`
 	// Password guards the editor. Empty means "generate one", handed back once
@@ -162,7 +168,9 @@ type devboxSummary struct {
 	SshPath    string `json:"sshPath"`
 	ActiveRuns int    `json:"activeRuns"`
 	Folder     string `json:"folder"`
+	Source     string `json:"source"`
 	Repo       string `json:"repo"`
+	LocalRepo  string `json:"localRepo"`
 	// Read back from the clone step of the current pod.
 	Branch      string `json:"branch"`
 	Commit      string `json:"commit"`
@@ -248,17 +256,41 @@ func deployDevbox(cfg *rest.Config, req deployDevboxRequest) (*deployDevboxResul
 
 	env := devboxEnvironment{
 		image:  image,
-		repo:   strings.TrimSpace(req.Repo),
+		source: strings.TrimSpace(req.Source),
 		branch: strings.TrimSpace(req.Branch),
 		setup:  strings.TrimSpace(req.Setup),
 		folder: devboxHomeMount,
 	}
-	if env.repo != "" {
+	if env.source == "" && strings.TrimSpace(req.Repo) != "" {
+		env.source = devboxSourceGit
+	}
+	switch env.source {
+	case "":
+	case devboxSourceGit:
+		env.repo = strings.TrimSpace(req.Repo)
+		if env.repo == "" {
+			return nil, fmt.Errorf("a repository address is required")
+		}
 		name, err := devboxRepoFolder(env.repo)
 		if err != nil {
 			return nil, err
 		}
 		env.folder = devboxHomeMount + "/" + name
+	case devboxSourceLocal:
+		local, err := inspectLocalRepo(req.LocalPath)
+		if err != nil {
+			return nil, err
+		}
+		env.local = local
+		env.folder = devboxHomeMount + "/" + local.folder
+		if env.branch == "" {
+			env.branch = local.branch
+		}
+	case devboxSourceEmpty:
+		env.branch = ""
+		env.folder = devboxHomeMount + "/" + req.Name
+	default:
+		return nil, fmt.Errorf("unknown project source %q", env.source)
 	}
 
 	ports := []appPortRequest{{Name: devboxHttpPortName, ContainerPort: devboxContainerPort, Protocol: "TCP"}}
@@ -298,7 +330,7 @@ func deployDevbox(cfg *rest.Config, req deployDevboxRequest) (*deployDevboxResul
 		return nil, err
 	}
 
-	summary := devboxSummary{Name: req.Name, Namespace: req.Namespace, Image: image, Status: "pending", Folder: env.folder, Repo: env.repo}
+	summary := devboxSummary{Name: req.Name, Namespace: req.Namespace, Image: image, Status: "pending", Folder: env.folder, Source: env.source, Repo: env.repo, LocalRepo: env.local.root}
 	if depl, err := object.GetDeployment(cfg, req.Namespace, req.Name); err == nil {
 		summary = devboxSummaryOf(cfg, *depl, clusterNodeIP(cfg), nil)
 	}
@@ -362,8 +394,13 @@ func devboxSummaryOf(cfg *rest.Config, d appsv1.Deployment, nodeIP string, pods 
 		Ready:     d.Status.ReadyReplicas,
 		CreatedAt: d.CreationTimestamp.UTC().Format("2006-01-02 15:04:05"),
 		Folder:    devboxFolder(d),
+		Source:    d.Annotations[devboxSourceAnnotation],
 		Repo:      d.Annotations[devboxRepoAnnotation],
+		LocalRepo: d.Annotations[devboxLocalRepoAnnotation],
 		Agent:     d.Annotations[devboxAgentAnnotation],
+	}
+	if summary.Source == "" && summary.Repo != "" {
+		summary.Source = devboxSourceGit
 	}
 	if expiresAt, ok := devboxExpiry(d.ObjectMeta); ok {
 		summary.ExpiresAt = expiresAt.Format(time.RFC3339)

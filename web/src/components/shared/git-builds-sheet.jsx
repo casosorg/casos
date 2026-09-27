@@ -13,11 +13,11 @@ import {repoPath} from "@/lib/git";
 const POLL_INTERVAL = 4000;
 
 const BUILD_STATUS = {
-  queued: {variant: "warning", label: "launchpad:Queued"},
+  queued: {variant: "warning", label: "general:Queued"},
   building: {variant: "info", label: "launchpad:Building"},
   deploying: {variant: "info", label: "launchpad:Deploying"},
   deployed: {variant: "success", label: "launchpad:Deployed"},
-  failed: {variant: "danger", label: "launchpad:Failed"},
+  failed: {variant: "danger", label: "general:Failed"},
 };
 
 const isActive = (build) => ["queued", "building", "deploying"].includes(build.status);

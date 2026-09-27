@@ -153,6 +153,7 @@ export function AppRoutes({account, accountUpdatedAt, onOpenAccount, onUpdateSit
         <Route exact path="/simple/launchpad/new" component={LaunchpadEditPage} />
         <Route exact path="/simple/launchpad/:namespace/:name" component={LaunchpadDetailPage} />
         <Route exact path="/simple/launchpad/:namespace/:name/edit" component={LaunchpadEditPage} />
+        <Route exact path="/simple/devboxes" component={DevboxPage} />
         <Route exact path="/simple/databases" component={DatabasePage} />
         <Route exact path="/simple/databases/new" component={DatabaseEditPage} />
         <Route exact path="/simple/databases/:namespace/:name" component={DatabaseDetailPage} />

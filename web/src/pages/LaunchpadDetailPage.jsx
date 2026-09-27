@@ -333,7 +333,7 @@ function LaunchpadDetailPage(props) {
         <div>
           <Button variant="outline" onClick={() => history.push(resolvePath("/launchpad"))}>
             <ArrowLeft />
-            {i18next.t("launchpad:Back")}
+            {i18next.t("general:Back")}
           </Button>
         </div>
       </PageContainer>
@@ -383,7 +383,7 @@ function LaunchpadDetailPage(props) {
           <div className="flex flex-wrap items-center gap-2">
             <Button variant="outline" onClick={() => history.push(resolvePath("/launchpad"))}>
               <ArrowLeft />
-              {i18next.t("launchpad:Back")}
+              {i18next.t("general:Back")}
             </Button>
             <Button variant="outline" onClick={() => history.push(resolvePath(`/launchpad/${namespace}/${name}/edit`))}>
               <Pencil />

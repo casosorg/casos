@@ -232,7 +232,7 @@ export function PrivateAiCard() {
               {t("privateAi:Install Private AI")}
             </Button>
             <Button variant="ghost" onClick={() => history.push(resolvePath(`/templates/${PRIVATE_AI_TEMPLATE}`))}>
-              {t("privateAi:More options")}
+              {t("general:More options")}
             </Button>
           </>
         )}
