@@ -13,6 +13,7 @@ import {Tabs, TabsContent, TabsList, TabsTrigger} from "@/components/ui/tabs";
 import {ConfirmDialog} from "@/components/shared/confirm-dialog";
 import {DataTable} from "@/components/shared/data-table";
 import {Field, FormDialog} from "@/components/shared/form-dialog";
+import {SimpleSelect} from "@/components/shared/simple-select";
 import {LocalModelsCard} from "@/components/shared/local-models-card";
 import {PageContainer, PageHeader} from "@/components/shared/page-header";
 import {CodeBlock, CodeText} from "@/components/shared/misc";
@@ -90,6 +91,7 @@ function AgentAccessPage() {
 
   const [createOpen, setCreateOpen] = useState(false);
   const [name, setName] = useState("");
+  const [readOnly, setReadOnly] = useState(true);
   const [nameError, setNameError] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [created, setCreated] = useState(null);
@@ -97,6 +99,7 @@ function AgentAccessPage() {
   function openCreate() {
     setName((tokens ?? []).length === 0 ? "my-agent" : "");
     setNameError("");
+    setReadOnly(true);
     setCreateOpen(true);
   }
 
@@ -106,7 +109,7 @@ function AgentAccessPage() {
       return;
     }
     setSubmitting(true);
-    const ok = await runAction(AccessTokenBackend.addAccessToken(name.trim()), {
+    const ok = await runAction(AccessTokenBackend.addAccessToken(name.trim(), readOnly), {
       onSuccess: (res) => setCreated(res.data),
     });
     setSubmitting(false);
@@ -132,6 +135,12 @@ function AgentAccessPage() {
       title: i18next.t("agent:Token"),
       dataIndex: "prefix",
       render: (value) => <CodeText>{`${value}…`}</CodeText>,
+    },
+    {
+      key: "readOnly",
+      title: i18next.t("agent:Permissions"),
+      dataIndex: "readOnly",
+      render: (value) => i18next.t(value ? "agent:Read-only" : "agent:Full access"),
     },
     {key: "createdTime", title: i18next.t("general:Created"), dataIndex: "createdTime", width: 200, sortable: true},
     {
@@ -233,6 +242,22 @@ function AgentAccessPage() {
             autoComplete="off"
             autoFocus
           />
+        </Field>
+        <Field label={i18next.t("agent:Permissions")} htmlFor="access-token-permissions">
+          <SimpleSelect
+            id="access-token-permissions"
+            value={readOnly ? "read-only" : "full"}
+            onChange={(value) => setReadOnly(value === "read-only")}
+            options={[
+              {value: "read-only", label: i18next.t("agent:Read-only")},
+              {value: "full", label: i18next.t("agent:Full access")},
+            ]}
+          />
+          <p className="text-muted-foreground text-sm">
+            {i18next.t(readOnly
+              ? "agent:Read app status, logs and diagnostics. Cannot deploy, execute commands, access sandboxes or use the model gateway."
+              : "agent:Allow all MCP tools and the model gateway, including deployment, deletion and command execution.")}
+          </p>
         </Field>
       </FormDialog>
 

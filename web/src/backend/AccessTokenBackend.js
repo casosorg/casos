@@ -9,9 +9,9 @@ export function getAccessTokens() {
   }).then(r => r.json());
 }
 
-export function addAccessToken(name) {
+export function addAccessToken(name, readOnly) {
   return fetch(`${Setting.ServerUrl}/api/add-access-token`, {
-    method: "POST", credentials: "include", headers: jsonHeaders(), body: JSON.stringify({name}),
+    method: "POST", credentials: "include", headers: jsonHeaders(), body: JSON.stringify({name, readOnly}),
   }).then(r => r.json());
 }
 

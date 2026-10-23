@@ -37,6 +37,20 @@ type mcpTool struct {
 	handler func(ctx context.Context, cfg *rest.Config, args json.RawMessage) (interface{}, error)
 }
 
+// This audited allowlist is the permission boundary; protocol hints alone grant nothing.
+func mcpReadOnlyAllowed(tool *mcpTool) bool {
+	if !tool.Annotations.ReadOnlyHint || tool.Annotations.DestructiveHint {
+		return false
+	}
+	switch tool.Name {
+	case "list_apps", "get_app", "get_app_logs", "list_app_revisions", "list_app_builds",
+		"get_cluster_health", "list_cluster_issues", "diagnose_object":
+		return true
+	default:
+		return false
+	}
+}
+
 const (
 	mcpDefaultWait = 90 * time.Second
 	mcpMaxWait     = 600 * time.Second

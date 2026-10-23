@@ -19,6 +19,7 @@ import {signInAsCiUser} from "./e2e-helpers.js";
 // 404 screen is covered too.
 const ROUTES = [
   "/dashboard",
+  "/agent-access",
   "/app-store",
   "/launchpad",
   "/launchpad/new",
@@ -63,6 +64,7 @@ const ROUTES = [
 // than the same paths with a flag flipped.
 const SIMPLE_MODE_ROUTES = [
   "/simple",
+  "/simple/agent-access",
   "/simple/app-store",
   "/simple/app-store/templates",
   "/simple/app-store/dockerhub",

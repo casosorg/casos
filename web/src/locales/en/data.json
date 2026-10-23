@@ -26,6 +26,7 @@
     "Add to ~/.codex/config.toml.": "Add to ~/.codex/config.toml.",
     "Add to ~/.cursor/mcp.json, or .cursor/mcp.json in a project.": "Add to ~/.cursor/mcp.json, or .cursor/mcp.json in a project.",
     "Agents using it lose access to casos at once.": "Agents using it lose access to casos at once.",
+    "Allow all MCP tools and the model gateway, including deployment, deletion and command execution.": "Allow all MCP tools and the model gateway, including deployment, deletion and command execution.",
     "Any MCP client that speaks Streamable HTTP works. Point it at the URL and send the token as a bearer token.": "Any MCP client that speaks Streamable HTTP works. Point it at the URL and send the token as a bearer token.",
     "Base URL": "Base URL",
     "Connect an agent": "Connect an agent",
@@ -34,6 +35,7 @@
     "Create token": "Create token",
     "Deploy {{image}} to my casos as \"shop\" on port 3000": "Deploy {{image}} to my casos as \"shop\" on port 3000",
     "From another computer, use this machine's network address instead of localhost.": "From another computer, use this machine's network address instead of localhost.",
+    "Full access": "Full access",
     "Last used": "Last used",
     "Let Claude Code, Cursor, Codex and other MCP clients deploy to casos, read app logs, roll back, and run code in sandboxes on your own machines.": "Let Claude Code, Cursor, Codex and other MCP clients deploy to casos, read app logs, roll back, and run code in sandboxes on your own machines.",
     "Name is required": "Name is required",
@@ -42,6 +44,9 @@
     "No tokens yet": "No tokens yet",
     "Open the App Store": "Open the App Store",
     "Other clients": "Other clients",
+    "Permissions": "Permissions",
+    "Read app status, logs and diagnostics. Cannot deploy, execute commands, access sandboxes or use the model gateway.": "Read app status, logs and diagnostics. Cannot deploy, execute commands, access sandboxes or use the model gateway.",
+    "Read-only": "Read-only",
     "Revoke": "Revoke",
     "Revoke this token?": "Revoke this token?",
     "Roll shop back to the previous version": "Roll shop back to the previous version",
@@ -54,7 +59,7 @@
     "Token revoked": "Token revoked",
     "Use your local models from any app": "Use your local models from any app",
     "Why is shop failing on casos? Show me its logs": "Why is shop failing on casos? Show me its logs",
-    "casos serves an OpenAI-compatible API for the models on your GPUs. Use an access token below as the API key.": "casos serves an OpenAI-compatible API for the models on your GPUs. Use an access token below as the API key."
+    "casos serves an OpenAI-compatible API for the models on your GPUs. Use a full-access token below as the API key.": "casos serves an OpenAI-compatible API for the models on your GPUs. Use a full-access token below as the API key."
   },
   "dashboard": {
     "alert healthy": "Cluster healthy",

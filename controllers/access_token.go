@@ -7,7 +7,8 @@ import (
 )
 
 type accessTokenRequest struct {
-	Name string `json:"name"`
+	Name     string `json:"name"`
+	ReadOnly bool   `json:"readOnly"`
 }
 
 type addAccessTokenResult struct {
@@ -44,7 +45,7 @@ func (c *ApiController) AddAccessToken() {
 		c.ResponseError("invalid request body: " + err.Error())
 		return
 	}
-	token, secret, err := object.AddAccessToken(user.Name, req.Name)
+	token, secret, err := object.AddAccessToken(user.Name, req.Name, req.ReadOnly)
 	if err != nil {
 		c.ResponseError(err.Error())
 		return

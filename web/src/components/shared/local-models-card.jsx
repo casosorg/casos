@@ -76,7 +76,7 @@ export function LocalModelsCard() {
       <CardHeader>
         <CardTitle>{t("agent:Use your local models from any app")}</CardTitle>
         <CardDescription>
-          {t("agent:casos serves an OpenAI-compatible API for the models on your GPUs. Use an access token below as the API key.")}
+          {t("agent:casos serves an OpenAI-compatible API for the models on your GPUs. Use a full-access token below as the API key.")}
         </CardDescription>
         <CardAction>
           <Button variant="outline" size="sm" onClick={() => refresh()} loading={loading}>

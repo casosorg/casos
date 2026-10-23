@@ -21,8 +21,9 @@ type AccessToken struct {
 	CreatedTime  string `xorm:"varchar(100)" json:"createdTime"`
 	LastUsedTime string `xorm:"varchar(100)" json:"lastUsedTime"`
 
-	Hash   string `xorm:"varchar(100) unique" json:"-"`
-	Prefix string `xorm:"varchar(20)" json:"prefix"`
+	Hash     string `xorm:"varchar(100) unique" json:"-"`
+	Prefix   string `xorm:"varchar(20)" json:"prefix"`
+	ReadOnly bool   `xorm:"notnull default false" json:"readOnly"`
 }
 
 func GetAccessTokens(owner string) ([]*AccessToken, error) {
@@ -38,7 +39,7 @@ func hashAccessToken(secret string) string {
 
 // AddAccessToken creates a token and returns its secret, which cannot be
 // recovered afterwards.
-func AddAccessToken(owner, name string) (*AccessToken, string, error) {
+func AddAccessToken(owner, name string, readOnly bool) (*AccessToken, string, error) {
 	name = strings.TrimSpace(name)
 	if owner == "" {
 		return nil, "", fmt.Errorf("owner cannot be empty")
@@ -67,6 +68,7 @@ func AddAccessToken(owner, name string) (*AccessToken, string, error) {
 	token := &AccessToken{
 		Owner:       owner,
 		Name:        name,
+		ReadOnly:    readOnly,
 		CreatedTime: util.GetCurrentTime(),
 		Hash:        hashAccessToken(secret),
 		Prefix:      secret[:len(accessTokenPrefix)+6],

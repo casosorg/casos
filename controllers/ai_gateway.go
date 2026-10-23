@@ -340,6 +340,12 @@ func ServeAIGateway(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if caller.readOnly {
+		writeAIError(w, http.StatusForbidden, "invalid_request_error", "permission_denied",
+			"read-only access tokens cannot use the model gateway; use a full-access token")
+		return
+	}
+
 	path := strings.TrimPrefix(r.URL.Path, AIGatewayPrefix)
 	if r.Method == http.MethodGet && (path == "models" || strings.HasPrefix(path, "models/")) {
 		serveAIModels(w, r, strings.TrimPrefix(strings.TrimPrefix(path, "models"), "/"))

@@ -65,8 +65,9 @@ const (
 )
 
 type mcpCaller struct {
-	user  string
-	token string
+	user     string
+	token    string
+	readOnly bool
 	// The address casos was reached by, which new app addresses are named under.
 	host string
 }
@@ -164,7 +165,7 @@ func authenticateAccessToken(r *http.Request) (mcpCaller, bool) {
 	if token == nil {
 		return mcpCaller{}, false
 	}
-	return mcpCaller{user: token.Owner, token: token.Name}, true
+	return mcpCaller{user: token.Owner, token: token.Name, readOnly: token.ReadOnly}, true
 }
 
 func writeMCPJSON(w http.ResponseWriter, value interface{}) {
@@ -199,10 +200,19 @@ func handleMCPMessage(ctx context.Context, caller mcpCaller, version string, mes
 			},
 			"instructions": mcpInstructions,
 		}
+		if caller.readOnly {
+			response.Result.(map[string]interface{})["instructions"] = "This token is read-only. Use the listed tools to inspect apps, logs and cluster health and diagnose objects. Deployment, execution, sandbox access and the model gateway are unavailable."
+		}
 	case "ping":
 		response.Result = map[string]interface{}{}
 	case "tools/list":
-		response.Result = map[string]interface{}{"tools": mcpTools}
+		tools := make([]*mcpTool, 0, len(mcpTools))
+		for _, tool := range mcpTools {
+			if !caller.readOnly || mcpReadOnlyAllowed(tool) {
+				tools = append(tools, tool)
+			}
+		}
+		response.Result = map[string]interface{}{"tools": tools}
 	case "tools/call":
 		var params struct {
 			Name      string          `json:"name"`
@@ -250,6 +260,9 @@ func mcpText(text string, isError bool) mcpToolResult {
 // callMCPTool reports a failed tool as a result the agent can read and react
 // to, not as a protocol error, as the specification asks.
 func callMCPTool(ctx context.Context, caller mcpCaller, tool *mcpTool, arguments json.RawMessage) mcpToolResult {
+	if caller.readOnly && !mcpReadOnlyAllowed(tool) {
+		return mcpText(fmt.Sprintf("permission denied: read-only access tokens cannot call %s", tool.Name), true)
+	}
 	logs.Info("mcp: %s (token %s) called %s", caller.user, caller.token, tool.Name)
 
 	if len(arguments) == 0 || string(arguments) == "null" {

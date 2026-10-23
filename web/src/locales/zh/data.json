@@ -26,6 +26,7 @@
     "Add to ~/.codex/config.toml.": "添加到 ~/.codex/config.toml。",
     "Add to ~/.cursor/mcp.json, or .cursor/mcp.json in a project.": "添加到 ~/.cursor/mcp.json，或项目中的 .cursor/mcp.json。",
     "Agents using it lose access to casos at once.": "使用该令牌的智能体将立即失去对 casos 的访问权限。",
+    "Allow all MCP tools and the model gateway, including deployment, deletion and command execution.": "允许使用所有 MCP 工具和模型网关，包括部署、删除和执行命令。",
     "Any MCP client that speaks Streamable HTTP works. Point it at the URL and send the token as a bearer token.": "任何支持 Streamable HTTP 的 MCP 客户端均可接入。将其指向该地址，并以 Bearer 令牌的形式发送访问令牌。",
     "Base URL": "Base URL",
     "Connect an agent": "连接智能体",
@@ -34,6 +35,7 @@
     "Create token": "创建令牌",
     "Deploy {{image}} to my casos as \"shop\" on port 3000": "把 {{image}} 部署到我的 casos，应用名为 \"shop\"，端口 3000",
     "From another computer, use this machine's network address instead of localhost.": "从其他电脑访问时，把 localhost 换成这台机器的局域网地址。",
+    "Full access": "完整权限",
     "Last used": "最近使用",
     "Let Claude Code, Cursor, Codex and other MCP clients deploy to casos, read app logs, roll back, and run code in sandboxes on your own machines.": "让 Claude Code、Cursor、Codex 等 MCP 客户端直接部署到 casos、查看应用日志、回滚，并在你自己机器上的沙箱里运行代码。",
     "Name is required": "名称不能为空",
@@ -42,6 +44,9 @@
     "No tokens yet": "暂无令牌",
     "Open the App Store": "打开应用商店",
     "Other clients": "其他客户端",
+    "Permissions": "权限",
+    "Read app status, logs and diagnostics. Cannot deploy, execute commands, access sandboxes or use the model gateway.": "读取应用状态、日志和诊断信息。不能部署、执行命令、访问沙箱或使用模型网关。",
+    "Read-only": "只读",
     "Revoke": "吊销",
     "Revoke this token?": "吊销此令牌？",
     "Roll shop back to the previous version": "把 shop 回滚到上一个版本",
@@ -54,7 +59,7 @@
     "Token revoked": "令牌已吊销",
     "Use your local models from any app": "在任何应用里使用你的本地模型",
     "Why is shop failing on casos? Show me its logs": "casos 上的 shop 为什么失败了？给我看看它的日志",
-    "casos serves an OpenAI-compatible API for the models on your GPUs. Use an access token below as the API key.": "casos 为你显卡上的模型提供 OpenAI 兼容的 API。用下面的访问令牌作为 API Key。"
+    "casos serves an OpenAI-compatible API for the models on your GPUs. Use a full-access token below as the API key.": "casos 为你显卡上的模型提供 OpenAI 兼容的 API。用下面的完整权限令牌作为 API Key。"
   },
   "dashboard": {
     "alert healthy": "集群健康",
