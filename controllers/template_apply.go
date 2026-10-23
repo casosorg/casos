@@ -3,6 +3,7 @@ package controllers
 import (
 	"context"
 	"fmt"
+	"strconv"
 	"strings"
 
 	corev1 "k8s.io/api/core/v1"
@@ -139,6 +140,7 @@ func (a *templateApplier) apply(ctx context.Context, documents []string) templat
 		if len(content) == 0 {
 			continue
 		}
+		quoteEnvValues(content)
 		item := &unstructured.Unstructured{Object: content}
 		if item.GetKind() == "" || item.GetAPIVersion() == "" {
 			continue
@@ -183,6 +185,34 @@ func (a *templateApplier) apply(ctx context.Context, documents []string) templat
 	}
 
 	return report
+}
+
+// quoteEnvValues turns env values such as `value: ${{ inputs.port }}` back into
+// strings: once rendered they parse as numbers, which the apiserver rejects.
+func quoteEnvValues(node any) {
+	switch value := node.(type) {
+	case map[string]any:
+		for key, child := range value {
+			if env, ok := child.([]any); ok && key == "env" {
+				for _, entry := range env {
+					if variable, ok := entry.(map[string]any); ok {
+						switch scalar := variable["value"].(type) {
+						case float64:
+							variable["value"] = strconv.FormatFloat(scalar, 'f', -1, 64)
+						case int64, bool:
+							variable["value"] = fmt.Sprint(scalar)
+						}
+					}
+				}
+				continue
+			}
+			quoteEnvValues(child)
+		}
+	case []any:
+		for _, child := range value {
+			quoteEnvValues(child)
+		}
+	}
 }
 
 // adaptIngress fits a sealos Ingress to this cluster. sealos names its nginx
