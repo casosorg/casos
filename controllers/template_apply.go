@@ -290,6 +290,63 @@ func (a *templateApplier) adaptIngress(ctx context.Context, item *unstructured.U
 	if a.plainHTTP {
 		unstructured.RemoveNestedField(item.Object, "spec", "tls")
 	}
+	flattenNginxCapturePaths(item)
+}
+
+const nginxRewriteTargetAnnotation = "nginx.ingress.kubernetes.io/rewrite-target"
+
+// Sealos writes nginx capture paths such as /()(.*); Traefik treats them as
+// literal strings, so / never matches.
+func flattenNginxCapturePaths(item *unstructured.Unstructured) {
+	rules, found, _ := unstructured.NestedSlice(item.Object, "spec", "rules")
+	if !found {
+		return
+	}
+	changed := false
+	for _, rule := range rules {
+		ruleMap, ok := rule.(map[string]any)
+		if !ok {
+			continue
+		}
+		http, ok := ruleMap["http"].(map[string]any)
+		if !ok {
+			continue
+		}
+		paths, ok := http["paths"].([]any)
+		if !ok {
+			continue
+		}
+		for _, entry := range paths {
+			pathMap, ok := entry.(map[string]any)
+			if !ok {
+				continue
+			}
+			path, _ := pathMap["path"].(string)
+			if next, ok := flattenNginxCapturePath(path); ok {
+				pathMap["path"] = next
+				changed = true
+			}
+		}
+	}
+	if !changed {
+		return
+	}
+	_ = unstructured.SetNestedSlice(item.Object, rules, "spec", "rules")
+	annotations := item.GetAnnotations()
+	if len(annotations) == 0 {
+		return
+	}
+	delete(annotations, nginxRewriteTargetAnnotation)
+	item.SetAnnotations(annotations)
+}
+
+func flattenNginxCapturePath(path string) (string, bool) {
+	switch path {
+	case "/()(.*)", "/?(.*)":
+		return "/", true
+	default:
+		return path, false
+	}
 }
 
 func (a *templateApplier) hasIngressClass(ctx context.Context, name string) bool {
