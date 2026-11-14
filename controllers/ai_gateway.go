@@ -381,9 +381,12 @@ func ServeAIGateway(w http.ResponseWriter, r *http.Request) {
 	}
 	backend := pickAIBackend(backends, model)
 	if backend == nil {
-		if backends, err = currentAIBackends(r.Context(), true); err == nil {
-			backend = pickAIBackend(backends, model)
+		backends, err = currentAIBackends(r.Context(), true)
+		if err != nil {
+			writeAIError(w, http.StatusServiceUnavailable, "server_error", "", err.Error())
+			return
 		}
+		backend = pickAIBackend(backends, model)
 	}
 	if backend == nil {
 		message := fmt.Sprintf("the model %s is not available", request.Model)
