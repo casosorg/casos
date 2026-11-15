@@ -52,14 +52,32 @@ archives:
 checksum:
   disable: true
 
-release:
-  # semantic-release owns the draft, tag, and notes. GoReleaser reuses that
-  # draft and leaves publication to the final workflow step after all uploads.
-  use_existing_draft: true
-  replace_existing_artifacts: true
-  draft: true
-  mode: keep-existing
-
 changelog:
-  # Release notes come from semantic-release.
-  disable: true
+  sort: asc
+  filters:
+    # goreleaser matches these against whole `<sha> <subject>` log lines, so the
+    # type has to be reached past the sha rather than anchored at "^".
+    exclude:
+      - '^.*?docs(\([[:word:]]+\))??!?:.+$'
+      - '^.*?test(\([[:word:]]+\))??!?:.+$'
+  # Group the release notes by conventional-commit type instead of listing every
+  # commit in one flat block. Anything that doesn't match a type falls into
+  # "Others".
+  groups:
+    - title: Features
+      regexp: '^.*?feat(\([[:word:]]+\))??!?:.+$'
+      order: 0
+    - title: Bug fixes
+      regexp: '^.*?fix(\([[:word:]]+\))??!?:.+$'
+      order: 1
+    - title: Performance improvements
+      regexp: '^.*?perf(\([[:word:]]+\))??!?:.+$'
+      order: 2
+    - title: Refactors
+      regexp: '^.*?refactor(\([[:word:]]+\))??!?:.+$'
+      order: 3
+    - title: Build & CI
+      regexp: '^.*?(build|ci)(\([[:word:]]+\))??!?:.+$'
+      order: 4
+    - title: Others
+      order: 999

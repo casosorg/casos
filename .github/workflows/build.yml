@@ -7,6 +7,8 @@ on:
   push:
     branches:
       - master
+    tags:
+      - "v*"
   pull_request:
 
 jobs:
@@ -428,39 +430,18 @@ jobs:
           version: v2.11.4
           args: --config .golangci.yml --max-same-issues=0 --timeout 5m ./...
 
-  tag-release:
-    name: Create Tag
-    runs-on: ubuntu-latest
-    permissions:
-      contents: write
-      issues: write
-    if: github.repository == 'casosorg/casos' && github.event_name == 'push'
-    needs: [ frontend, standalone, ui-tests, backend, linter ]
-    outputs:
-      new-release-published: ${{ steps.semantic.outputs.new_release_published }}
-      new-release-version: ${{ steps.semantic.outputs.new_release_version }}
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Create Tag with Semantic Release
-        id: semantic
-        uses: cycjimmy/semantic-release-action@v4
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
   github-release:
     name: GitHub Release
     runs-on: ubuntu-latest
     permissions:
       contents: write
-      issues: write
-    if: github.repository == 'casosorg/casos' && github.event_name == 'push' && needs.tag-release.outputs.new-release-published == 'true'
-    needs: [ tag-release ]
+    # Releases are cut by hand: push a `vX.Y.Z` tag and this job publishes it.
+    if: github.repository == 'casosorg/casos' && startsWith(github.ref, 'refs/tags/v')
+    needs: [ frontend, standalone, ui-tests, backend, linter ]
     steps:
       - uses: actions/checkout@v4
         with:
-          # GoReleaser reads the version from the tag semantic-release pushed.
+          # GoReleaser reads the version from the pushed tag.
           fetch-depth: 0
 
       - uses: actions/setup-go@v4
@@ -482,8 +463,3 @@ jobs:
           args: release --clean
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Publish release
-        run: gh release edit "v${{ needs.tag-release.outputs.new-release-version }}" --draft=false
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
