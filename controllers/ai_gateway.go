@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -18,6 +19,7 @@ import (
 
 	"github.com/beego/beego/logs"
 	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/util/httpstream"
 	"k8s.io/client-go/kubernetes"
@@ -45,7 +47,9 @@ const (
 
 	ollamaPort        = 11434
 	aiBackendTTL      = 15 * time.Second
+	aiRefreshTimeout  = 15 * time.Second
 	aiTagsTimeout     = 5 * time.Second
+	aiDialTimeout     = 10 * time.Second
 	aiMaxRequestBytes = 64 << 20
 )
 
@@ -82,82 +86,125 @@ func (b *aiBackend) has(model string) bool {
 var aiBackends struct {
 	mu      sync.Mutex
 	list    []*aiBackend
+	err     error
 	fetched time.Time
+	refresh chan struct{}
 }
 
-// currentAIBackends returns the Ollama servers that answered, with the models
-// each one has. force skips the cache, for a model pulled a moment ago.
+// currentAIBackends returns the Ollama servers found, with the models each one
+// has, and an error naming those that could not be asked. force skips the
+// cache, for a model pulled a moment ago. The refresh runs on its own, so a
+// caller that gives up neither stops it nor blocks the others.
 func currentAIBackends(ctx context.Context, force bool) ([]*aiBackend, error) {
 	aiBackends.mu.Lock()
-	defer aiBackends.mu.Unlock()
 	if !force && aiBackends.list != nil && time.Since(aiBackends.fetched) < aiBackendTTL {
-		return aiBackends.list, nil
+		defer aiBackends.mu.Unlock()
+		return aiBackends.list, aiBackends.err
 	}
+	done := aiBackends.refresh
+	if done == nil {
+		done = make(chan struct{})
+		aiBackends.refresh = done
+		go refreshAIBackends(done, aiBackends.list)
+	}
+	aiBackends.mu.Unlock()
+
+	select {
+	case <-done:
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	}
+	aiBackends.mu.Lock()
+	defer aiBackends.mu.Unlock()
+	return aiBackends.list, aiBackends.err
+}
+
+func refreshAIBackends(done chan struct{}, previous []*aiBackend) {
+	ctx, cancel := context.WithTimeout(context.Background(), aiRefreshTimeout)
+	defer cancel()
+	list, err := discoverAIBackends(ctx, previous)
+
+	aiBackends.mu.Lock()
+	defer aiBackends.mu.Unlock()
+	// A failed lookup keeps the last list, so its transports stay shared.
+	if list != nil {
+		aiBackends.list = list
+		aiBackends.fetched = time.Now()
+	}
+	aiBackends.err = err
+	aiBackends.refresh = nil
+	close(done)
+}
+
+func discoverAIBackends(ctx context.Context, previous []*aiBackend) ([]*aiBackend, error) {
 	cfg := getAdminRestConfig()
 	if cfg == nil {
 		return nil, fmt.Errorf("the casos apiserver is not ready yet; try again in a moment")
 	}
-	found, err := findOllamaPods(cfg)
+	found, err := findOllamaPods(ctx, cfg)
 	if err != nil {
 		return nil, err
 	}
 
-	previous := map[string]*aiBackend{}
-	for _, backend := range aiBackends.list {
-		previous[backend.key] = backend
+	old := map[string]*aiBackend{}
+	for _, backend := range previous {
+		old[backend.key] = backend
 	}
 	var wg sync.WaitGroup
-	for _, backend := range found {
+	errs := make([]error, len(found))
+	for i, backend := range found {
 		// Shared across refreshes, so open connections survive and a request
 		// still in flight is counted where it ends.
-		if old, ok := previous[backend.key]; ok {
-			backend.transport = old.transport
-			backend.inFlight = old.inFlight
-			delete(previous, backend.key)
+		if prior, ok := old[backend.key]; ok {
+			backend.transport = prior.transport
+			backend.inFlight = prior.inFlight
+			delete(old, backend.key)
 		} else {
 			backend.transport = podPortTransport(cfg, backend.namespace, backend.pod, ollamaPort)
 			backend.inFlight = &atomic.Int64{}
 		}
 		wg.Add(1)
-		go func(backend *aiBackend) {
+		go func(i int, backend *aiBackend) {
 			defer wg.Done()
 			models, err := fetchOllamaModels(ctx, backend)
 			if err != nil {
 				logs.Warning("ai gateway: list the models of %s/%s: %v", backend.namespace, backend.pod, err)
+				errs[i] = fmt.Errorf("cannot list the models of %s: %w", backend.key, err)
 				return
 			}
 			backend.models = models
-		}(backend)
+		}(i, backend)
 	}
 	wg.Wait()
-	for _, gone := range previous {
+	for _, gone := range old {
 		gone.transport.CloseIdleConnections()
 	}
-
-	aiBackends.list = found
-	aiBackends.fetched = time.Now()
-	return found, nil
+	return found, errors.Join(errs...)
 }
 
 // findOllamaPods finds Ollama by the port it listens on, so an instance of any
 // template counts, not only casos's own Private AI.
-func findOllamaPods(cfg *rest.Config) ([]*aiBackend, error) {
-	services, err := object.GetServices(cfg, "")
+func findOllamaPods(ctx context.Context, cfg *rest.Config) ([]*aiBackend, error) {
+	client, err := kubernetes.NewForConfig(cfg)
 	if err != nil {
 		return nil, err
 	}
-	pods, err := object.GetPods(cfg, "")
+	services, err := client.CoreV1().Services("").List(ctx, metav1.ListOptions{})
 	if err != nil {
 		return nil, err
 	}
-	var result []*aiBackend
+	pods, err := client.CoreV1().Pods("").List(ctx, metav1.ListOptions{})
+	if err != nil {
+		return nil, err
+	}
+	result := []*aiBackend{}
 	seen := map[string]bool{}
-	for _, svc := range services {
+	for _, svc := range services.Items {
 		if len(svc.Spec.Selector) == 0 || !servesOllama(svc) {
 			continue
 		}
 		selector := labels.SelectorFromSet(svc.Spec.Selector)
-		for _, pod := range pods {
+		for _, pod := range pods.Items {
 			key := pod.Namespace + "/" + pod.Name
 			if seen[key] || pod.Namespace != svc.Namespace || !selector.Matches(labels.Set(pod.Labels)) || pod.DeletionTimestamp != nil || !podIsReady(pod) {
 				continue
@@ -209,15 +256,43 @@ var podPortRequestID atomic.Int64
 // pod, so keep-alive reuses a forward instead of opening one per request.
 func podPortTransport(cfg *rest.Config, namespace, pod string, port int) *http.Transport {
 	return &http.Transport{
-		DialContext: func(context.Context, string, string) (net.Conn, error) {
-			return dialPodPort(cfg, namespace, pod, port)
+		DialContext: func(ctx context.Context, _, _ string) (net.Conn, error) {
+			return dialPodPort(ctx, cfg, namespace, pod, port)
 		},
 		MaxIdleConnsPerHost: 4,
 		IdleConnTimeout:     90 * time.Second,
 	}
 }
 
-func dialPodPort(cfg *rest.Config, namespace, pod string, port int) (net.Conn, error) {
+// dialPodPort gives up when ctx ends or after aiDialTimeout; a forward still
+// being set up then is closed as soon as it is.
+func dialPodPort(ctx context.Context, cfg *rest.Config, namespace, pod string, port int) (net.Conn, error) {
+	ctx, cancel := context.WithTimeout(ctx, aiDialTimeout)
+	defer cancel()
+	type dialed struct {
+		conn net.Conn
+		err  error
+	}
+	result := make(chan dialed)
+	go func() {
+		conn, err := openPodPort(ctx, cfg, namespace, pod, port)
+		select {
+		case result <- dialed{conn, err}:
+		case <-ctx.Done():
+			if conn != nil {
+				conn.Close()
+			}
+		}
+	}()
+	select {
+	case d := <-result:
+		return d.conn, d.err
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	}
+}
+
+func openPodPort(ctx context.Context, cfg *rest.Config, namespace, pod string, port int) (net.Conn, error) {
 	clientset, err := kubernetes.NewForConfig(cfg)
 	if err != nil {
 		return nil, err
@@ -227,8 +302,11 @@ func dialPodPort(cfg *rest.Config, namespace, pod string, port int) (net.Conn, e
 	if err != nil {
 		return nil, err
 	}
-	dialer := spdy.NewDialer(upgrader, &http.Client{Transport: roundTripper}, http.MethodPost, target)
-	conn, _, err := dialer.Dial(portforward.PortForwardProtocolV1Name)
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, target.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+	conn, _, err := spdy.Negotiate(upgrader, &http.Client{Transport: roundTripper}, req, portforward.PortForwardProtocolV1Name)
 	if err != nil {
 		return nil, err
 	}
@@ -375,15 +453,15 @@ func ServeAIGateway(w http.ResponseWriter, r *http.Request) {
 
 	model := ollamaModelName(request.Model)
 	backends, err := currentAIBackends(r.Context(), false)
-	if err != nil {
+	backend := pickAIBackend(backends, model)
+	if backend == nil && r.Context().Err() == nil {
+		backends, err = currentAIBackends(r.Context(), true)
+		backend = pickAIBackend(backends, model)
+	}
+	// The model may be on a server that could not be asked.
+	if backend == nil && err != nil {
 		writeAIError(w, http.StatusServiceUnavailable, "server_error", "", err.Error())
 		return
-	}
-	backend := pickAIBackend(backends, model)
-	if backend == nil {
-		if backends, err = currentAIBackends(r.Context(), true); err == nil {
-			backend = pickAIBackend(backends, model)
-		}
 	}
 	if backend == nil {
 		message := fmt.Sprintf("the model %s is not available", request.Model)
@@ -443,7 +521,7 @@ type openAIModel struct {
 
 func serveAIModels(w http.ResponseWriter, r *http.Request, id string) {
 	backends, err := currentAIBackends(r.Context(), false)
-	if err != nil {
+	if err != nil && len(aiModelNames(backends)) == 0 {
 		writeAIError(w, http.StatusServiceUnavailable, "server_error", "", err.Error())
 		return
 	}
@@ -472,6 +550,10 @@ func serveAIModels(w http.ResponseWriter, r *http.Request, id string) {
 			return
 		}
 	}
+	if err != nil {
+		writeAIError(w, http.StatusServiceUnavailable, "server_error", "", err.Error())
+		return
+	}
 	writeAIError(w, http.StatusNotFound, "invalid_request_error", "model_not_found", fmt.Sprintf("the model %s is not available", id))
 }
 
@@ -491,7 +573,7 @@ func (c *ApiController) GetAiModels() {
 		return
 	}
 	backends, err := currentAIBackends(c.Ctx.Request.Context(), true)
-	if err != nil {
+	if err != nil && len(aiModelNames(backends)) == 0 {
 		c.ResponseError(err.Error())
 		return
 	}
