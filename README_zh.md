@@ -41,6 +41,11 @@ claude mcp add --transport http --scope user casos http://localhost:20080/mcp --
 打开右上角账号菜单 → **AI Agents** 创建 token。那个页面也有 Cursor、Codex 和其他
 MCP 客户端的现成配置。
 
+同一页面的 **AI 提供方** 可以接入 Sub2API 等兼容 OpenAI 的服务。填写 API 基础地址、
+上游密钥和模型 ID 后，使用完整权限的 CasOS token，通过 `/v1` 入口以
+`提供方名称/模型ID` 调用模型。支持转发 Chat Completions、Responses、Embeddings
+请求及流式响应。提供方凭证存储在 Kubernetes Secret 中，列表接口省略密钥内容。
+
 **和其他项目的区别。** k3s、minikube 只给你一个集群；CasOS 在此之上还带界面、应用
 商店、私有 AI 和 Agent 接入，并且能在 Windows 上原生运行。Coolify、CasaOS 在 Docker
 上提供一键应用；CasOS 提供同样的体验，但底层是真正的 Kubernetes，通过 SSH 添加机器

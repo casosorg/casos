@@ -426,7 +426,7 @@ func ServeAIGateway(w http.ResponseWriter, r *http.Request) {
 
 	path := strings.TrimPrefix(r.URL.Path, AIGatewayPrefix)
 	if r.Method == http.MethodGet && (path == "models" || strings.HasPrefix(path, "models/")) {
-		serveAIModels(w, r, strings.TrimPrefix(strings.TrimPrefix(path, "models"), "/"))
+		serveAIModels(w, r, caller.user, strings.TrimPrefix(strings.TrimPrefix(path, "models"), "/"))
 		return
 	}
 	if r.Method != http.MethodPost {
@@ -451,6 +451,19 @@ func ServeAIGateway(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	providers, err := getAIProviders(r.Context(), caller.user)
+	if err != nil {
+		writeAIError(w, http.StatusServiceUnavailable, "server_error", "", err.Error())
+		return
+	}
+	for _, provider := range providers {
+		for _, model := range provider.Models {
+			if request.Model == provider.Name+"/"+model {
+				proxyAIProvider(w, r, provider, model, body)
+				return
+			}
+		}
+	}
 	model := ollamaModelName(request.Model)
 	backends, err := currentAIBackends(r.Context(), false)
 	backend := pickAIBackend(backends, model)
@@ -519,14 +532,31 @@ type openAIModel struct {
 	OwnedBy string `json:"owned_by"`
 }
 
-func serveAIModels(w http.ResponseWriter, r *http.Request, id string) {
-	backends, err := currentAIBackends(r.Context(), false)
-	if err != nil && len(aiModelNames(backends)) == 0 {
+func serveAIModels(w http.ResponseWriter, r *http.Request, owner, id string) {
+	providers, err := getAIProviders(r.Context(), owner)
+	if err != nil {
 		writeAIError(w, http.StatusServiceUnavailable, "server_error", "", err.Error())
 		return
 	}
 	models := []openAIModel{}
 	seen := map[string]bool{}
+	for _, provider := range providers {
+		for _, name := range provider.Models {
+			model := openAIModel{ID: provider.Name + "/" + name, Object: "model", OwnedBy: provider.Name}
+			if id == model.ID {
+				w.Header().Set("Content-Type", "application/json")
+				_ = json.NewEncoder(w).Encode(model)
+				return
+			}
+			seen[model.ID] = true
+			models = append(models, model)
+		}
+	}
+	backends, err := currentAIBackends(r.Context(), false)
+	if err != nil && len(models) == 0 && len(aiModelNames(backends)) == 0 {
+		writeAIError(w, http.StatusServiceUnavailable, "server_error", "", err.Error())
+		return
+	}
 	for _, backend := range backends {
 		for _, model := range backend.models {
 			if seen[model.Name] {
@@ -559,6 +589,7 @@ func serveAIModels(w http.ResponseWriter, r *http.Request, id string) {
 
 type aiModelSummary struct {
 	Name          string   `json:"name"`
+	Provider      string   `json:"provider,omitempty"`
 	Size          int64    `json:"size"`
 	ParameterSize string   `json:"parameterSize"`
 	Quantization  string   `json:"quantization"`
@@ -572,8 +603,13 @@ func (c *ApiController) GetAiModels() {
 	if c.RequireSignedIn() {
 		return
 	}
+	providers, err := getAIProviders(c.Ctx.Request.Context(), c.GetSessionUser().Name)
+	if err != nil {
+		c.ResponseError(err.Error())
+		return
+	}
 	backends, err := currentAIBackends(c.Ctx.Request.Context(), true)
-	if err != nil && len(aiModelNames(backends)) == 0 {
+	if err != nil && len(providers) == 0 && len(aiModelNames(backends)) == 0 {
 		c.ResponseError(err.Error())
 		return
 	}
@@ -588,6 +624,13 @@ func (c *ApiController) GetAiModels() {
 
 	byName := map[string]*aiModelSummary{}
 	var result []*aiModelSummary
+	for _, provider := range providers {
+		for _, name := range provider.Models {
+			summary := &aiModelSummary{Name: provider.Name + "/" + name, Provider: provider.Name, Machines: []string{}, Gpus: []string{}}
+			byName[summary.Name] = summary
+			result = append(result, summary)
+		}
+	}
 	for _, backend := range backends {
 		for _, model := range backend.models {
 			summary := byName[model.Name]

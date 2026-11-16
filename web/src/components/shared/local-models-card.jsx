@@ -58,15 +58,11 @@ const snippets = [
   },
 ];
 
-/**
- * Shows the OpenAI-compatible API casos serves for the Ollama models in the
- * cluster: where to point an SDK, which models answer, and on which GPUs.
- */
-export function LocalModelsCard() {
+export function LocalModelsCard({revision = 0}) {
   const {t} = useTranslation();
   const history = useHistory();
   const {resolvePath} = useUiMode();
-  const {data: models, loading, refresh} = useResource(() => AiModelBackend.getAiModels(), [], {initialData: []});
+  const {data: models, loading, refresh} = useResource(() => AiModelBackend.getAiModels(), [revision], {initialData: []});
   const url = modelApiUrl();
   const chatModel = (models ?? []).find((model) => !model.name.includes("embed"))?.name ?? "qwen3:8b";
   const onLocalhost = ["localhost", "127.0.0.1", "[::1]"].includes(window.location.hostname);
@@ -74,9 +70,9 @@ export function LocalModelsCard() {
   return (
     <Card data-testid="local-models-card">
       <CardHeader>
-        <CardTitle>{t("agent:Use your local models from any app")}</CardTitle>
+        <CardTitle>{t("agent:Use your models from any app")}</CardTitle>
         <CardDescription>
-          {t("agent:casos serves an OpenAI-compatible API for the models on your GPUs. Use a full-access token below as the API key.")}
+          {t("agent:Use a full-access token below to call your local models and AI providers through one OpenAI-compatible API.")}
         </CardDescription>
         <CardAction>
           <Button variant="outline" size="sm" onClick={() => refresh()} loading={loading}>
@@ -98,7 +94,7 @@ export function LocalModelsCard() {
         {!loading && (models ?? []).length === 0 ? (
           <div className="flex flex-wrap items-center justify-between gap-3 rounded-md border border-dashed p-4">
             <p className="text-muted-foreground text-sm">
-              {t("agent:No models yet. Install Private AI to run a model on your GPU, and it shows up here.")}
+              {t("agent:Add an AI provider above or install Private AI to make models available here.")}
             </p>
             <Button size="sm" onClick={() => history.push(resolvePath("/app-store"))}>
               <Sparkles />
@@ -114,6 +110,7 @@ export function LocalModelsCard() {
                   {[model.parameterSize, model.quantization, model.size ? formatBytes(model.size) : ""].filter(Boolean).join(" · ")}
                 </span>
                 <span className="ml-auto flex flex-wrap gap-1">
+                  {model.provider ? <Badge variant="muted">{model.provider}</Badge> : null}
                   {model.machines.map((machine, index) => (
                     <Badge key={`${machine}-${index}`} variant={model.gpus[index] ? "success" : "muted"} title={machine}>
                       {model.gpus[index] ? <Zap /> : <Cpu />}

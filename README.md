@@ -42,6 +42,13 @@ claude mcp add --transport http --scope user casos http://localhost:20080/mcp --
 To create the token, open the account menu → **AI Agents**. That page also has
 ready-made snippets for Cursor, Codex and any other MCP client.
 
+On the same page, **AI providers** connects an OpenAI-compatible service such as
+Sub2API. Enter its API base URL, upstream key and model IDs. Call the models as
+`provider-name/model-id` through CasOS's `/v1` endpoint using a full-access CasOS
+token. Chat Completions, Responses and Embeddings requests are forwarded to the
+provider, including streaming responses. Provider credentials are stored in
+Kubernetes Secrets and are omitted from the provider list.
+
 **How it compares.** k3s and minikube give you a cluster. CasOS adds the UI, the app
 store, private AI and agent access, and it runs natively on Windows. Coolify and
 CasaOS give you one-click apps on Docker. CasOS gives you the same experience on

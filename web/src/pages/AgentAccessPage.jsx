@@ -15,6 +15,7 @@ import {DataTable} from "@/components/shared/data-table";
 import {Field, FormDialog} from "@/components/shared/form-dialog";
 import {SimpleSelect} from "@/components/shared/simple-select";
 import {LocalModelsCard} from "@/components/shared/local-models-card";
+import {AiProvidersCard} from "@/components/shared/ai-providers-card";
 import {PageContainer, PageHeader} from "@/components/shared/page-header";
 import {CodeBlock, CodeText} from "@/components/shared/misc";
 
@@ -95,6 +96,7 @@ function AgentAccessPage() {
   const [nameError, setNameError] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [created, setCreated] = useState(null);
+  const [modelRevision, setModelRevision] = useState(0);
 
   function openCreate() {
     setName((tokens ?? []).length === 0 ? "my-agent" : "");
@@ -200,7 +202,8 @@ function AgentAccessPage() {
         </CardContent>
       </Card>
 
-      <LocalModelsCard />
+      <AiProvidersCard onChange={() => setModelRevision((revision) => revision + 1)} />
+      <LocalModelsCard revision={modelRevision} />
 
       <DataTable
         title={i18next.t("agent:Access tokens")}
