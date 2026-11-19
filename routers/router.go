@@ -6,6 +6,9 @@ import (
 )
 
 func InitAPI() {
+	beego.Router("/api/get-ai-workspaces", &controllers.ApiController{}, "GET:GetAIWorkspaces")
+	beego.Router("/api/get-ai-workspace", &controllers.ApiController{}, "GET:GetAIWorkspace")
+	beego.Router("/api/get-ai-workspace-sessions", &controllers.ApiController{}, "GET:GetAIWorkspaceSessions")
 	beego.Router("/api/health", &controllers.ApiController{}, "GET:Health")
 
 	beego.Router("/api/get-signin-options", &controllers.ApiController{}, "GET:GetSigninOptions")

@@ -228,6 +228,8 @@ func (a *Ormer) createTable() {
 		new(AccessToken),
 		new(MeshInvite),
 		new(MeshMember),
+		new(Workspace),
+		new(WorkspaceSession),
 	); err != nil {
 		panic(fmt.Errorf("sync database schema: %w", err))
 	}
